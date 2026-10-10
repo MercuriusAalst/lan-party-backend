@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Hubs;
+using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Domain;
+using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Teams.Contracts;
 using Microsoft.AspNetCore.Http.Features;
@@ -114,7 +116,10 @@ public class TeamManagementHubTests
         ITeamRealtimeAuthorizer authorizer,
         User user)
     {
-        return new TeamManagementHub(dbContext, authorizer, manager)
+        return new TeamManagementHub(
+            new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!),
+            authorizer,
+            manager)
         {
             Context = new TestHubCallerContext(
                 "connection",
