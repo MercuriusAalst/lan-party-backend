@@ -19,13 +19,13 @@ internal static class MatchEndpoints
             .MapToApiVersion(new ApiVersion(1, 0))
             .WithTags("Matches");
 
-        group.MapGet("/{id}", async (Guid id, IMatchService matchService, CancellationToken cancellationToken) =>
+        group.MapGet("/{id:guid}", async (Guid id, IMatchService matchService, CancellationToken cancellationToken) =>
         {
             return await matchService.GetMatchByIdAsync(id, cancellationToken);
         })
         .AllowAnonymous();
 
-        group.MapGet("/{id}/opponent-profile", async (
+        group.MapGet("/{id:guid}/opponent-profile", async (
             Guid id,
             ClaimsPrincipal user,
             IMatchService matchService,
@@ -35,7 +35,7 @@ internal static class MatchEndpoints
         })
         .RequireAuthorization();
 
-        group.MapGet("/{id}/me", async (
+        group.MapGet("/{id:guid}/me", async (
             Guid id,
             ClaimsPrincipal user,
             IMatchService matchService,
@@ -49,7 +49,7 @@ internal static class MatchEndpoints
         })
         .RequireAuthorization();
 
-        group.MapPost("/{id}/confirm-ended", async (
+        group.MapPost("/{id:guid}/confirm-ended", async (
             Guid id,
             ClaimsPrincipal user,
             IMatchService matchService,
@@ -59,7 +59,7 @@ internal static class MatchEndpoints
         })
         .RequireAuthorization();
 
-        group.MapPut("/{id}/score", async (
+        group.MapPut("/{id:guid}/score", async (
             Guid id,
             SubmitMatchScoreDTO request,
             ClaimsPrincipal user,
@@ -70,7 +70,7 @@ internal static class MatchEndpoints
         })
         .RequireAuthorization();
 
-        group.MapPost("/{id}/forfeit", async (
+        group.MapPost("/{id:guid}/forfeit", async (
             Guid id,
             ForfeitMatchDTO request,
             ClaimsPrincipal user,
@@ -89,7 +89,7 @@ internal static class MatchEndpoints
         var adminGroup = group.MapGroup(string.Empty)
             .RequireAuthorization(new AuthorizeAttribute { Roles = "admin" });
 
-        adminGroup.MapPost("/{id}/resolve", async (
+        adminGroup.MapPost("/{id:guid}/resolve", async (
             Guid id,
             ResolveMatchDTO request,
             ClaimsPrincipal user,
@@ -99,7 +99,7 @@ internal static class MatchEndpoints
             return await matchService.ResolveAsync(id, GetAuth0UserId(user), request, cancellationToken);
         });
 
-        adminGroup.MapPost("/{id}/reverse", async (
+        adminGroup.MapPost("/{id:guid}/reverse", async (
             Guid id,
             ClaimsPrincipal user,
             IMatchService matchService,
@@ -108,7 +108,7 @@ internal static class MatchEndpoints
             return await matchService.ReverseAsync(id, GetAuth0UserId(user), cancellationToken);
         });
 
-        adminGroup.MapPost("/{id}/admin/forfeit", async (
+        adminGroup.MapPost("/{id:guid}/admin/forfeit", async (
             Guid id,
             ForfeitMatchDTO request,
             ClaimsPrincipal user,
@@ -123,7 +123,7 @@ internal static class MatchEndpoints
                 cancellationToken);
         });
 
-        adminGroup.MapPut("/{id}", async (
+        adminGroup.MapPut("/{id:guid}", async (
             Guid id,
             UpdateMatchDTO updateMatchDTO,
             ClaimsPrincipal user,

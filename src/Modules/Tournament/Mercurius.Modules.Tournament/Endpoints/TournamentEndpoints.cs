@@ -37,7 +37,7 @@ internal static class TournamentEndpoints
         .Produces<IReadOnlyList<GetTournamentDTO>>()
         .ProducesValidationProblem();
 
-        group.MapGet("/{tournamentId}", async (Guid tournamentId, ITournamentQueries tournamentQueries, CancellationToken cancellationToken) =>
+        group.MapGet("/{tournamentId:guid}", async (Guid tournamentId, ITournamentQueries tournamentQueries, CancellationToken cancellationToken) =>
         {
             return await tournamentQueries.GetTournamentByIdAsync(tournamentId, cancellationToken);
         })
@@ -48,7 +48,7 @@ internal static class TournamentEndpoints
             return await tournamentManagementCommands.CreateTournamentAsync(createTournamentDTO, cancellationToken);
         }).DisableAntiforgery();
 
-        group.MapPatch("/{tournamentId}", async (Guid tournamentId, [FromForm] UpdateTournamentDTO updateTournamentDTO, HttpRequest request, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
+        group.MapPatch("/{tournamentId:guid}", async (Guid tournamentId, [FromForm] UpdateTournamentDTO updateTournamentDTO, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
         {
             var form = await request.ReadFormAsync(cancellationToken);
             updateTournamentDTO.AssignedAdminUserIdSpecified = form.ContainsKey(nameof(UpdateTournamentDTO.AssignedAdminUserId));
@@ -58,17 +58,17 @@ internal static class TournamentEndpoints
             return await tournamentManagementCommands.UpdateTournamentAsync(tournamentId, updateTournamentDTO, cancellationToken);
         }).DisableAntiforgery();
 
-        group.MapDelete("/{tournamentId}", async (Guid tournamentId, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
+        group.MapDelete("/{tournamentId:guid}", async (Guid tournamentId, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
         {
             await tournamentManagementCommands.DeleteTournamentAsync(tournamentId, cancellationToken);
         });
 
-        group.MapPut("/{tournamentId}/sponsors", async (Guid tournamentId, ReplaceTournamentSponsorsDTO sponsorDTO, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
+        group.MapPut("/{tournamentId:guid}/sponsors", async (Guid tournamentId, ReplaceTournamentSponsorsDTO sponsorDTO, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
         {
             return await tournamentManagementCommands.ReplaceSponsorPlacementsAsync(tournamentId, sponsorDTO, cancellationToken);
         });
 
-        group.MapPut("/{tournamentId}/lifecycle-state", async Task<IResult> (Guid tournamentId, UpdateTournamentLifecycleStateRequestDTO request, ITournamentLifecycleCommands tournamentLifecycleCommands, CancellationToken cancellationToken) =>
+        group.MapPut("/{tournamentId:guid}/lifecycle-state", async Task<IResult> (Guid tournamentId, UpdateTournamentLifecycleStateRequestDTO request, ITournamentLifecycleCommands tournamentLifecycleCommands, CancellationToken cancellationToken) =>
         {
             if (request.State is not { } state || !Enum.IsDefined(state))
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["state"] = ["A supported tournament lifecycle state is required."] });

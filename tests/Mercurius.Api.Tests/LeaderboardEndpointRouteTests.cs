@@ -24,7 +24,7 @@ public sealed class LeaderboardEndpointRouteTests
     [Fact]
     public void MatchOpponentProfile_RequiresAuthentication()
     {
-        var endpoint = GetEndpoint("GET", "v{version:apiVersion}/lan/matches/{id}/opponent-profile");
+        var endpoint = GetEndpoint("GET", "v{version:apiVersion}/lan/matches/{id:guid}/opponent-profile");
 
         Assert.DoesNotContain(endpoint.Metadata, item => item is IAllowAnonymous);
         Assert.Contains(endpoint.Metadata, item => item is IAuthorizeData);

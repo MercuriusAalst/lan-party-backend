@@ -75,7 +75,7 @@ public class PublicCollectionPagingEndpointTests
     }
 
     [Fact]
-    public async Task TournamentItem_WithMalformedId_ReachesGuidBindingAndReturnsBadRequest()
+    public async Task TournamentItem_WithMalformedId_FailsRouteConstraintAndReturnsNotFound()
     {
         var tournamentQueries = new RecordingTournamentQueries();
         await using var app = CreateApp(tournamentQueries, new RecordingTeamEndpointService());
@@ -84,7 +84,7 @@ public class PublicCollectionPagingEndpointTests
 
         using var response = await client.GetAsync("v1/lan/tournaments/not-a-guid");
 
-        Assert.Equal(StatusCodes.Status400BadRequest, (int)response.StatusCode);
+        Assert.Equal(StatusCodes.Status404NotFound, (int)response.StatusCode);
         Assert.Equal(0, tournamentQueries.CallCount);
     }
 
