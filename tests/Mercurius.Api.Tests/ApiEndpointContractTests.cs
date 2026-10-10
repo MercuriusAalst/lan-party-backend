@@ -56,6 +56,13 @@ public class ApiEndpointContractTests
     }
 
     [Fact]
+    public void FormerMatchUpdateRoute_IsAbsent()
+    {
+        Assert.DoesNotContain(GetEndpoints("PUT"), endpoint => endpoint.RoutePattern.RawText == "v{version:apiVersion}/lan/matches/{id:guid}");
+        GetEndpoint("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve");
+    }
+
+    [Fact]
     public void PublicProfileMatchSummaryResponse_UsesStableGuidJsonProperties()
     {
         var matchId = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -141,7 +148,6 @@ public class ApiEndpointContractTests
     [InlineData("DELETE", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}")]
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/sponsors")]
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/lifecycle-state")]
-    [InlineData("PUT", "v{version:apiVersion}/lan/matches/{id:guid}")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/reverse")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/admin/forfeit")]

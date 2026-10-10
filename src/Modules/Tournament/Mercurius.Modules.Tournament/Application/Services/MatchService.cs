@@ -285,24 +285,6 @@ internal sealed class MatchService : IMatchService
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
 
-    public async Task<GetMatchDTO> UpdateMatchAsync(
-        Guid id,
-        string auth0UserId,
-        UpdateMatchDTO updateMatchDTO,
-        CancellationToken cancellationToken = default)
-    {
-        var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        var (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-        EnsureInProgress(tournament);
-        var now = UtcNow();
-        ApplyDeadline(tournament, match, now);
-        match.ResolveScore(updateMatchDTO.Participant1Score, updateMatchDTO.Participant2Score, now);
-        match.RecordResultBy(userId);
-        await SaveAndCommitAsync(transaction, tournament, cancellationToken);
-        return TournamentDtoMapper.ToGetMatchDto(match);
-    }
-
     private async Task<(TournamentAggregate Tournament, Match Match)> GetMatchReadAsync(
         Guid id,
         CancellationToken cancellationToken)

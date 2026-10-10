@@ -326,9 +326,9 @@ public class MatchTests
     }
 
     [Fact]
-    public void UpdateMatchDTO_FailsValidation_WhenScoresAreNegative()
+    public void ResolveMatchDTO_FailsValidation_WhenScoresAreNegative()
     {
-        var dto = new UpdateMatchDTO
+        var dto = new ResolveMatchDTO
         {
             Participant1Score = -1,
             Participant2Score = -2

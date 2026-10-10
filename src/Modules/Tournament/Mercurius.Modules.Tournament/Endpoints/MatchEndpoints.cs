@@ -123,16 +123,6 @@ internal static class MatchEndpoints
                 cancellationToken);
         });
 
-        adminGroup.MapPut("/{id:guid}", async (
-            Guid id,
-            UpdateMatchDTO updateMatchDTO,
-            ClaimsPrincipal user,
-            IMatchService matchService,
-            CancellationToken cancellationToken) =>
-        {
-            return await matchService.UpdateMatchAsync(id, GetAuth0UserId(user), updateMatchDTO, cancellationToken);
-        });
-
         return group;
     }
 
