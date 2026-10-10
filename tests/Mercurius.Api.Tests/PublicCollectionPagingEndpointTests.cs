@@ -228,7 +228,10 @@ public class PublicCollectionPagingEndpointTests
     {
         var addresses = app.Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>()!;
-        return new HttpClient { BaseAddress = new Uri(Assert.Single(addresses.Addresses)) };
+        // Wait for Kestrel's early 413 instead of streaming the oversized body after the default 1s,
+        // which races the server closing the connection on slow CI runners.
+        var handler = new SocketsHttpHandler { Expect100ContinueTimeout = TimeSpan.FromSeconds(30) };
+        return new HttpClient(handler) { BaseAddress = new Uri(Assert.Single(addresses.Addresses)) };
     }
 
     private static MultipartFormDataContent CreateLogoUploadContent(long fileLength)
