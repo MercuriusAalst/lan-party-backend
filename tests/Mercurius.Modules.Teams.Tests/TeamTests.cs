@@ -1995,6 +1995,36 @@ public class TeamTests
     }
 
     [Fact]
+    public async Task SaveChangesAsync_WhenTeamVersionChangedConcurrently_ThrowsConflictAndKeepsVersionsUnique()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
+            .UseNpgsql(database.ConnectionString)
+            .Options;
+        await using var setupContext = new MercuriusDBContext(options);
+        PostgresTestDatabase.Initialize(setupContext);
+        var captain = CreateUser();
+        var team = CreateTeam("Alpha", captain);
+        setupContext.Users.Add(captain);
+        setupContext.Teams.Add(team);
+        await setupContext.SaveChangesAsync();
+        await using var firstContext = new MercuriusDBContext(options);
+        await using var secondContext = new MercuriusDBContext(options);
+        var firstTeam = await firstContext.Teams.SingleAsync(candidate => candidate.Id == team.Id);
+        var secondTeam = await secondContext.Teams.SingleAsync(candidate => candidate.Id == team.Id);
+        firstTeam.Version++;
+        secondTeam.Version++;
+
+        await new TeamsDbContextAdapter<MercuriusDBContext>(firstContext).SaveChangesAsync();
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() =>
+            new TeamsDbContextAdapter<MercuriusDBContext>(secondContext).SaveChangesAsync());
+
+        Assert.Equal("team_changed", conflict.Code);
+        setupContext.ChangeTracker.Clear();
+        Assert.Equal(1, (await setupContext.Teams.SingleAsync(candidate => candidate.Id == team.Id)).Version);
+    }
+
+    [Fact]
     public async Task DeleteUserByIdAsync_WithCrossModuleReferences_AnonymizesUserWithoutHardDelete()
     {
         await using var dbContext = PostgresTestDatabase.CreateDbContext();
