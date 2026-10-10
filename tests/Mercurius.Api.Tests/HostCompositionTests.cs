@@ -25,9 +25,14 @@ public sealed class HostCompositionTests
     }
 
     [Fact]
-    public async Task HealthEndpoints_AreAnonymousAndNotRateLimited()
+    public async Task HealthEndpointsAndPublicAssets_AreAnonymousAndNotRateLimited()
     {
         // Arrange
+        Directory.CreateDirectory(StorageLocation);
+        var imageName = $"{Guid.NewGuid():N}.gif";
+        await File.WriteAllBytesAsync(
+            Path.Combine(StorageLocation, imageName),
+            Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="));
         await using var database = PostgresTestDatabase.Create();
         await using var app = Program.CreateApp(
         [
@@ -43,7 +48,7 @@ public sealed class HostCompositionTests
 
             // Act
             var responses = new List<HttpResponseMessage>();
-            foreach (var path in new[] { "/health/live", "/health/ready" })
+            foreach (var path in new[] { "/health/live", "/health/ready", $"/images/{imageName}", "/staticfiles/swagger-custom.js" })
             {
                 for (var attempt = 0; attempt < 3; attempt++)
                     responses.Add(await client.GetAsync(path));
@@ -58,12 +63,14 @@ public sealed class HostCompositionTests
         }
     }
 
+    private static readonly string StorageLocation = Path.Combine(Path.GetTempPath(), "mercurius-host-tests");
+
     private static string[] CreateProductionArgs(string connectionString) =>
     [
         "--environment=Production",
         "--Logging:LogLevel:Default=Warning",
         $"--ConnectionStrings:MercuriusDB={connectionString}",
-        $"--FileStorage:Location={Path.Combine(Path.GetTempPath(), "mercurius-host-tests")}",
+        $"--FileStorage:Location={StorageLocation}",
         "--Auth0:Audience=https://api.example.test"
     ];
 }
