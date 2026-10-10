@@ -10,6 +10,7 @@ using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
 using Platform;
 using Platform.Extensions;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +49,7 @@ public class Program
         builder.Services.AddModuleEventing<MercuriusDBContext>();
         builder.Services.AddMediaModule(builder.Configuration);
 
+        builder.Services.AddHealthChecks().AddDbContextCheck<MercuriusDBContext>();
         builder.Services.AddValidation();
         builder.Services.AddVersionedSwagger(
             builder.Environment,
@@ -108,6 +110,12 @@ public class Program
                 TeamManagementHub.Route,
                 options => options.CloseOnAuthenticationExpiration = true)
             .RequireAuthorization();
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false })
+            .AllowAnonymous()
+            .DisableRateLimiting();
+        app.MapHealthChecks("/health/ready")
+            .AllowAnonymous()
+            .DisableRateLimiting();
 
         return app;
     }
