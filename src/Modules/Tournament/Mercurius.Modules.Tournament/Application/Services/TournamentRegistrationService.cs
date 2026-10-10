@@ -783,7 +783,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
     private static void EnsureCaptain(TeamRosterSnapshot team, Guid userId)
     {
         if (team.CaptainUserId?.Value != userId)
-            throw new UnauthorizedAccessException("Only the team captain can perform this action.");
+            throw new ForbiddenException("team_captain_required", "Only the team captain can perform this action.");
     }
 
 }
