@@ -39,12 +39,12 @@ Tournament mutations MUST publish Tournament-owned integration events through th
 eventing boundary in the same transaction as their persisted state.
 
 #### Scenario: Tournament lifecycle changes
-- **WHEN** a tournament is created, updated, started, reset, completed, or canceled
+- **WHEN** a tournament is created, updated, canceled, or deleted
 - **THEN** the corresponding Tournament integration event is added to the durable outbox
 
-#### Scenario: Registration or roster state changes
-- **WHEN** a tournament registration is created or canceled or a roster member is confirmed
-- **THEN** a Tournament-owned integration event is added to the durable outbox
+#### Scenario: Unconsumed tournament facts are not published
+- **WHEN** a tournament is started, reset, or completed, a placement is assigned, a match result is recorded or reversed, a registration is created or canceled, or a roster member is confirmed
+- **THEN** no durable integration event is added for that fact
 
 ### Requirement: Existing HTTP contracts remain stable
 The rename MUST preserve the existing Tournament route authorization metadata, antiforgery
@@ -102,3 +102,16 @@ Tournament CLR type names and `tournamentId` JSON keys.
 #### Scenario: New event uses canonical naming
 - **WHEN** Tournament publishes a lifecycle or registration event after the rename
 - **THEN** its durable type registration and JSON payload use Tournament terminology and `tournamentId`
+
+### Requirement: Tournament deletion removes its sponsor placement
+Tournament deletion MUST remove the tournament's sponsor placement through the Sponsorship module
+contract in the same database transaction as the tournament delete.
+
+#### Scenario: Tournament with a sponsor placement is deleted
+- **WHEN** a tournament that has a sponsor placement is deleted
+- **THEN** Sponsorship removes the placement and publishes its placement-removed event
+- **AND** the placement removal, tournament delete, and their outbox messages commit together
+
+#### Scenario: Tournament deletion fails
+- **WHEN** the tournament delete does not commit
+- **THEN** the sponsor placement MUST remain
