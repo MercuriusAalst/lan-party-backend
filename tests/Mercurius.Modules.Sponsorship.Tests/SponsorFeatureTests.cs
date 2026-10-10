@@ -148,7 +148,48 @@ public class SponsorFeatureTests
     }
 
     [Fact]
-    public void SponsorshipModel_PreservesExistingTablesAndCascadeRelationships()
+    public async Task DeleteTournamentAsync_RemovesSponsorPlacementThroughSponsorshipModule()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var tournament = CreateTournament();
+        var sponsor = CreateSponsor(1, "Mercurius Tech", SponsorTier.Presenting);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        dbContext.Set<Sponsor>().Add(sponsor);
+        dbContext.Set<TournamentSponsorPlacement>().Add(new TournamentSponsorPlacement
+        {
+            TournamentId = tournament.Id,
+            SponsorId = sponsor.Id,
+            Context = SponsorContractContext.TournamentPartner,
+            DisplayOrder = 1
+        });
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var sponsorshipModule = CreateSponsorshipModule(dbContext);
+        var identityModule = SponsorshipTournamentTestDoubles.CreateIdentityModule();
+        var teamsModule = SponsorshipTournamentTestDoubles.CreateTeamsModule();
+        var service = new TournamentService(
+            new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
+            new StubMatchModeratorFactory(),
+            new StubMediaModule(),
+            sponsorshipModule,
+            new TournamentDtoMapper(
+                new RegistrationMappingContextBuilder(identityModule, teamsModule),
+                sponsorshipModule),
+            new ModuleEventPublisher(dbContext),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+
+        await service.DeleteTournamentAsync(tournament.Id);
+
+        dbContext.ChangeTracker.Clear();
+        Assert.False(await dbContext.Set<TournamentAggregate>().AnyAsync(candidate => candidate.Id == tournament.Id));
+        Assert.False(await dbContext.Set<TournamentSponsorPlacement>().AnyAsync());
+        Assert.True(await dbContext.Set<Sponsor>().AnyAsync(candidate => candidate.Id == sponsor.Id));
+        Assert.True(await dbContext.OutboxMessages.AnyAsync(message =>
+            message.EventType == typeof(TournamentSponsorPlacementChanged).FullName));
+    }
+
+    [Fact]
+    public void SponsorshipModel_PreservesExistingTablesAndDeleteRelationships()
     {
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql("Host=localhost;Database=translation-only")
@@ -172,7 +213,7 @@ public class SponsorFeatureTests
             placementType.GetForeignKeys(),
             foreignKey =>
                 foreignKey.PrincipalEntityType.ClrType == typeof(TournamentAggregate) &&
-                foreignKey.DeleteBehavior == DeleteBehavior.Cascade);
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
         Assert.Contains(placementType.GetIndexes(), index =>
             index.IsUnique &&
             index.Properties.Single().Name == nameof(TournamentSponsorPlacement.TournamentId));

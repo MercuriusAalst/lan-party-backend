@@ -1994,6 +1994,65 @@ public class TeamTests
         Assert.False(await authorizer.CanSubscribeToTeamAsync(new TeamId(deletedTeam.Id), new UserId(deletedCaptain.Id)));
     }
 
+    [Fact]
+    public async Task DeleteUserByIdAsync_WithCrossModuleReferences_AnonymizesUserWithoutHardDelete()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var (member, _) = await SeedCrossModuleReferencesAsync(dbContext);
+
+        await new Mercurius.Modules.Identity.Services.UserService(dbContext, null!).DeleteUserByIdAsync(member.Id);
+
+        dbContext.ChangeTracker.Clear();
+        Assert.True(await dbContext.Users.AnyAsync(user => user.Id == member.Id && user.IsDeleted));
+        Assert.True(await dbContext.Set<PlacementUser>().AnyAsync(placementUser => placementUser.UserId == member.Id));
+        var hardDelete = await Assert.ThrowsAsync<Npgsql.PostgresException>(() =>
+            dbContext.Users.Where(user => user.Id == member.Id).ExecuteDeleteAsync());
+        Assert.Equal(Npgsql.PostgresErrorCodes.ForeignKeyViolation, hardDelete.SqlState);
+    }
+
+    [Fact]
+    public async Task DeleteTeamAsync_WithCrossModuleReferences_SoftDeletesTeamWithoutHardDelete()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var (_, team) = await SeedCrossModuleReferencesAsync(dbContext);
+
+        await CreateTeamService(dbContext).DeleteTeamAsync(team.Id);
+
+        dbContext.ChangeTracker.Clear();
+        Assert.True(await dbContext.Teams.AnyAsync(candidate => candidate.Id == team.Id && candidate.IsDeleted));
+        Assert.True(await dbContext.Set<PlacementTeam>().AnyAsync(placementTeam => placementTeam.TeamId == team.Id));
+        var hardDelete = await Assert.ThrowsAsync<Npgsql.PostgresException>(() =>
+            dbContext.Teams.Where(candidate => candidate.Id == team.Id).ExecuteDeleteAsync());
+        Assert.Equal(Npgsql.PostgresErrorCodes.ForeignKeyViolation, hardDelete.SqlState);
+    }
+
+    private static async Task<(User Member, Team Team)> SeedCrossModuleReferencesAsync(MercuriusDBContext dbContext)
+    {
+        var captain = CreateUser();
+        var member = CreateUser();
+        var team = CreateTeam("Alpha", captain);
+        team.AddMember(member.Id);
+        var otherTeam = CreateTeam("Bravo", captain);
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
+        {
+            Id = Guid.NewGuid()
+        };
+        dbContext.Users.AddRange(captain, member);
+        dbContext.Teams.AddRange(team, otherTeam);
+        dbContext.Set<TeamInvite>().Add(CreatePendingInvite(otherTeam, member));
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        dbContext.Set<Placement>().Add(new Placement
+        {
+            Id = Guid.NewGuid(),
+            Place = 1,
+            TournamentId = tournament.Id,
+            Users = [new PlacementUser { UserId = member.Id }],
+            Teams = [new PlacementTeam { TeamId = team.Id }]
+        });
+        await dbContext.SaveChangesAsync();
+        return (member, team);
+    }
+
     private static User CreateUser()
     {
         var id = Interlocked.Increment(ref _nextId);
