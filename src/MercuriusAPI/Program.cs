@@ -21,11 +21,21 @@ public class Program
 {
     private const string CorsPolicyName = "AllowMercuriusAalst";
 
-    public static void Main(string[] args)
+    public static void Main(string[] args) => CreateApp(args).Run();
+
+    public static WebApplication CreateApp(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
-        builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddEnvironmentVariables("Mercurius.LAN.API_");
+        builder.Configuration.AddEnvironmentVariables("Mercurius.LAN.API_");
+        if (!builder.Environment.IsDevelopment())
+        {
+            foreach (var requiredKey in new[] { "FileStorage:Location", "Auth0:Audience" })
+            {
+                if (string.IsNullOrWhiteSpace(builder.Configuration[requiredKey]))
+                    throw new InvalidOperationException($"{requiredKey} must be configured outside Development.");
+            }
+        }
+
         var mediaUploadRequestLimits = MediaUploadRequestLimits.FromConfiguration(builder.Configuration);
 
         builder.WebHost.ConfigureKestrel(options =>
@@ -98,6 +108,6 @@ public class Program
                 options => options.CloseOnAuthenticationExpiration = true)
             .RequireAuthorization();
 
-        app.Run();
+        return app;
     }
 }
