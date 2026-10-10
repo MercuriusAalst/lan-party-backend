@@ -81,7 +81,7 @@ public class Program
         });
         builder.Services.AddWildcardSubdomainCors(
             CorsPolicyName,
-            allowedOrigin: "https://*.mercurius-aalst.be");
+            builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? []);
 
         var app = builder.Build();
         app.UseTransportSecurity(app.Environment);

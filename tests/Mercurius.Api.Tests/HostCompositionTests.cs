@@ -4,6 +4,7 @@ using Mercurius.TestInfrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -100,6 +101,27 @@ public sealed class HostCompositionTests
         Assert.Contains(
             app.Services.GetRequiredService<IOptions<AuthorizationOptions>>().Value.FallbackPolicy!.Requirements,
             requirement => requirement is DenyAnonymousAuthorizationRequirement);
+    }
+
+    [Theory]
+    [InlineData(null, "https://*.mercurius-aalst.be")]
+    [InlineData("https://*.example.test", "https://*.example.test")]
+    public async Task CreateApp_ReadsCorsOriginsFromConfiguration(string? configuredOrigin, string expectedOrigin)
+    {
+        // Arrange
+        string[] args =
+        [
+            .. CreateProductionArgs("Host=localhost"),
+            "--Database:ApplyMigrationsOnStartup=false",
+            .. configuredOrigin is null ? [] : new[] { $"--Cors:AllowedOrigins:0={configuredOrigin}" }
+        ];
+        await using var app = Program.CreateApp(args);
+
+        // Act
+        var policy = app.Services.GetRequiredService<IOptions<CorsOptions>>().Value.GetPolicy("AllowMercuriusAalst");
+
+        // Assert
+        Assert.Equal([expectedOrigin], policy!.Origins);
     }
 
     private static readonly string StorageLocation = Path.Combine(Path.GetTempPath(), "mercurius-host-tests");
