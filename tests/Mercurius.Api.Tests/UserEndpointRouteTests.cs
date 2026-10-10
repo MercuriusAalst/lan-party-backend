@@ -96,8 +96,8 @@ public class UserEndpointRouteTests
     {
         var endpoint = GetUserRouteEndpoint("GET", "v{version:apiVersion}/lan/users/");
 
-        var rateLimitMetadata = Assert.Single(endpoint.Metadata.Where(metadata =>
-            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null));
+        var rateLimitMetadata = Assert.Single(endpoint.Metadata, metadata =>
+            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null);
         var policyName = rateLimitMetadata.GetType().GetProperty("PolicyName")!.GetValue(rateLimitMetadata);
 
         Assert.Equal(RateLimitPolicies.AuthenticatedSearch, policyName);

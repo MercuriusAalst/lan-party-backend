@@ -51,7 +51,7 @@ public class DiscoverySearchOptimizationTests
         Assert.Equal("C", normalizedText.GetCollation());
         Assert.Equal("is_deleted = false", activeTextIndex.GetFilter());
         Assert.DoesNotContain("entity_type", activeTextIndex.GetFilter(), StringComparison.Ordinal);
-        Assert.Single(entity.GetIndexes().Where(index => index.GetFilter() == "is_deleted = false"));
+        Assert.Single(entity.GetIndexes(), index => index.GetFilter() == "is_deleted = false");
         Assert.DoesNotContain("active_exact_order", entity.GetIndexes().Select(index => index.GetDatabaseName()));
     }
 

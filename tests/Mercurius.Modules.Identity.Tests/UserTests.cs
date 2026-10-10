@@ -27,7 +27,9 @@ public class UserTests
         var entityType = dbContext.Model.FindEntityType(typeof(User));
 
         Assert.NotNull(entityType);
-        Assert.Equal([nameof(User.Id)], entityType.FindPrimaryKey()?.Properties.Select(property => property.Name).ToArray());
+        var primaryKey = entityType.FindPrimaryKey();
+        Assert.NotNull(primaryKey);
+        Assert.Equal([nameof(User.Id)], primaryKey.Properties.Select(property => property.Name).ToArray());
 
         var indexes = entityType.GetIndexes().ToList();
         AssertUniqueIndex(indexes, nameof(User.Auth0UserId), filter: null);
