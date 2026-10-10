@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Migrations;
 using Microsoft.EntityFrameworkCore;
@@ -73,6 +74,24 @@ public sealed class ModuleEventingReliabilityTests
         var messageId = await PublishAsync(provider, "poison", now.UtcDateTime, isPoison: true);
         await using var scope = provider.CreateAsyncScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<IModuleEventDispatcher>();
+        var deadLetterEventTypes = new System.Collections.Concurrent.ConcurrentQueue<string?>();
+        using var meterListener = new MeterListener
+        {
+            InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == "Mercurius.Eventing" && instrument.Name == "mercurius.outbox.dead_lettered")
+                    listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "event_type")
+                    deadLetterEventTypes.Enqueue(tag.Value as string);
+            }
+        });
+        meterListener.Start();
 
         Assert.Equal(0, await dispatcher.DispatchPendingAsync(1));
         var message = await LoadMessageAsync(provider, messageId);
@@ -90,6 +109,7 @@ public sealed class ModuleEventingReliabilityTests
         message = await LoadMessageAsync(provider, messageId);
         Assert.Equal(4, message.RetryCount);
         Assert.Equal(now.UtcDateTime.AddSeconds(75), message.NextAttemptAtUtc);
+        Assert.DoesNotContain(message.EventType, deadLetterEventTypes);
 
         timeProvider.Advance(TimeSpan.FromSeconds(40));
         Assert.Equal(0, await dispatcher.DispatchPendingAsync(1));
@@ -101,6 +121,7 @@ public sealed class ModuleEventingReliabilityTests
         Assert.Null(message.ClaimToken);
         Assert.Null(message.ClaimExpiresAtUtc);
         Assert.Contains("planned poison failure", message.LastError, StringComparison.Ordinal);
+        Assert.Single(deadLetterEventTypes, eventType => eventType == message.EventType);
 
         timeProvider.Advance(TimeSpan.FromDays(1));
         Assert.Equal(0, await dispatcher.DispatchPendingAsync(1));

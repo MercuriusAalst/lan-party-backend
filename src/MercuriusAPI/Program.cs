@@ -37,6 +37,7 @@ public class Program
             }
         }
 
+        builder.AddObservability();
         var mediaUploadRequestLimits = MediaUploadRequestLimits.FromConfiguration(builder.Configuration);
 
         builder.WebHost.ConfigureKestrel(options =>

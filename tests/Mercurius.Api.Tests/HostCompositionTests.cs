@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 
 namespace Mercurius.Api.Tests;
 
@@ -122,6 +124,23 @@ public sealed class HostCompositionTests
 
         // Assert
         Assert.Equal([expectedOrigin], policy!.Origins);
+    }
+
+    [Fact]
+    public async Task CreateApp_EnablesOpenTelemetryOnlyWhenOtlpEndpointIsConfigured()
+    {
+        // Arrange
+        string[] args = [.. CreateProductionArgs("Host=localhost"), "--Database:ApplyMigrationsOnStartup=false"];
+
+        // Act
+        await using var withoutEndpoint = Program.CreateApp(args);
+        await using var withEndpoint = Program.CreateApp([.. args, "--OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317"]);
+
+        // Assert
+        Assert.Null(withoutEndpoint.Services.GetService<TracerProvider>());
+        Assert.Null(withoutEndpoint.Services.GetService<MeterProvider>());
+        Assert.NotNull(withEndpoint.Services.GetService<TracerProvider>());
+        Assert.NotNull(withEndpoint.Services.GetService<MeterProvider>());
     }
 
     private static readonly string StorageLocation = Path.Combine(Path.GetTempPath(), "mercurius-host-tests");
