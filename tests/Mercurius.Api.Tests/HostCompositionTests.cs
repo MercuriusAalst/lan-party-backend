@@ -75,6 +75,7 @@ public sealed class HostCompositionTests
         finally
         {
             await app.StopAsync();
+            File.Delete(Path.Combine(StorageLocation, imageName));
         }
     }
 
