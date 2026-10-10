@@ -15,7 +15,7 @@ public class TournamentTests
         ParticipationMode participationMode = ParticipationMode.Individual,
         int? teamSize = null)
     {
-        return new TournamentAggregate(name, bracketType, format, finalsFormat, participationMode, teamSize ?? (participationMode == ParticipationMode.Team ? 5 : null));
+        return new TournamentAggregate(name, bracketType, format, finalsFormat, participationMode, teamSize ?? (participationMode == ParticipationMode.Team ? 5 : null), DateTime.UtcNow, 30, 10);
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public class TournamentTests
         AddIndividualRegistration(tournament, CreateUser(1));
         AddIndividualRegistration(tournament, CreateUser(2));
 
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
 
         Assert.Equal(TournamentStatus.InProgress, tournament.Status);
         Assert.True(tournament.StartTime <= DateTime.UtcNow && tournament.StartTime > DateTime.UtcNow.AddMinutes(-1));
@@ -176,7 +176,7 @@ public class TournamentTests
         AddIndividualRegistration(tournament, CreateUser(1));
         AddIndividualRegistration(tournament, CreateUser(2));
 
-        Assert.Throws<ValidationException>(() => tournament.Start());
+        Assert.Throws<ValidationException>(() => tournament.Start(DateTime.UtcNow));
     }
 
     [Fact]
@@ -185,7 +185,7 @@ public class TournamentTests
         var tournament = CreateTournament();
         AddIndividualRegistration(tournament, CreateUser(1));
 
-        Assert.Throws<ValidationException>(() => tournament.Start());
+        Assert.Throws<ValidationException>(() => tournament.Start(DateTime.UtcNow));
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class TournamentTests
         var tournament = CreateTournament();
         tournament.Set(x => x.Status, TournamentStatus.InProgress);
 
-        tournament.Complete();
+        tournament.Complete(DateTime.UtcNow);
 
         Assert.Equal(TournamentStatus.Completed, tournament.Status);
         Assert.True(tournament.EndTime <= DateTime.UtcNow && tournament.EndTime > DateTime.UtcNow.AddMinutes(-1));
@@ -206,7 +206,7 @@ public class TournamentTests
         var tournament = CreateTournament();
         tournament.Set(x => x.Status, TournamentStatus.Scheduled);
 
-        Assert.Throws<ValidationException>(() => tournament.Complete());
+        Assert.Throws<ValidationException>(() => tournament.Complete(DateTime.UtcNow));
     }
 
     [Theory]

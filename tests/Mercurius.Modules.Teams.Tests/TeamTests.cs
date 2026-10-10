@@ -368,7 +368,7 @@ public class TeamTests
         var userToInvite = CreateUser();
         team.AddMember(userToInvite.Id);
         // Act & Assert
-        Assert.Throws<ValidationException>(() => team.InviteUser(userToInvite.Id, 7));
+        Assert.Throws<ValidationException>(() => team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7));
     }
 
     [Fact]
@@ -379,7 +379,7 @@ public class TeamTests
         var userToInvite = CreateUser();
         team.TeamInvites.Add(new TeamInvite { UserId = userToInvite.Id, TeamId = team.Id, Status = TeamInviteStatus.Pending });
         // Act & Assert
-        Assert.Throws<ValidationException>(() => team.InviteUser(userToInvite.Id, 7));
+        Assert.Throws<ValidationException>(() => team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7));
     }
 
     [Fact]
@@ -390,7 +390,7 @@ public class TeamTests
         var userToInvite = CreateUser();
         team.TeamInvites.Clear(); // Ensure no existing invites
         // Act
-        team.InviteUser(userToInvite.Id, 7);
+        team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7);
         // Assert
         Assert.Single(team.TeamInvites);
         Assert.Equal(userToInvite.Id, team.TeamInvites.First().UserId);
@@ -413,7 +413,7 @@ public class TeamTests
             RespondedAt = DateTime.UtcNow.AddDays(-5) // Declined 5 days ago
         });
 
-        var invite = team.InviteUser(userToInvite.Id, 7);
+        var invite = team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7);
 
         Assert.Equal(TeamInviteStatus.Pending, invite.Status);
     }
@@ -435,7 +435,7 @@ public class TeamTests
             });
         }
 
-        Assert.Throws<ValidationException>(() => team.InviteUser(userToInvite.Id, 7));
+        Assert.Throws<ValidationException>(() => team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7));
     }
 
     [Fact]
@@ -445,13 +445,13 @@ public class TeamTests
         var team = CreateTeam();
         var userToInvite = CreateUser();
         team.TeamInvites.Clear(); // Ensure no existing invites
-        var invite = team.InviteUser(userToInvite.Id, 7);
+        var invite = team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7);
 
         //Have to do this manually because Actual references are handled by EF Core
         invite.Team = team;
 
         // Act
-        invite.Respond(true);
+        invite.Respond(true, DateTime.UtcNow);
 
         // Assert
         Assert.Equal(TeamInviteStatus.Accepted, invite.Status);
@@ -466,9 +466,9 @@ public class TeamTests
         var team = CreateTeam();
         var userToInvite = CreateUser();
         team.TeamInvites.Clear(); // Ensure no existing invites
-        var invite = team.InviteUser(userToInvite.Id, 7);
+        var invite = team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7);
         // Act
-        invite.Respond(false);
+        invite.Respond(false, DateTime.UtcNow);
         // Assert
         Assert.Equal(TeamInviteStatus.Declined, invite.Status);
         Assert.DoesNotContain(team.Members, member => member.UserId == userToInvite.Id);
@@ -482,11 +482,11 @@ public class TeamTests
         var team = CreateTeam();
         var userToInvite = CreateUser();
         team.TeamInvites.Clear(); // Ensure no existing invites
-        var invite = team.InviteUser(userToInvite.Id, 7);
+        var invite = team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7);
         invite.Team = team;
         invite.Status = TeamInviteStatus.Accepted; // Change status to Accepted
         // Act & Assert
-        Assert.Throws<ValidationException>(() => invite.Respond(true));
+        Assert.Throws<ValidationException>(() => invite.Respond(true, DateTime.UtcNow));
     }
 
     [Fact]
@@ -494,11 +494,11 @@ public class TeamTests
     {
         var team = CreateTeam();
         var userToInvite = CreateUser();
-        var invite = team.InviteUser(userToInvite.Id, 7);
+        var invite = team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7);
         invite.Team = team;
         invite.ExpiresAt = DateTime.UtcNow.AddMinutes(-1);
 
-        Assert.Throws<ValidationException>(() => invite.Respond(true));
+        Assert.Throws<ValidationException>(() => invite.Respond(true, DateTime.UtcNow));
         Assert.Equal(TeamInviteStatus.Expired, invite.Status);
         Assert.NotNull(invite.ExpiredAt);
     }
@@ -586,7 +586,7 @@ public class TeamTests
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
-        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, (TournamentStatus)status);
         dbContext.Users.AddRange(captain, member);
@@ -667,7 +667,7 @@ public class TeamTests
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
-        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.InProgress);
         dbContext.Users.AddRange(captain, member);
@@ -693,7 +693,7 @@ public class TeamTests
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
-        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, (TournamentStatus)status);
         dbContext.Users.AddRange(captain, member);
@@ -735,7 +735,7 @@ public class TeamTests
         await using var dbContext = CreateDbContext();
         var captain = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1)
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, (TournamentStatus)status);
         dbContext.Users.Add(captain);
@@ -761,7 +761,7 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         team.LogoUrl = "/images/alpha.webp";
         team.AddMember(member.Id);
-        var tournament = new TournamentAggregate("Completed Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
+        var tournament = new TournamentAggregate("Completed Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.Completed);
         var placement = new Placement { Id = Guid.NewGuid(), Tournament = tournament, TournamentId = tournament.Id, Place = 1 };
@@ -955,7 +955,7 @@ public class TeamTests
         var captain = CreateUser();
         var team = CreateTeam("Alpha", captain);
         team.LogoUrl = "/images/original.webp";
-        var tournament = new TournamentAggregate("Completed Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1)
+        var tournament = new TournamentAggregate("Completed Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.Completed);
         dbContext.Users.Add(captain);
@@ -1028,7 +1028,7 @@ public class TeamTests
         var member = CreateUser();
         var team = CreateTeam("Tournament Team", captain);
         team.AddMember(member.Id);
-        var tournament = new TournamentAggregate("Team Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2).Set(x => x.Id, Guid.NewGuid());
+        var tournament = new TournamentAggregate("Team Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10).Set(x => x.Id, Guid.NewGuid());
         var rosterMember = new TournamentRegistrationRosterMember
         {
             Id = Guid.NewGuid(),
@@ -1654,7 +1654,8 @@ public class TeamTests
                 RetentionDays = 90,
                 MaintenanceBatchSize = 10,
                 MaintenanceEventConcurrency = 2
-            }));
+            }),
+            TimeProvider.System);
         var maintenanceTask = maintenanceService.RunBatchAsync();
         var maintenanceWasBlockedByDelete = false;
         try
@@ -1961,7 +1962,7 @@ public class TeamTests
         await using var dbContext = PostgresTestDatabase.CreateDbContext();
         var (member, _) = await SeedCrossModuleReferencesAsync(dbContext);
 
-        await new Mercurius.Modules.Identity.Application.Services.UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!, null!).DeleteUserByIdAsync(member.Id);
+        await new Mercurius.Modules.Identity.Application.Services.UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!, null!, TimeProvider.System).DeleteUserByIdAsync(member.Id);
 
         dbContext.ChangeTracker.Clear();
         Assert.True(await dbContext.Users.AnyAsync(user => user.Id == member.Id && user.IsDeleted));
@@ -1994,7 +1995,7 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
         var otherTeam = CreateTeam("Bravo", captain);
-        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2).Set(x => x.Id, Guid.NewGuid());
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10).Set(x => x.Id, Guid.NewGuid());
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.AddRange(team, otherTeam);
         dbContext.Set<TeamInvite>().Add(CreatePendingInvite(otherTeam, member));
@@ -2141,12 +2142,14 @@ public class TeamTests
                 identityModule,
                 mediaModule ?? new StubMediaModule("https://example.test/default-team-logo.webp"),
                 tournamentReadService ?? new StubTeamTournamentReadService(dbContext),
-                logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance),
+                logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance,
+                TimeProvider.System),
             teamsDbContext,
             identityModule,
             eventPublisher ?? new NoopTeamEventPublisher(),
             moduleEventPublisher ?? new NoopModuleEventPublisher(),
-            realtimeConnectionManager ?? new NoopRealtimeConnectionManager());
+            realtimeConnectionManager ?? new NoopRealtimeConnectionManager(),
+            TimeProvider.System);
     }
 
     private static TeamService CreateTeamQueryService(
@@ -2169,7 +2172,8 @@ public class TeamTests
             identityModule,
             new StubMediaModule("https://example.test/default-team-logo.webp"),
             new StubTeamTournamentReadService(dbContext),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance,
+            TimeProvider.System);
     }
 
     private static IFormFile CreateFormFile(string contentType = "image/png")

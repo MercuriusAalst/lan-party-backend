@@ -61,7 +61,10 @@ public sealed class TournamentTeamReadServiceTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             ParticipationMode.Team,
-            5).Set(x => x.Id, Guid.NewGuid());
+            5,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static TournamentRegistration CreateTeamRegistration(TournamentAggregate tournament, string logoUrl)

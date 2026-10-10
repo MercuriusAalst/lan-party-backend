@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using System.Security.Claims;
+using Platform.Extensions;
 
 namespace Mercurius.Modules.Identity.Endpoints;
 
@@ -37,25 +38,25 @@ internal static class UserEndpoints
 
         group.MapGet("/me", async (ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.GetCurrentUserAsync(GetAuth0UserId(user));
+            return await userService.GetCurrentUserAsync(user.GetAuth0UserId());
         })
         .RequireAuthorization();
 
         group.MapPut("/me", async (CompleteUserProfileRequest request, ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.CreateCurrentUserAsync(GetAuth0UserId(user), request);
+            return await userService.CreateCurrentUserAsync(user.GetAuth0UserId(), request);
         })
         .RequireAuthorization();
 
         group.MapPatch("/me", async (UpdateUserProfileRequest request, ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.UpdateCurrentUserAsync(GetAuth0UserId(user), request);
+            return await userService.UpdateCurrentUserAsync(user.GetAuth0UserId(), request);
         })
         .RequireAuthorization();
 
         group.MapGet("/me/username-availability", async (string username, ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.CheckUsernameAvailabilityAsync(GetAuth0UserId(user), username);
+            return await userService.CheckUsernameAvailabilityAsync(user.GetAuth0UserId(), username);
         })
         .RequireAuthorization();
 
@@ -89,19 +90,19 @@ internal static class UserEndpoints
 
         group.MapPost("/me/resend-verification-email", async (ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.ResendVerificationEmailAsync(GetAuth0UserId(user));
+            return await userService.ResendVerificationEmailAsync(user.GetAuth0UserId());
         })
         .RequireAuthorization();
 
         group.MapPost("/me/password-reset", async (ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.SendPasswordResetEmailAsync(GetAuth0UserId(user));
+            return await userService.SendPasswordResetEmailAsync(user.GetAuth0UserId());
         })
         .RequireAuthorization();
 
         group.MapDelete("/me", async (ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.AnonymizeCurrentUserAsync(GetAuth0UserId(user));
+            return await userService.AnonymizeCurrentUserAsync(user.GetAuth0UserId());
         })
         .RequireAuthorization();
 
@@ -156,15 +157,6 @@ internal static class UserEndpoints
         });
 
         return group;
-    }
-
-    private static string GetAuth0UserId(ClaimsPrincipal user)
-    {
-        var subject = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(subject))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-
-        return subject;
     }
 
     private static IResult? ValidatePaging(int? page, int? pageSize)

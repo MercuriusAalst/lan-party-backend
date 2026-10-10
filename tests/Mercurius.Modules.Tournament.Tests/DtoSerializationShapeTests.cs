@@ -286,7 +286,10 @@ public class DtoSerializationShapeTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             participationMode,
-            teamSize)
+            teamSize,
+            DateTime.UtcNow,
+            30,
+            10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.ImageUrl, "/images/contract-cup.png")
             .Set(x => x.PlannedStartTime, new DateTime(2026, 7, 1, 18, 0, 0, DateTimeKind.Utc))

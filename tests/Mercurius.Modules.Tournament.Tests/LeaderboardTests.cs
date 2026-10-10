@@ -32,7 +32,7 @@ public sealed class LeaderboardTests
     {
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
 
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
 
         Assert.Equal(TournamentStatus.InProgress, tournament.Status);
         Assert.Empty(tournament.Matches);
@@ -71,7 +71,7 @@ public sealed class LeaderboardTests
     public void AttemptValidation_PreservesSupportedPrecisionAndRejectsWrongMetric()
     {
         var scores = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
-        scores.Start();
+        scores.Start(DateTime.UtcNow);
         var recorded = scores.RecordLeaderboardAttempt(
             null,
             null,
@@ -99,7 +99,7 @@ public sealed class LeaderboardTests
             DateTime.UtcNow));
 
         var times = CreateTournament(metric: LeaderboardRankingMetric.FastestTime);
-        times.Start();
+        times.Start(DateTime.UtcNow);
         var timed = times.RecordLeaderboardAttempt(null, null, "Runner", null, null, 1, DateTime.UtcNow);
         Assert.Equal(1, timed.Attempt.DurationMilliseconds);
         Assert.Throws<ValidationException>(() => times.RecordLeaderboardAttempt(
@@ -126,7 +126,7 @@ public sealed class LeaderboardTests
             null,
             DateTime.UtcNow));
 
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
         Assert.Throws<ValidationException>(() => tournament.RecordLeaderboardAttempt(
             null,
             null,
@@ -226,7 +226,7 @@ public sealed class LeaderboardTests
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
         AddParticipant(tournament, "Guest winner", null, 50m);
         AddParticipant(tournament, "Guest tie", null, 50m);
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
         seedDb.Set<TournamentAggregate>().Add(tournament);
         await seedDb.SaveChangesAsync();
         seedDb.ChangeTracker.Clear();
@@ -253,7 +253,7 @@ public sealed class LeaderboardTests
         var options = CreateDbOptions();
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.FastestTime);
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
         seedDb.Set<TournamentAggregate>().Add(tournament);
         await seedDb.SaveChangesAsync();
         seedDb.ChangeTracker.Clear();
@@ -278,7 +278,7 @@ public sealed class LeaderboardTests
         var options = CreateDbOptionsIgnoringInMemoryTransactions();
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
         seedDb.Set<TournamentAggregate>().Add(tournament);
         await seedDb.SaveChangesAsync();
         seedDb.ChangeTracker.Clear();
@@ -311,7 +311,7 @@ public sealed class LeaderboardTests
         var options = CreateDbOptionsIgnoringInMemoryTransactions();
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
         seedDb.Set<TournamentAggregate>().Add(tournament);
         await seedDb.SaveChangesAsync();
         seedDb.ChangeTracker.Clear();
@@ -414,7 +414,8 @@ public sealed class LeaderboardTests
 
     private static LeaderboardService CreateLeaderboardService(MercuriusDBContext db, IReadOnlyCollection<User>? users = null) => new(
         new TournamentDbContextAdapter<MercuriusDBContext>(db),
-        TournamentTestSupport.CreateIdentityModule(users));
+        TournamentTestSupport.CreateIdentityModule(users),
+        TimeProvider.System);
 
     private static TournamentService CreateService(MercuriusDBContext db) => new(
         new TournamentDbContextAdapter<MercuriusDBContext>(db),
@@ -424,7 +425,8 @@ public sealed class LeaderboardTests
         TournamentTestSupport.CreateSponsorshipModule(),
         TournamentTestSupport.CreateMapper(),
         TournamentTestSupport.CreateModuleEventPublisher(),
-        Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+        TimeProvider.System);
 
     private sealed class LeaderboardModeratorFactory : IMatchModeratorFactory
     {

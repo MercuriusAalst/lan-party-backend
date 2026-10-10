@@ -26,7 +26,11 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual).Set(x => x.Status, TournamentStatus.Completed);
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Status, TournamentStatus.Completed);
         var match = new Match()
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.TournamentId, tournament.Id)
@@ -71,7 +75,11 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual).Set(x => x.Status, TournamentStatus.InProgress);
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Status, TournamentStatus.InProgress);
         var match = new Match()
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.TournamentId, tournament.Id)
@@ -118,7 +126,11 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.InProgress);
         var participant1Id = Guid.NewGuid();
@@ -248,7 +260,11 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.InProgress);
         var match = new Match()

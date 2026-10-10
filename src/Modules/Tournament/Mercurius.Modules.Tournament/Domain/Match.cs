@@ -359,11 +359,9 @@ internal sealed class Match
             ResultVersion++;
     }
 
-    public void Start() => StartTime = DateTime.UtcNow;
-
-    public void Finish()
+    public void Finish(DateTime nowUtc)
     {
-        EndTime = DateTime.UtcNow;
+        EndTime = nowUtc;
         LifecycleState = MatchLifecycleState.Completed;
         ResultKind = MatchResultKind.Score;
         ResultRecordedAtUtc = EndTime;
@@ -393,7 +391,7 @@ internal sealed class Match
         EstimatedEndTime = estimatedEndTime;
     }
 
-    public void SetScoresAndWinner(int participant1Score, int participant2Score)
+    public void SetScoresAndWinner(int participant1Score, int participant2Score, DateTime nowUtc)
     {
         if (participant1Score < 0 || participant2Score < 0)
             throw new ValidationException("Scores cannot be negative");
@@ -417,12 +415,12 @@ internal sealed class Match
         if (participant1Score == winsNeeded && participant1Score > participant2Score)
         {
             SetWinnerAndLoser(GetParticipant1Id(), GetParticipant2Id());
-            Finish();
+            Finish(nowUtc);
         }
         else if (participant2Score == winsNeeded && participant2Score > participant1Score)
         {
             SetWinnerAndLoser(GetParticipant2Id(), GetParticipant1Id());
-            Finish();
+            Finish(nowUtc);
         }
         else
         {

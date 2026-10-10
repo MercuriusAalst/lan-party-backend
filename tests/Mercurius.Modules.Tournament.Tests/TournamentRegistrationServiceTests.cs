@@ -781,7 +781,8 @@ public class TournamentRegistrationServiceTests
                 new RegistrationMappingContextBuilder(identityModule, teamsModule),
                 new NullSponsorshipModule()),
             publisher ?? TournamentTestSupport.CreateRealtimePublisher(),
-            NullLogger<TournamentRegistrationService>.Instance);
+            NullLogger<TournamentRegistrationService>.Instance,
+            TimeProvider.System);
     }
 
     private static MercuriusDBContext CreateDbContext()
@@ -804,12 +805,12 @@ public class TournamentRegistrationServiceTests
 
     private static TournamentAggregate CreateIndividualTournament()
     {
-        return new TournamentAggregate("Solo Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf3, ParticipationMode.Individual).Set(x => x.Id, Guid.NewGuid());
+        return new TournamentAggregate("Solo Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf3, ParticipationMode.Individual, null, DateTime.UtcNow, 30, 10).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static TournamentAggregate CreateTeamTournament(int teamSize)
     {
-        return new TournamentAggregate("Team Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf3, ParticipationMode.Team, teamSize).Set(x => x.Id, Guid.NewGuid());
+        return new TournamentAggregate("Team Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf3, ParticipationMode.Team, teamSize, DateTime.UtcNow, 30, 10).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static Team CreateTeam(User captain, params User[] members)

@@ -23,6 +23,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
     private readonly IIdentityModule _identityModule;
     private readonly ITeamTournamentReadService _tournamentReadService;
     private readonly ILogger<TeamService> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly int _inviteResendCooldownDays;
     private readonly int _inviteExpirationDays;
     private readonly int _declinedInviteResendLimit;
@@ -34,13 +35,15 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         IIdentityModule identityModule,
         IMediaModule mediaModule,
         ITeamTournamentReadService tournamentReadService,
-        ILogger<TeamService> logger)
+        ILogger<TeamService> logger,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _mediaModule = mediaModule ?? throw new ArgumentNullException(nameof(mediaModule));
         _identityModule = identityModule ?? throw new ArgumentNullException(nameof(identityModule));
         _tournamentReadService = tournamentReadService ?? throw new ArgumentNullException(nameof(tournamentReadService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _timeProvider = timeProvider;
         _inviteResendCooldownDays = configuration.GetSection("TeamInvite:ResendCooldownDays").Get<int>();
         _inviteExpirationDays = configuration.GetSection("TeamInvite:ExpirationDays").Get<int?>() ?? 14;
         _declinedInviteResendLimit = configuration.GetSection("TeamInvite:DeclinedResendLimit").Get<int?>() ?? 3;
@@ -98,7 +101,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         if (team.IsDeleted)
             return null;
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var deletionState = GetTeamDeletionState(team, now);
         team.Delete(now);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -128,7 +131,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         if (await _tournamentReadService.IsTeamInDeleteBlockingTournamentAsync(teamId, cancellationToken))
             throw new ValidationException("Cannot delete a team that is actively participating in a tournament.");
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var deletionState = GetTeamDeletionState(team, now);
         team.Delete(now);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -349,7 +352,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         if (await GetUserProfileAsync(userId, cancellationToken) is null)
             throw new NotFoundException("User not found");
         await ExpirePendingInviteAsync(teamId, userId, cancellationToken);
-        var invite = team.InviteUser(userId, _inviteResendCooldownDays, _inviteExpirationDays, _declinedInviteResendLimit);
+        var invite = team.InviteUser(userId, UtcNow(), _inviteResendCooldownDays, _inviteExpirationDays, _declinedInviteResendLimit);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return new TeamInviteDTO(invite);
     }
@@ -365,7 +368,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             throw new NotFoundException("User not found");
 
         await ExpirePendingInviteAsync(teamId, userId, cancellationToken);
-        var invite = team.InviteUser(userId, _inviteResendCooldownDays, _inviteExpirationDays, _declinedInviteResendLimit);
+        var invite = team.InviteUser(userId, UtcNow(), _inviteResendCooldownDays, _inviteExpirationDays, _declinedInviteResendLimit);
         await SaveInviteChangesAsync(cancellationToken);
         return new TeamInviteDTO(invite);
     }
@@ -382,7 +385,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             throw new NotFoundException("Invite not found");
 
         EnsureCaptain(invite.Team, currentUser.Id.Value);
-        invite.Cancel();
+        invite.Cancel(UtcNow());
         await _dbContext.SaveChangesAsync(cancellationToken);
         return new TeamInviteDTO(invite);
     }
@@ -397,7 +400,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             throw new NotFoundException("No pending invite found");
         if (invite.Team.IsDeleted)
             throw new NotFoundException("No pending invite found");
-        invite.Respond(accept);
+        invite.Respond(accept, UtcNow());
         await _dbContext.SaveChangesAsync(cancellationToken);
         return new TeamInviteDTO(invite);
     }
@@ -414,7 +417,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         if (invite.Team.IsDeleted)
             throw new NotFoundException("No pending invite found");
 
-        invite.Respond(accept);
+        invite.Respond(accept, UtcNow());
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new TeamInviteDTO(invite);
@@ -422,7 +425,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
 
     public async Task<IEnumerable<TeamInviteDTO>> GetUserInvitesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var invites = await TeamInvites
             .AsNoTracking()
             .Where(i => i.UserId == userId && i.Status == TeamInviteStatus.Pending && i.ExpiresAt > now)
@@ -442,7 +445,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
     public async Task<CurrentUserTeamSummaryDTO> GetCurrentUserTeamSummaryAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(auth0UserId, cancellationToken);
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
 
         var teams = await ProjectTeamReadRows(GetActiveTeamsQuery()
                 .Where(team =>
@@ -488,7 +491,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
     public async Task<IEnumerable<TeamInviteSummaryDTO>> GetCurrentUserInvitesAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(auth0UserId, cancellationToken);
-        var invites = await GetPendingInviteSummariesQuery(DateTime.UtcNow)
+        var invites = await GetPendingInviteSummariesQuery(UtcNow())
             .Where(invite => invite.UserId == currentUser.Id.Value)
             .OrderBy(invite => invite.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -499,7 +502,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
     public async Task<IEnumerable<TeamInviteSummaryDTO>> GetCurrentUserSentInvitesAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(auth0UserId, cancellationToken);
-        var invites = await GetPendingInviteSummariesQuery(DateTime.UtcNow)
+        var invites = await GetPendingInviteSummariesQuery(UtcNow())
             .Where(invite => invite.CaptainUserId == currentUser.Id.Value)
             .OrderBy(invite => invite.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -677,18 +680,8 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         return !string.IsNullOrWhiteSpace(username);
     }
 
-    private async Task<UserProfileSummary> GetCurrentUserAsync(string auth0UserId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(auth0UserId))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-
-        var user = await _identityModule.GetUserProfileByAuth0IdAsync(auth0UserId, cancellationToken);
-
-        if (user is null || user.IsDeleted)
-            throw new NotFoundException("Current user profile was not found.");
-
-        return user;
-    }
+    private Task<UserProfileSummary> GetCurrentUserAsync(string auth0UserId, CancellationToken cancellationToken) =>
+        _identityModule.GetRequiredCurrentUserAsync(auth0UserId, cancellationToken);
 
     private async Task<UserProfileSummary?> GetUserProfileAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -733,7 +726,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
 
     private async Task ExpirePendingInviteAsync(Guid teamId, Guid userId, CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var invites = await TeamInvites
             .Where(invite =>
                 invite.TeamId == teamId &&
@@ -742,7 +735,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
                 invite.ExpiresAt <= now)
             .ToListAsync(cancellationToken);
         foreach (var invite in invites)
-            invite.Expire();
+            invite.Expire(now);
 
         if (invites.Count > 0)
         {
@@ -988,5 +981,6 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         public DateTime CreatedAt { get; set; }
         public DateTime ExpiresAt { get; set; }
     }
-}
 
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+}

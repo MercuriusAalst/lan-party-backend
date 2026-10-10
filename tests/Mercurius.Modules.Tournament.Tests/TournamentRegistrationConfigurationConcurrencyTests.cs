@@ -187,7 +187,11 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf3,
-            ParticipationMode.Individual).Set(x => x.Id, Guid.NewGuid());
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Id, Guid.NewGuid());
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -215,7 +219,10 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             ParticipationMode.Team,
-            2).Set(x => x.Id, Guid.NewGuid());
+            2,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Id, Guid.NewGuid());
         var captain = new User
         {
             Id = Guid.NewGuid(),
@@ -285,7 +292,8 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
         TournamentTestSupport.CreateSponsorshipModule(),
         TournamentTestSupport.CreateMapper(),
         TournamentTestSupport.CreateModuleEventPublisher(),
-        NullLogger<TournamentService>.Instance);
+        NullLogger<TournamentService>.Instance,
+        TimeProvider.System);
 
     private static TournamentRegistrationService CreateRegistrationService(
         MercuriusDBContext db,
@@ -323,7 +331,8 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
                 mapper),
             mapper,
             TournamentTestSupport.CreateRealtimePublisher(),
-            NullLogger<TournamentRegistrationService>.Instance);
+            NullLogger<TournamentRegistrationService>.Instance,
+            TimeProvider.System);
     }
 
     private sealed class PausingTournamentDbContext(MercuriusDBContext inner) : ITournamentDbContext

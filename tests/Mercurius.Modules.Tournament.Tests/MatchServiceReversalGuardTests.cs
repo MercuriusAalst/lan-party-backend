@@ -23,7 +23,11 @@ public class MatchServiceReversalGuardTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.InProgress)
             .Set(x => x.AssignedAdminUserId, assignedAdmin.Id);
@@ -104,7 +108,11 @@ public class MatchServiceReversalGuardTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.InProgress)
             .Set(x => x.AssignedAdminUserId, assignedAdmin.Id);
@@ -176,7 +184,11 @@ public class MatchServiceReversalGuardTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.InProgress)
             .Set(x => x.AssignedAdminUserId, admin.Id);
@@ -402,7 +414,11 @@ public class MatchServiceReversalGuardTests
         bracketType,
         GameFormat.BestOf1,
         GameFormat.BestOf1,
-        ParticipationMode.Individual)
+        ParticipationMode.Individual,
+        null,
+        DateTime.UtcNow,
+        30,
+        10)
         .Set(x => x.Id, Guid.NewGuid())
         .Set(x => x.Status, TournamentStatus.InProgress)
         .Set(x => x.AssignedAdminUserId, admin.Id);

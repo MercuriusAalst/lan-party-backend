@@ -1184,7 +1184,7 @@ public class UserTests
         MercuriusDBContext dbContext,
         IAuth0ManagementService auth0ManagementService,
         IIdentityModule? identityModule = null) =>
-        new(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0ManagementService, identityModule ?? new RecordingIdentityModule());
+        new(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0ManagementService, identityModule ?? new RecordingIdentityModule(), TimeProvider.System);
 
     private static void AssertUniqueIndex(IEnumerable<IIndex> indexes, string propertyName, string? filter)
     {

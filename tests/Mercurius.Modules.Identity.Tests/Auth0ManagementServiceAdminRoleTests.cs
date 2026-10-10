@@ -132,7 +132,8 @@ public class Auth0ManagementServiceAdminRoleTests
         return new Auth0ManagementService(
             new HttpClient(handler),
             Microsoft.Extensions.Options.Options.Create(options),
-            NullLogger<Auth0ManagementService>.Instance);
+            NullLogger<Auth0ManagementService>.Instance,
+            TimeProvider.System);
     }
 
     private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK)

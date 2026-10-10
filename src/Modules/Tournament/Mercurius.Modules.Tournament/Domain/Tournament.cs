@@ -61,18 +61,6 @@ internal sealed class Tournament
         SetScheduleConfiguration(plannedStartTime, averageGameDurationMinutes, roundBreakDurationMinutes);
     }
 
-    public Tournament(
-        string name,
-        BracketType bracketType,
-        GameFormat format,
-        GameFormat finalsFormat,
-        ParticipationMode participationMode,
-        int? teamSize = null,
-        LeaderboardRankingMetric? leaderboardRankingMetric = null)
-        : this(name, bracketType, format, finalsFormat, participationMode, teamSize, DateTime.UtcNow, 30, 10, leaderboardRankingMetric)
-    {
-    }
-
     public Tournament()
     {
     }
@@ -119,23 +107,23 @@ internal sealed class Tournament
         Status = TournamentStatus.Canceled;
     }
 
-    public void Start()
+    public void Start(DateTime nowUtc)
     {
         if (Status != TournamentStatus.Scheduled)
             throw new ValidationException("Tournament has to be scheduled to be able to start");
         if (BracketType != BracketType.Leaderboard && GetRegisteredParticipantCount() < 2)
             throw new ValidationException("At least 2 participants required.");
 
-        StartTime = DateTime.UtcNow;
+        StartTime = nowUtc;
         Status = TournamentStatus.InProgress;
     }
 
-    public void Complete()
+    public void Complete(DateTime nowUtc)
     {
         if (Status != TournamentStatus.InProgress)
             throw new ValidationException("Tournament has to be in progress to be able to complete");
 
-        EndTime = DateTime.UtcNow;
+        EndTime = nowUtc;
         Status = TournamentStatus.Completed;
     }
 

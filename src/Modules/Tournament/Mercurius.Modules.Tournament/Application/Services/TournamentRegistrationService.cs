@@ -27,6 +27,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
     private readonly TournamentDtoMapper _mapper;
     private readonly ITournamentRealtimePublisher _realtimePublisher;
     private readonly ILogger<TournamentRegistrationService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public TournamentRegistrationService(
         ITournamentDbContext dbContext,
@@ -38,7 +39,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         TournamentRegistrationReadModelService readModelService,
         TournamentDtoMapper mapper,
         ITournamentRealtimePublisher realtimePublisher,
-        ILogger<TournamentRegistrationService> logger)
+        ILogger<TournamentRegistrationService> logger,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _identityModule = identityModule;
@@ -50,6 +52,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         _mapper = mapper;
         _realtimePublisher = realtimePublisher;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     public async Task<EligibilityResponseDTO> CheckIndividualEligibilityAsync(
@@ -122,7 +125,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             throw new ValidationException(string.Join(", ", reasons));
         var userProfile = (await GetActiveUserProfilesByIdAsync([userId], cancellationToken))[userId];
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var registration = new TournamentRegistration
         {
             Id = Guid.NewGuid(),
@@ -214,7 +217,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         if (failures.Count != 0)
             throw new ValidationException(string.Join(", ", failures));
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var registration = existing ?? new TournamentRegistration
         {
             Id = Guid.NewGuid(),
@@ -361,7 +364,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         if (candidateFailures.Count != 0)
             throw new ValidationException(string.Join(", ", candidateFailures));
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         member.Confirm(now);
         if (registration.RosterMembers.Count == registration.Tournament.TeamSize &&
             registration.RosterMembers.All(roster => roster.ConfirmationStatus is RosterMemberConfirmationStatus.AutoConfirmed or RosterMemberConfirmationStatus.Confirmed))
@@ -410,7 +413,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         if (!registration.TeamId.HasValue)
             throw new ValidationException("Team registration is invalid.");
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         registration.Status = TournamentRegistrationStatus.PendingConfirmation;
         registration.UpdatedAtUtc = now;
         _dbContext.TournamentRegistrationRosterMembers.Remove(member);
@@ -712,17 +715,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         return team;
     }
 
-    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(auth0UserId))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-
-        var user = await _identityModule.GetUserProfileByAuth0IdAsync(auth0UserId.Trim(), cancellationToken);
-        if (user is null || user.IsDeleted)
-            throw new NotFoundException("Current user profile was not found.");
-
-        return user.Id.Value;
-    }
+    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken) =>
+        (await _identityModule.GetRequiredCurrentUserAsync(auth0UserId, cancellationToken)).Id.Value;
 
     private async Task<IReadOnlyDictionary<Guid, UserProfileSummary>> GetActiveUserProfilesByIdAsync(
         IReadOnlyCollection<Guid> userIds,
@@ -749,4 +743,5 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             throw new ForbiddenException("team_captain_required", "Only the team captain can perform this action.");
     }
 
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 }

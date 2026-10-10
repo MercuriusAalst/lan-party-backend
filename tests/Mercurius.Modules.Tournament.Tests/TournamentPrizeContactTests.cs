@@ -306,7 +306,8 @@ public class TournamentPrizeContactTests
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(users),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
     }
 
     private static TournamentAggregate CreateTournament(Guid? contactAdminUserId = null)

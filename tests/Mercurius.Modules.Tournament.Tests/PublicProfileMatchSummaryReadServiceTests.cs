@@ -472,7 +472,10 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             mode,
-            mode == ParticipationMode.Team ? 2 : null).Set(x => x.Id, Guid.NewGuid());
+            mode == ParticipationMode.Team ? 2 : null,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static TournamentRegistration AddIndividualRegistration(

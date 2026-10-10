@@ -14,17 +14,20 @@ internal class UserService : IUserService
     private const string GenericVerificationMessage = "If verification is available for this account, a verification email has been sent.";
     private const string GenericPasswordResetMessage = "If password reset is available for this account, a password reset email has been sent.";
     private readonly IIdentityDbContext _dbContext;
+    private readonly TimeProvider _timeProvider;
     private readonly IAuth0ManagementService _auth0ManagementService;
     private readonly IIdentityModule _identityModule;
 
     public UserService(
         IIdentityDbContext dbContext,
         IAuth0ManagementService auth0ManagementService,
-        IIdentityModule identityModule)
+        IIdentityModule identityModule,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _auth0ManagementService = auth0ManagementService;
         _identityModule = identityModule;
+        _timeProvider = timeProvider;
     }
 
     public async Task<IReadOnlyList<GetUserDTO>> GetAllUsersAsync(
@@ -331,7 +334,7 @@ internal class UserService : IUserService
         EnsureActive(user);
 
         var auth0Profile = await _auth0ManagementService.GetUserProfileAsync(user.Auth0UserId);
-        user.SyncAuth0Profile(auth0Profile.Email, auth0Profile.EmailVerified, DateTime.UtcNow);
+        user.SyncAuth0Profile(auth0Profile.Email, auth0Profile.EmailVerified, UtcNow());
         await _dbContext.SaveChangesAsync();
 
         if (auth0Profile.HasPasswordResetIdentity && !string.IsNullOrWhiteSpace(auth0Profile.Email))
@@ -345,7 +348,7 @@ internal class UserService : IUserService
         var user = await GetRequiredCurrentUserAsync(auth0UserId);
         if (!user.IsDeleted)
         {
-            var deletedAtUtc = DateTime.UtcNow;
+            var deletedAtUtc = UtcNow();
             user.Anonymize(deletedAtUtc);
             await _dbContext.SaveChangesAsync();
         }
@@ -381,7 +384,7 @@ internal class UserService : IUserService
         if (user == null)
             throw new NotFoundException($"User '{username}' not found.");
 
-        var deletedAtUtc = DateTime.UtcNow;
+        var deletedAtUtc = UtcNow();
         user.Anonymize(deletedAtUtc);
         await _dbContext.SaveChangesAsync();
     }
@@ -392,7 +395,7 @@ internal class UserService : IUserService
         if (user == null)
             throw new NotFoundException($"User with ID {id} not found.");
 
-        var deletedAtUtc = DateTime.UtcNow;
+        var deletedAtUtc = UtcNow();
         user.Anonymize(deletedAtUtc);
         await _dbContext.SaveChangesAsync();
     }
@@ -413,7 +416,7 @@ internal class UserService : IUserService
         if (await _dbContext.Users.AnyAsync(u => u.Auth0UserId == normalizedAuth0UserId))
             throw new ValidationException("Auth0 user already exists");
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -465,7 +468,7 @@ internal class UserService : IUserService
             UserProfileValidationHelper.NormalizeOptionalPlatformId(discordId, "Discord ID"),
             UserProfileValidationHelper.NormalizeOptionalPlatformId(steamId, "Steam ID"),
             UserProfileValidationHelper.NormalizeOptionalPlatformId(riotId, "Riot ID"),
-            DateTime.UtcNow);
+            UtcNow());
     }
 
     private async Task SaveProfileChangesAsync()
@@ -532,4 +535,6 @@ internal class UserService : IUserService
     {
         return string.IsNullOrWhiteSpace(email) ? null : email.Trim();
     }
+
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 }

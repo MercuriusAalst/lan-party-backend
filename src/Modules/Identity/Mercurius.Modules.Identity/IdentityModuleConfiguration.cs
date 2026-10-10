@@ -20,6 +20,7 @@ public static class IdentityModuleConfiguration
         where TDbContext : DbContext
     {
         services.TryAddScoped<IIdentityDbContext, IdentityDbContextAdapter<TDbContext>>();
+        services.TryAddSingleton(TimeProvider.System);
         services.Configure<Auth0ManagementOptions>(configuration.GetSection(Auth0ManagementOptions.SectionName));
         services.AddTransient<IIdentityModule, IdentityModuleFacade>();
         services.AddHttpClient<IAuth0ManagementService, Auth0ManagementService>();

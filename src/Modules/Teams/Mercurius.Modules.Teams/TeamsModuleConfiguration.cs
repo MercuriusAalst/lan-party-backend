@@ -18,6 +18,7 @@ public static class TeamsModuleConfiguration
         where TDbContext : DbContext
     {
         services.TryAddScoped<ITeamsDbContext, TeamsDbContextAdapter<TDbContext>>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddTransient<ITeamsModule, TeamsModuleFacade>();
         services.AddScoped<TeamService>();
         services.AddScoped<ITeamQueries>(serviceProvider => serviceProvider.GetRequiredService<TeamService>());

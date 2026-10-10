@@ -15,6 +15,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
     private readonly HttpClient _httpClient;
     private readonly Auth0ManagementOptions _options;
     private readonly ILogger<Auth0ManagementService> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _managementToken;
     private DateTimeOffset _managementTokenExpiresAtUtc;
@@ -22,11 +23,13 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
     public Auth0ManagementService(
         HttpClient httpClient,
         IOptions<Auth0ManagementOptions> options,
-        ILogger<Auth0ManagementService> logger)
+        ILogger<Auth0ManagementService> logger,
+        TimeProvider timeProvider)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     public async Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default)
@@ -190,7 +193,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
     private async Task<string> GetManagementTokenAsync(CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(_managementToken) &&
-            _managementTokenExpiresAtUtc > DateTimeOffset.UtcNow.AddMinutes(1))
+            _managementTokenExpiresAtUtc > _timeProvider.GetUtcNow().AddMinutes(1))
         {
             return _managementToken;
         }
@@ -199,7 +202,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         try
         {
             if (!string.IsNullOrWhiteSpace(_managementToken) &&
-                _managementTokenExpiresAtUtc > DateTimeOffset.UtcNow.AddMinutes(1))
+                _managementTokenExpiresAtUtc > _timeProvider.GetUtcNow().AddMinutes(1))
             {
                 return _managementToken;
             }
@@ -217,7 +220,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
 
             var token = await response.Content.ReadFromJsonAsync<ManagementTokenResponse>(cancellationToken);
             _managementToken = token?.AccessToken ?? throw new InvalidOperationException("Auth0 did not return a management access token.");
-            _managementTokenExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(Math.Max(60, token.ExpiresIn - 60));
+            _managementTokenExpiresAtUtc = _timeProvider.GetUtcNow().AddSeconds(Math.Max(60, token.ExpiresIn - 60));
 
             return _managementToken;
         }

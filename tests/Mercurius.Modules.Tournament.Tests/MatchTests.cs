@@ -95,7 +95,7 @@ public class MatchTests
     {
         var match = CreateIndividualMatch((GameFormat)format);
 
-        match.SetScoresAndWinner(participant1Score, participant2Score);
+        match.SetScoresAndWinner(participant1Score, participant2Score, DateTime.UtcNow);
 
         Assert.Equal(match.UserParticipant1Id, match.UserWinnerId);
         Assert.Equal(match.UserParticipant2Id, match.UserLoserId);
@@ -106,7 +106,7 @@ public class MatchTests
     {
         var match = CreateTeamMatch(GameFormat.BestOf3);
 
-        match.SetScoresAndWinner(1, 2);
+        match.SetScoresAndWinner(1, 2, DateTime.UtcNow);
 
         Assert.Equal(match.TeamParticipant2Id, match.TeamWinnerId);
         Assert.Equal(match.TeamParticipant1Id, match.TeamLoserId);
@@ -119,7 +119,7 @@ public class MatchTests
     {
         var match = CreateIndividualMatch();
 
-        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(participant1Score, participant2Score));
+        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(participant1Score, participant2Score, DateTime.UtcNow));
 
         Assert.Equal("Scores cannot be negative", exception.Message);
     }
@@ -129,7 +129,7 @@ public class MatchTests
     {
         var match = CreateIndividualMatch(GameFormat.BestOf1);
 
-        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(1, 1));
+        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(1, 1, DateTime.UtcNow));
 
         Assert.Equal("Scores cannot be equal in Bo1 format", exception.Message);
     }

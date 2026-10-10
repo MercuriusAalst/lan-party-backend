@@ -14,22 +14,25 @@ internal sealed class TeamInviteMaintenanceService
     private readonly ITeamsDbContext _dbContext;
     private readonly ITeamEventPublisher _teamEventPublisher;
     private readonly TeamInviteMaintenanceOptions _options;
+    private readonly TimeProvider _timeProvider;
     private DbSet<TeamInvite> TeamInvites => _dbContext.Set<TeamInvite>();
 
     public TeamInviteMaintenanceService(
         ITeamsDbContext dbContext,
         ITeamEventPublisher teamEventPublisher,
-        IOptions<TeamInviteMaintenanceOptions> options)
+        IOptions<TeamInviteMaintenanceOptions> options,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _teamEventPublisher = teamEventPublisher ?? throw new ArgumentNullException(nameof(teamEventPublisher));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _timeProvider = timeProvider;
     }
 
     public async Task<int> RunBatchAsync(CancellationToken cancellationToken = default)
     {
         var relational = _dbContext.Database.IsRelational();
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var retentionCutoff = now.AddDays(-_options.RetentionDays);
         var lockedTeamIds = relational
             ? await GetMaintenanceTeamIdsAsync(now, retentionCutoff, cancellationToken)
@@ -56,7 +59,7 @@ internal sealed class TeamInviteMaintenanceService
                     await TeamMutationLock.AcquireAsync(_dbContext, teamId, cancellationToken);
             }
 
-            now = DateTime.UtcNow;
+            now = UtcNow();
             var expiredInvitesQuery = TeamInvites
                 .Where(invite =>
                     invite.Status == TeamInviteStatus.Pending &&
@@ -72,7 +75,7 @@ internal sealed class TeamInviteMaintenanceService
 
             foreach (var invite in expiredInvites)
             {
-                invite.Expire();
+                invite.Expire(now);
                 expiredEvents.Add(new ExpiredInviteEvent(invite.TeamId, invite.Id, invite.UserId));
             }
 
@@ -266,4 +269,6 @@ internal sealed class TeamInviteMaintenanceService
     }
 
     private sealed record ExpiredInviteEvent(Guid TeamId, Guid InviteId, Guid UserId);
+
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 }

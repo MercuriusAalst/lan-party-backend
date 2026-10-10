@@ -90,7 +90,10 @@ public sealed class MatchOpponentProfileTests
         GameFormat.BestOf1,
         GameFormat.BestOf1,
         mode,
-        mode == ParticipationMode.Team ? 2 : null)
+        mode == ParticipationMode.Team ? 2 : null,
+        DateTime.UtcNow,
+        30,
+        10)
         .Set(x => x.Id, Guid.NewGuid())
         .Set(x => x.Status, TournamentStatus.InProgress);
 

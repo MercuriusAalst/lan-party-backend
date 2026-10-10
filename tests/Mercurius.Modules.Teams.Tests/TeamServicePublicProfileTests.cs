@@ -150,7 +150,8 @@ public class TeamServicePublicProfileTests
             new DbContextIdentityModule(dbContext),
             new NoopMediaModule(),
             tournamentReadService: new StubTeamTournamentReadService(dbContext),
-            logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance);
+            logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance,
+            TimeProvider.System);
     }
 
     private static MercuriusDBContext CreateDbContext()
@@ -186,7 +187,10 @@ public class TeamServicePublicProfileTests
             GameFormat.BestOf3,
             GameFormat.BestOf5,
             ParticipationMode.Team,
-            5).Set(x => x.Id, id);
+            5,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Id, id);
     }
 
     private static void AddActiveTeamRegistration(MercuriusDBContext dbContext, TournamentAggregate tournament, Team team, User captain)

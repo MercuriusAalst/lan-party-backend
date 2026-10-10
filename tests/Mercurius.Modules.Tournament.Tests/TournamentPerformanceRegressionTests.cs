@@ -454,7 +454,8 @@ public class TournamentPerformanceRegressionTests
                 sponsorPlacement: sponsorPlacement,
                 sponsorshipModule: sponsorshipModule),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
     }
 
     private static MercuriusDBContext CreateDbContext()

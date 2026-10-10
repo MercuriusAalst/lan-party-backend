@@ -22,6 +22,7 @@ internal sealed class SearchIndexRebuildService
     private readonly ITournamentModule _tournamentModule;
     private readonly ISponsorshipModule _sponsorshipModule;
     private readonly ILogger<SearchIndexRebuildService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public SearchIndexRebuildService(
         IDiscoveryDbContext dbContext,
@@ -30,7 +31,8 @@ internal sealed class SearchIndexRebuildService
         ITeamsModule teamsModule,
         ITournamentModule tournamentModule,
         ISponsorshipModule sponsorshipModule,
-        ILogger<SearchIndexRebuildService> logger)
+        ILogger<SearchIndexRebuildService> logger,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _ownership = ownership;
@@ -39,6 +41,7 @@ internal sealed class SearchIndexRebuildService
         _tournamentModule = tournamentModule;
         _sponsorshipModule = sponsorshipModule;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     public async Task<DiscoverySearchIndexRebuildJob> CreateJobAsync(CancellationToken cancellationToken)
@@ -53,7 +56,7 @@ internal sealed class SearchIndexRebuildService
 
         var job = new SearchIndexRebuildJob
         {
-            CreatedAtUtc = DateTime.UtcNow
+            CreatedAtUtc = UtcNow()
         };
         _dbContext.SearchIndexRebuildJobs.Add(job);
         try
@@ -115,7 +118,7 @@ internal sealed class SearchIndexRebuildService
             return false;
 
         job.Status = SearchIndexRebuildJobStatus.Running;
-        job.StartedAtUtc = DateTime.UtcNow;
+        job.StartedAtUtc = UtcNow();
         job.Error = null;
         await _ownership.EnsureOwnedAsync(cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -144,7 +147,7 @@ internal sealed class SearchIndexRebuildService
             }
 
             job.Status = SearchIndexRebuildJobStatus.Failed;
-            job.CompletedAtUtc = DateTime.UtcNow;
+            job.CompletedAtUtc = UtcNow();
             job.Error = FailureMessage;
             await _ownership.EnsureOwnedAsync(CancellationToken.None);
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -403,7 +406,7 @@ internal sealed class SearchIndexRebuildService
 
         await ClearStagedDocumentsAsync(job.Id, cancellationToken);
         job.Status = SearchIndexRebuildJobStatus.Completed;
-        job.CompletedAtUtc = DateTime.UtcNow;
+        job.CompletedAtUtc = UtcNow();
         await _ownership.EnsureOwnedAsync(cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await _ownership.EnsureOwnedAsync(cancellationToken);
@@ -470,7 +473,7 @@ internal sealed class SearchIndexRebuildService
 
         _dbContext.SearchIndexRebuildDocuments.RemoveRange(stagedDocuments);
         job.Status = SearchIndexRebuildJobStatus.Completed;
-        job.CompletedAtUtc = DateTime.UtcNow;
+        job.CompletedAtUtc = UtcNow();
         await _ownership.EnsureOwnedAsync(cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -503,4 +506,6 @@ internal sealed class SearchIndexRebuildService
             job.CompletedAtUtc,
             job.Error);
     }
+
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 }

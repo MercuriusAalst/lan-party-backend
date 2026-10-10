@@ -213,7 +213,8 @@ public class TeamInviteMaintenanceTests
                 MaintenanceBatchSize = batchSize,
                 MaintenanceIntervalSeconds = 60,
                 MaintenanceEventConcurrency = eventConcurrency
-            }));
+            }),
+            TimeProvider.System);
     }
 
     private static MercuriusDBContext CreateDbContext()

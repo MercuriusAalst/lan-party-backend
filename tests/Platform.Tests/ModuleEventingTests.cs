@@ -553,12 +553,14 @@ public class ModuleEventingTests
                 identityModule,
                 new NoopMediaModule(),
                 new NoopTeamTournamentReadService(),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance,
+                TimeProvider.System),
             teamsDbContext,
             identityModule,
             new NoopTeamEventPublisher(),
             moduleEventPublisher,
-            new NoopRealtimeConnectionManager());
+            new NoopRealtimeConnectionManager(),
+            TimeProvider.System);
     }
 
     private static IUserService CreateUserService(
@@ -567,7 +569,7 @@ public class ModuleEventingTests
         IRealtimeConnectionManager? realtimeConnectionManager = null)
     {
         return new UserIntegrationEventPublishingService(
-            new UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService())),
+            new UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService()), TimeProvider.System),
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
             moduleEventPublisher ?? new ModuleEventPublisher(dbContext),
             realtimeConnectionManager ?? new NoopRealtimeConnectionManager());

@@ -192,7 +192,8 @@ public class TournamentScheduleTests
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
         using var cancellationSource = new CancellationTokenSource();
         var imageBytes = new byte[] { 1, 2, 3 };
         var image = new FormFile(new MemoryStream(imageBytes), 0, imageBytes.Length, "image", "tournament.png")
@@ -333,7 +334,8 @@ public class TournamentScheduleTests
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
     }
 
     private sealed class FixedScheduleMatchModerator : IMatchModerator

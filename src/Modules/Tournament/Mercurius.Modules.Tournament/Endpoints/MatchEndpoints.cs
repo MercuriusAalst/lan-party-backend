@@ -3,6 +3,7 @@ using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Tournament.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Platform.Extensions;
 
 namespace Mercurius.Modules.Tournament.Endpoints;
 
@@ -31,7 +32,7 @@ internal static class MatchEndpoints
             IMatchService matchService,
             CancellationToken cancellationToken) =>
         {
-            return await matchService.GetOpponentUserProfileAsync(id, GetAuth0UserId(user), cancellationToken);
+            return await matchService.GetOpponentUserProfileAsync(id, user.GetAuth0UserId(), cancellationToken);
         })
         .RequireAuthorization();
 
@@ -43,7 +44,7 @@ internal static class MatchEndpoints
         {
             return await matchService.GetMatchActionStateAsync(
                 id,
-                GetAuth0UserId(user),
+                user.GetAuth0UserId(),
                 user.IsInRole("admin"),
                 cancellationToken);
         })
@@ -55,7 +56,7 @@ internal static class MatchEndpoints
             IMatchService matchService,
             CancellationToken cancellationToken) =>
         {
-            return await matchService.ConfirmEndedAsync(id, GetAuth0UserId(user), cancellationToken);
+            return await matchService.ConfirmEndedAsync(id, user.GetAuth0UserId(), cancellationToken);
         })
         .RequireAuthorization();
 
@@ -66,7 +67,7 @@ internal static class MatchEndpoints
             IMatchService matchService,
             CancellationToken cancellationToken) =>
         {
-            return await matchService.SubmitScoreAsync(id, GetAuth0UserId(user), request, cancellationToken);
+            return await matchService.SubmitScoreAsync(id, user.GetAuth0UserId(), request, cancellationToken);
         })
         .RequireAuthorization();
 
@@ -79,7 +80,7 @@ internal static class MatchEndpoints
         {
             return await matchService.ForfeitAsync(
                 id,
-                GetAuth0UserId(user),
+                user.GetAuth0UserId(),
                 request,
                 user.IsInRole("admin"),
                 cancellationToken);
@@ -96,7 +97,7 @@ internal static class MatchEndpoints
             IMatchService matchService,
             CancellationToken cancellationToken) =>
         {
-            return await matchService.ResolveAsync(id, GetAuth0UserId(user), request, cancellationToken);
+            return await matchService.ResolveAsync(id, user.GetAuth0UserId(), request, cancellationToken);
         });
 
         adminGroup.MapPost("/{id:guid}/reverse", async (
@@ -105,7 +106,7 @@ internal static class MatchEndpoints
             IMatchService matchService,
             CancellationToken cancellationToken) =>
         {
-            return await matchService.ReverseAsync(id, GetAuth0UserId(user), cancellationToken);
+            return await matchService.ReverseAsync(id, user.GetAuth0UserId(), cancellationToken);
         });
 
         adminGroup.MapPost("/{id:guid}/admin/forfeit", async (
@@ -117,20 +118,12 @@ internal static class MatchEndpoints
         {
             return await matchService.ForfeitAsync(
                 id,
-                GetAuth0UserId(user),
+                user.GetAuth0UserId(),
                 request,
                 true,
                 cancellationToken);
         });
 
         return group;
-    }
-
-    private static string GetAuth0UserId(ClaimsPrincipal user)
-    {
-        var subject = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(subject))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-        return subject;
     }
 }

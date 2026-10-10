@@ -9,7 +9,7 @@ public class MatchModeratorTests
     [Fact]
     public void SingleElimination_GenerateMatchesForTournament_KeepsUsersModeSafe_AndAdvancesByeWinner()
     {
-        var tournament = new TournamentAggregate("Bracket", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
+        var tournament = new TournamentAggregate("Bracket", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual, null, DateTime.UtcNow, 30, 10);
         AddIndividualRegistration(tournament, CreateUser(1));
         AddIndividualRegistration(tournament, CreateUser(2));
         AddIndividualRegistration(tournament, CreateUser(3));
@@ -32,7 +32,7 @@ public class MatchModeratorTests
     [Fact]
     public void DoubleElimination_GenerateMatchesForTournament_KeepsTeamsModeSafe_AndPropagatesByeWinner()
     {
-        var tournament = new TournamentAggregate("Bracket", BracketType.DoubleElimination, GameFormat.BestOf1, GameFormat.BestOf3, ParticipationMode.Team, 1);
+        var tournament = new TournamentAggregate("Bracket", BracketType.DoubleElimination, GameFormat.BestOf1, GameFormat.BestOf3, ParticipationMode.Team, 1, DateTime.UtcNow, 30, 10);
         AddTeamRegistration(tournament, CreateTeam(1));
         AddTeamRegistration(tournament, CreateTeam(2));
         AddTeamRegistration(tournament, CreateTeam(3));
@@ -54,7 +54,7 @@ public class MatchModeratorTests
     [Fact]
     public void RoundRobin_GenerateMatchesForTournament_KeepsTeamsModeSafe()
     {
-        var tournament = new TournamentAggregate("Bracket", BracketType.RoundRobin, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1);
+        var tournament = new TournamentAggregate("Bracket", BracketType.RoundRobin, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1, DateTime.UtcNow, 30, 10);
         AddTeamRegistration(tournament, CreateTeam(1));
         AddTeamRegistration(tournament, CreateTeam(2));
         AddTeamRegistration(tournament, CreateTeam(3));
@@ -81,7 +81,7 @@ public class MatchModeratorTests
     [MemberData(nameof(BracketSizes))]
     public void SingleElimination_GenerateMatchesForTournament_SeedsByesAgainstRealParticipants(int participantCount)
     {
-        var tournament = new TournamentAggregate("Bracket", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
+        var tournament = new TournamentAggregate("Bracket", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual, null, DateTime.UtcNow, 30, 10);
         for (var i = 1; i <= participantCount; i++)
             AddIndividualRegistration(tournament, CreateUser(i));
 
@@ -94,7 +94,7 @@ public class MatchModeratorTests
     [MemberData(nameof(BracketSizes))]
     public void DoubleElimination_GenerateMatchesForTournament_SeedsByesAgainstRealParticipants(int participantCount)
     {
-        var tournament = new TournamentAggregate("Bracket", BracketType.DoubleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
+        var tournament = new TournamentAggregate("Bracket", BracketType.DoubleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual, null, DateTime.UtcNow, 30, 10);
         for (var i = 1; i <= participantCount; i++)
             AddIndividualRegistration(tournament, CreateUser(i));
 
@@ -129,7 +129,7 @@ public class MatchModeratorTests
             (BracketType.DoubleElimination, new DoubleEliminationMatchModerator())
         })
         {
-            var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1);
+            var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1, DateTime.UtcNow, 30, 10);
             for (var i = 1; i <= participantCount; i++)
                 AddTeamRegistration(tournament, CreateTeam(i));
 
@@ -142,13 +142,13 @@ public class MatchModeratorTests
 
     private static void AssertPlaysThroughToPlacements(BracketType bracketType, IMatchModerator moderator, int participantCount)
     {
-        var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
+        var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual, null, DateTime.UtcNow, 30, 10);
         for (var i = 1; i <= participantCount; i++)
             AddIndividualRegistration(tournament, CreateUser(i));
         tournament.Set(x => x.Matches, moderator.GenerateMatchesForTournament(tournament).ToList());
 
         while (tournament.Matches.FirstOrDefault(match => match.HasBothParticipants && !match.HasWinner()) is { } playable)
-            playable.SetScoresAndWinner(1, 0);
+            playable.SetScoresAndWinner(1, 0, DateTime.UtcNow);
 
         Assert.DoesNotContain(tournament.Matches, match =>
             (match.Participant1IsBYE && match.HasParticipant1()) || (match.Participant2IsBYE && match.HasParticipant2()));
