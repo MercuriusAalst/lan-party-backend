@@ -107,6 +107,17 @@ public class MatchModeratorTests
     public void SingleElimination_PlaysThroughToPlacements(int participantCount) =>
         AssertPlaysThroughToPlacements(BracketType.SingleElimination, new SingleEliminationMatchModerator(), participantCount);
 
+    [Theory]
+    [MemberData(nameof(BracketSizes))]
+    public void DoubleElimination_PlaysThroughToPlacements(int participantCount)
+    {
+        // Two participants leave no lower bracket, so the grand final never receives a second participant.
+        if (participantCount == 2)
+            return;
+
+        AssertPlaysThroughToPlacements(BracketType.DoubleElimination, new DoubleEliminationMatchModerator(), participantCount);
+    }
+
     private static void AssertPlaysThroughToPlacements(BracketType bracketType, IMatchModerator moderator, int participantCount)
     {
         var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
@@ -117,6 +128,8 @@ public class MatchModeratorTests
         while (tournament.Matches.FirstOrDefault(match => match.HasBothParticipants && !match.HasWinner()) is { } playable)
             playable.SetScoresAndWinner(1, 0);
 
+        Assert.DoesNotContain(tournament.Matches, match =>
+            (match.Participant1IsBYE && match.HasParticipant1()) || (match.Participant2IsBYE && match.HasParticipant2()));
         moderator.DeterminePlacements(tournament);
         var placed = tournament.Placements.SelectMany(placement => placement.Users).Select(user => user.UserId).ToList();
         Assert.Equal(tournament.GetActiveRegisteredUserIds().Order(), placed.Order());

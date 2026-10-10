@@ -12,14 +12,6 @@ internal static class MatchExtensions
                 continue;
 
             var targetMatch = match.WinnerNextMatch;
-            if (!match.HasWinner() && match.Participant1IsBYE && match.Participant2IsBYE)
-            {
-                if (match.MatchNumber % 2 != 0)
-                    targetMatch.SetParticipantBYEs(true, false);
-                else
-                    targetMatch.SetParticipantBYEs(false, true);
-            }
-
             if (!match.HasWinner())
                 continue;
 
