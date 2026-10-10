@@ -218,6 +218,8 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
     /// <param name="matches">The list to which the grand final match will be added.</param>
     private void GenerateGrandFinalMatch(TournamentAggregate tournament, List<Match> matches)
     {
+        // Intentionally a single grand final without a bracket reset: if the lower bracket winner wins,
+        // it takes the title even though the upper bracket winner has then lost only once.
         var grandFinalMatch = new Match
         {
             TournamentId = tournament.Id,
