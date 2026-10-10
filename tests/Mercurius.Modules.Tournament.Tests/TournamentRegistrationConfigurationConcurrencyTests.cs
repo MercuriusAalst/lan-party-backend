@@ -329,7 +329,6 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
                 mapper),
             mapper,
             TournamentTestSupport.CreateRealtimePublisher(),
-            TournamentTestSupport.CreateModuleEventPublisher(),
             NullLogger<TournamentRegistrationService>.Instance);
     }
 

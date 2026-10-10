@@ -225,6 +225,37 @@ public class ModuleEventingTests
         Assert.Equal("Legacy tournament", state.Name);
     }
 
+    [Theory]
+    [InlineData("Mercurius.Modules.Teams.Contracts.TeamMemberAddedIntegrationEvent, Mercurius.Modules.Teams.Contracts")]
+    [InlineData("Mercurius.Modules.Competition.Contracts.MatchCompletedIntegrationEvent, Mercurius.Modules.Competition.Contracts")]
+    public async Task Dispatcher_AcknowledgesStoredRetiredEventTypesWithoutDeadLettering(string eventType)
+    {
+        await using var provider = CreateEventingProvider(new object(), _ => { });
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<MercuriusDBContext>();
+        var message = new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = eventType,
+            Payload = "{}",
+            OccurredAtUtc = DateTime.UtcNow,
+            NextAttemptAtUtc = DateTime.UtcNow
+        };
+        dbContext.OutboxMessages.Add(message);
+        await dbContext.SaveChangesAsync();
+
+        var processed = await scope.ServiceProvider
+            .GetRequiredService<IModuleEventDispatcher>()
+            .DispatchPendingAsync();
+
+        dbContext.ChangeTracker.Clear();
+        var stored = await dbContext.OutboxMessages.SingleAsync(candidate => candidate.Id == message.Id);
+        Assert.Equal(1, processed);
+        Assert.NotNull(stored.ProcessedAtUtc);
+        Assert.Null(stored.DeadLetteredAtUtc);
+        Assert.Equal(0, stored.RetryCount);
+    }
+
     [Fact]
     public void ProjectionVersionGuard_IdentifiesOnlyOlderVersionsAsStale()
     {
@@ -310,33 +341,14 @@ public class ModuleEventingTests
             .Select(message => message.EventType)
             .ToListAsync();
 
-        Assert.Equal(5, team.Version);
-        Assert.Contains(typeof(TeamCreatedIntegrationEvent).FullName!, eventTypes);
-        Assert.Contains(typeof(TeamMemberAddedIntegrationEvent).FullName!, eventTypes);
-        Assert.Contains(typeof(TeamRenamedIntegrationEvent).FullName!, eventTypes);
-        Assert.Contains(typeof(TeamMemberRemovedIntegrationEvent).FullName!, eventTypes);
-        Assert.Contains(typeof(TeamDeletedIntegrationEvent).FullName!, eventTypes);
-    }
-
-    [Fact]
-    public async Task TransferCaptainAsync_IncrementsVersionAndEnqueuesDurableEvent()
-    {
-        await using var dbContext = CreateDbContext();
-        var captain = CreateUser();
-        var newCaptain = CreateUser();
-        var team = new Team("Alpha", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
-        team.AddMember(newCaptain.Id);
-        dbContext.Users.AddRange(captain, newCaptain);
-        dbContext.Teams.Add(team);
-        await dbContext.SaveChangesAsync();
-        var teamService = CreateTeamService(dbContext);
-
-        await teamService.TransferCaptainAsync(captain.Auth0UserId, team.Id, newCaptain.Id);
-
-        Assert.Equal(1, team.Version);
-        var outbox = await dbContext.OutboxMessages.SingleAsync();
-        Assert.Equal(typeof(TeamCaptainTransferredIntegrationEvent).FullName, outbox.EventType);
+        Assert.Equal(3, team.Version);
+        Assert.Equal(
+            [
+                typeof(TeamCreatedIntegrationEvent).FullName!,
+                typeof(TeamRenamedIntegrationEvent).FullName!,
+                typeof(TeamDeletedIntegrationEvent).FullName!
+            ],
+            eventTypes);
     }
 
     [Fact]

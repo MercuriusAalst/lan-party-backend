@@ -1223,30 +1223,6 @@ public class TeamTests
     }
 
     [Fact]
-    public async Task TransferCaptainAsync_DoesNotPublishRealtime_WhenDurableEventPublishingFails()
-    {
-        await using var dbContext = CreateDbContext();
-        var captain = CreateUser();
-        var newCaptain = CreateUser();
-        var team = CreateTeam("Alpha", captain);
-        team.AddMember(newCaptain.Id);
-        dbContext.Users.AddRange(captain, newCaptain);
-        dbContext.Teams.Add(team);
-        await dbContext.SaveChangesAsync();
-
-        var publisher = new RecordingTeamEventPublisher();
-        var teamService = CreateTeamService(
-            dbContext,
-            eventPublisher: publisher,
-            moduleEventPublisher: new ThrowingModuleEventPublisher());
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            teamService.TransferCaptainAsync(captain.Auth0UserId, team.Id, newCaptain.Id));
-
-        Assert.Empty(publisher.CaptainEvents);
-    }
-
-    [Fact]
     public async Task RemoveMemberAsync_RevokesAfterCommitBeforeMembershipBroadcast()
     {
         await using var dbContext = CreateDbContext();
@@ -1276,9 +1252,6 @@ public class TeamTests
         Assert.Equal(member.Id, revocation.UserId);
         Assert.Equal(TeamRealtimeGroups.GetTeamGroup(team.Id), revocation.GroupName);
         Assert.Equal(CancellationToken.None, revocation.CancellationToken);
-        Assert.Contains(
-            await dbContext.OutboxMessages.Select(message => message.EventType).ToListAsync(),
-            eventType => eventType == typeof(TeamMemberRemovedIntegrationEvent).FullName);
     }
 
     [Fact]
@@ -1890,30 +1863,7 @@ public class TeamTests
     }
 
     [Fact]
-    public async Task RemoveMemberAsync_DoesNotRevokeWhenDurableEventPublicationFails()
-    {
-        await using var dbContext = CreateDbContext();
-        var captain = CreateUser();
-        var member = CreateUser();
-        var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
-        dbContext.Users.AddRange(captain, member);
-        dbContext.Teams.Add(team);
-        await dbContext.SaveChangesAsync();
-        var realtimeConnectionManager = new RecordingRealtimeConnectionManager();
-        var teamService = CreateTeamService(
-            dbContext,
-            moduleEventPublisher: new ThrowingModuleEventPublisher(),
-            realtimeConnectionManager: realtimeConnectionManager);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            teamService.RemoveMemberAsync(captain.Auth0UserId, team.Id, member.Id));
-
-        Assert.Empty(realtimeConnectionManager.UserGroupRevocations);
-    }
-
-    [Fact]
-    public async Task RemoveMemberAsync_PostCommitRevocationFailureLeavesMutationAndOutboxCommitted()
+    public async Task RemoveMemberAsync_PostCommitRevocationFailureLeavesMutationCommitted()
     {
         await using var dbContext = CreateDbContext();
         var captain = CreateUser();
@@ -1943,9 +1893,6 @@ public class TeamTests
             .Include(candidate => candidate.Members)
             .SingleAsync(candidate => candidate.Id == team.Id);
         Assert.DoesNotContain(persistedTeam.Members, candidate => candidate.UserId == member.Id);
-        Assert.Contains(
-            await dbContext.OutboxMessages.Select(message => message.EventType).ToListAsync(),
-            eventType => eventType == typeof(TeamMemberRemovedIntegrationEvent).FullName);
         Assert.Empty(publisher.MembershipEvents);
     }
 
