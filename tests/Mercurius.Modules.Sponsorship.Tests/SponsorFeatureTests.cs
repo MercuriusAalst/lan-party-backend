@@ -137,14 +137,7 @@ public class SponsorFeatureTests
         await sponsorshipModule.ReplaceSponsorPlacementAsync(new TournamentId(tournament.Id), null);
 
         Assert.Null(await sponsorshipModule.GetSponsorPlacementAsync(new TournamentId(tournament.Id)));
-        var placementEvents = await dbContext.OutboxMessages
-            .Where(message => message.EventType == typeof(TournamentSponsorPlacementChanged).FullName)
-            .ToListAsync();
-        Assert.Equal(2, placementEvents.Count);
-        Assert.Contains(placementEvents, message => JsonDocument.Parse(message.Payload).RootElement
-            .GetProperty("sponsorId").GetProperty("value").GetInt32() == sponsor.Id);
-        Assert.Contains(placementEvents, message => JsonDocument.Parse(message.Payload).RootElement
-            .GetProperty("placementId").ValueKind == JsonValueKind.Null);
+        Assert.Empty(await dbContext.OutboxMessages.ToListAsync());
     }
 
     [Fact]
@@ -186,8 +179,8 @@ public class SponsorFeatureTests
         Assert.False(await dbContext.Set<TournamentAggregate>().AnyAsync(candidate => candidate.Id == tournament.Id));
         Assert.False(await dbContext.Set<TournamentSponsorPlacement>().AnyAsync());
         Assert.True(await dbContext.Set<Sponsor>().AnyAsync(candidate => candidate.Id == sponsor.Id));
-        Assert.True(await dbContext.OutboxMessages.AnyAsync(message =>
-            message.EventType == typeof(TournamentSponsorPlacementChanged).FullName));
+        Assert.False(await dbContext.OutboxMessages.AnyAsync(message =>
+            message.EventType.Contains("SponsorPlacementChanged")));
     }
 
     [Fact]
@@ -384,9 +377,7 @@ public class SponsorFeatureTests
     private static SponsorshipModuleFacade CreateSponsorshipModule(MercuriusDBContext dbContext)
     {
         var sponsorshipDbContext = new SponsorshipDbContextAdapter<MercuriusDBContext>(dbContext);
-        return new SponsorshipModuleFacade(
-            sponsorshipDbContext,
-            new SponsorshipOutboxWriter(sponsorshipDbContext, new ModuleEventPublisher(dbContext)));
+        return new SponsorshipModuleFacade(sponsorshipDbContext);
     }
 
     private static TournamentAggregate CreateTournament()

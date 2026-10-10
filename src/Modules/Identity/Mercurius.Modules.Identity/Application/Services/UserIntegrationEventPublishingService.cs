@@ -239,7 +239,6 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
         var events = new List<object>
         {
-            new UserAnonymizedIntegrationEvent(new UserId(after.Id), after.DeletedAtUtc.Value),
             new UserDeletedIntegrationEvent(new UserId(after.Id), after.DeletedAtUtc.Value),
             new UserProfileChangedIntegrationEvent(
                 new UserId(after.Id),

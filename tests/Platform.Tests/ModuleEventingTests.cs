@@ -229,6 +229,8 @@ public class ModuleEventingTests
     [Theory]
     [InlineData("Mercurius.Modules.Teams.Contracts.TeamMemberAddedIntegrationEvent, Mercurius.Modules.Teams.Contracts")]
     [InlineData("Mercurius.Modules.Competition.Contracts.MatchCompletedIntegrationEvent, Mercurius.Modules.Competition.Contracts")]
+    [InlineData("Mercurius.Modules.Identity.Contracts.UserAnonymizedIntegrationEvent, Mercurius.Modules.Identity.Contracts")]
+    [InlineData("Mercurius.Modules.Sponsorship.Contracts.V1.GameSponsorPlacementChanged, Mercurius.Modules.Sponsorship.Contracts")]
     public async Task Dispatcher_AcknowledgesStoredRetiredEventTypesWithoutDeadLettering(string eventType)
     {
         await using var provider = CreateEventingProvider(new object(), _ => { });
@@ -391,7 +393,7 @@ public class ModuleEventingTests
             .Select(message => message.EventType)
             .ToListAsync();
 
-        Assert.Contains(typeof(UserAnonymizedIntegrationEvent).FullName!, eventTypes);
+        Assert.DoesNotContain("Mercurius.Modules.Identity.Contracts.UserAnonymizedIntegrationEvent", eventTypes);
         Assert.Contains(typeof(UserDeletedIntegrationEvent).FullName!, eventTypes);
         Assert.Contains(typeof(UserProfileChangedIntegrationEvent).FullName!, eventTypes);
     }

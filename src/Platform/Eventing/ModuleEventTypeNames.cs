@@ -27,6 +27,8 @@ internal static class ModuleEventTypeNames
     // acknowledged without dispatch instead of failing until they are dead-lettered.
     private static readonly HashSet<string> RetiredTypeNames = new(StringComparer.Ordinal)
     {
+        "Mercurius.Modules.Identity.Contracts.UserAnonymizedIntegrationEvent",
+        "Mercurius.Modules.Sponsorship.Contracts.V1.TournamentSponsorPlacementChanged",
         "Mercurius.Modules.Teams.Contracts.TeamCaptainTransferredIntegrationEvent",
         "Mercurius.Modules.Teams.Contracts.TeamMemberAddedIntegrationEvent",
         "Mercurius.Modules.Teams.Contracts.TeamMemberRemovedIntegrationEvent",
