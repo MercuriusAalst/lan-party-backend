@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Asp.Versioning;
-using Mercurius.Modules.Teams.DTOs;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.DTOs;
+using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Shared.Search;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

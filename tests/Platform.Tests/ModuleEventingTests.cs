@@ -1,14 +1,15 @@
+using Mercurius.Modules.Identity.Infrastructure;
 using System.Text.Json;
 using Mercurius.LAN.API.Data;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.LAN.API.Migrations;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Teams.Infrastructure;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Identity.DTOs;
-using Mercurius.Modules.Identity.Services;
-using Mercurius.Modules.Identity.Services.Auth0;
+using Mercurius.Modules.Identity.Application.DTOs;
+using Mercurius.Modules.Identity.Application.Services;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Tournament.Contracts;
 using Mercurius.Modules.Teams.Contracts;
@@ -542,7 +543,7 @@ public class ModuleEventingTests
             })
             .Build();
         var moduleEventPublisher = new ModuleEventPublisher(dbContext);
-        var identityModule = new IdentityModuleFacade(dbContext, new NoopAuth0ManagementService());
+        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService());
         var teamsDbContext = new TeamsDbContextAdapter<MercuriusDBContext>(dbContext);
 
         return new TeamEventPublishingDecorator(
@@ -566,8 +567,8 @@ public class ModuleEventingTests
         IRealtimeConnectionManager? realtimeConnectionManager = null)
     {
         return new UserIntegrationEventPublishingService(
-            new UserService(dbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(dbContext, new NoopAuth0ManagementService())),
-            dbContext,
+            new UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService())),
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
             moduleEventPublisher ?? new ModuleEventPublisher(dbContext),
             realtimeConnectionManager ?? new NoopRealtimeConnectionManager());
     }

@@ -3,7 +3,7 @@ using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Options;

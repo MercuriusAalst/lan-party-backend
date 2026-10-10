@@ -1,7 +1,7 @@
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Microsoft.AspNetCore.Http;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class TeamEndpointService : ITeamEndpointService
 {

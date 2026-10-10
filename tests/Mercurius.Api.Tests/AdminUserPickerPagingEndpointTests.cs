@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using Mercurius.Modules.Identity;
-using Mercurius.Modules.Identity.DTOs;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.DTOs;
+using Mercurius.Modules.Identity.Application.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;

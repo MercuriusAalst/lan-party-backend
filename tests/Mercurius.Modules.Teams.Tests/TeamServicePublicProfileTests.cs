@@ -1,8 +1,8 @@
 using Mercurius.LAN.API.Data;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Shared.Exceptions;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Teams.Infrastructure;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Media.Contracts;

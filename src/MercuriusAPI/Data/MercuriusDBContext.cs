@@ -2,7 +2,6 @@ using Mercurius.Modules.Tournament;
 using Mercurius.Modules.Discovery;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Domain;
-using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
 using Mercurius.Modules.Teams.Domain;
@@ -11,7 +10,7 @@ using Platform.Eventing.Persistence;
 
 namespace Mercurius.LAN.API.Data;
 
-public class MercuriusDBContext : DbContext, IModuleEventDbContext, IIdentityDbContext
+public class MercuriusDBContext : DbContext, IModuleEventDbContext
 {
     private const string TeamInviteEntityType = "Mercurius.Modules.Teams.Domain.TeamInvite";
     private const string TeamMemberEntityType = "Mercurius.Modules.Teams.Domain.TeamMember";

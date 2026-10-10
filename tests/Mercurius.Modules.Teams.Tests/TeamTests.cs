@@ -1,13 +1,14 @@
+using Mercurius.Modules.Identity.Infrastructure;
 using System.Data.Common;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.LAN.API.Data;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.LAN.API.Migrations;
 using Mercurius.LAN.API.Hubs;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Identity.Contracts;
 using Platform.Eventing;
@@ -1977,7 +1978,7 @@ public class TeamTests
         await using var dbContext = PostgresTestDatabase.CreateDbContext();
         var (member, _) = await SeedCrossModuleReferencesAsync(dbContext);
 
-        await new Mercurius.Modules.Identity.Services.UserService(dbContext, null!, null!).DeleteUserByIdAsync(member.Id);
+        await new Mercurius.Modules.Identity.Application.Services.UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!, null!).DeleteUserByIdAsync(member.Id);
 
         dbContext.ChangeTracker.Clear();
         Assert.True(await dbContext.Users.AnyAsync(user => user.Id == member.Id && user.IsDeleted));

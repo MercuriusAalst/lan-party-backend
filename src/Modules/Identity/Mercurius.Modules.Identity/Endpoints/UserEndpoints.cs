@@ -1,7 +1,7 @@
 using Asp.Versioning;
-using Mercurius.Modules.Identity.DTOs;
+using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Shared.Search;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

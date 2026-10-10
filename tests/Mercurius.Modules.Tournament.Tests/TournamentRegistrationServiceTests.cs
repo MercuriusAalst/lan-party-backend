@@ -1,3 +1,4 @@
+using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Application.DTOs.Registrations;
 using Mercurius.Modules.Tournament.Application;
@@ -9,7 +10,7 @@ using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams;
 using Mercurius.Modules.Teams.Infrastructure;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Sponsorship.Contracts;
 using Mercurius.TestInfrastructure;
@@ -756,7 +757,7 @@ public class TournamentRegistrationServiceTests
         MercuriusDBContext dbContext,
         ITournamentRealtimePublisher? publisher = null)
     {
-        var identityModule = new IdentityModuleFacade(dbContext, new TournamentTestSupport.NoopAuth0ManagementService());
+        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new TournamentTestSupport.NoopAuth0ManagementService());
         var teamsModule = new TeamsModuleFacade(
             new TeamsDbContextAdapter<MercuriusDBContext>(dbContext),
             identityModule,

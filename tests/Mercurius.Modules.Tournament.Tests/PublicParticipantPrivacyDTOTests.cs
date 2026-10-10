@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 
 namespace Mercurius.Modules.Tournament.Tests;
 

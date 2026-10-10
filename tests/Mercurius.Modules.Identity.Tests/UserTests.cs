@@ -1,4 +1,5 @@
-using Mercurius.Modules.Identity.DTOs;
+using Mercurius.Modules.Identity.Infrastructure;
+using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.LAN.API.Data;
@@ -6,8 +7,8 @@ using Mercurius.Modules.Shared;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Shared.Search;
-using Mercurius.Modules.Identity.Services.Auth0;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Identity.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -66,7 +67,7 @@ public class UserTests
         dbContext.Users.AddRange(publicUser, deletedUser, incompleteUser);
         await dbContext.SaveChangesAsync();
 
-        var module = new IdentityModuleFacade(dbContext, new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)));
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)));
         var usernames = await module.GetPublicUsernamesByIdsAsync(
             [new UserId(publicUser.Id), new UserId(deletedUser.Id), new UserId(incompleteUser.Id)]);
 
@@ -89,7 +90,7 @@ public class UserTests
         {
             HasAdminRole = true
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         Assert.True(await module.IsAdminUserAsync(new UserId(activeUser.Id)));
         Assert.False(await module.IsAdminUserAsync(new UserId(deletedUser.Id)));
@@ -112,7 +113,7 @@ public class UserTests
         {
             AdminAuth0UserIds = [matchingAdmin.Auth0UserId, otherAdmin.Auth0UserId, deletedAdmin.Auth0UserId]
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         var admins = await module.GetAdminUsersAsync("adminone", 100);
 
@@ -135,7 +136,7 @@ public class UserTests
         {
             AdminAuth0UserIds = users.Select(user => user.Auth0UserId).ToArray()
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         var firstPage = await module.GetAdminUsersAsync(string.Empty, 50, CancellationToken.None, 1);
         var secondPage = await module.GetAdminUsersAsync(string.Empty, 50, CancellationToken.None, 2);
@@ -177,7 +178,7 @@ public class UserTests
                 deletedAdmin.Auth0UserId
             ]
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         var unfiltered = await module.GetAdminUsersAsync(string.Empty, 50);
         var filtered = await module.GetAdminUsersAsync("complete", 50);
@@ -1183,7 +1184,7 @@ public class UserTests
         MercuriusDBContext dbContext,
         IAuth0ManagementService auth0ManagementService,
         IIdentityModule? identityModule = null) =>
-        new(dbContext, auth0ManagementService, identityModule ?? new RecordingIdentityModule());
+        new(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0ManagementService, identityModule ?? new RecordingIdentityModule());
 
     private static void AssertUniqueIndex(IEnumerable<IIndex> indexes, string propertyName, string? filter)
     {

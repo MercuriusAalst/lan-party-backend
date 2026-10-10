@@ -1,7 +1,7 @@
 using Mercurius.Modules.Teams.Contracts;
 using Platform.Realtime;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class RealtimeTeamEventPublisher : ITeamEventPublisher
 {

@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class TeamInviteMaintenanceService
 {

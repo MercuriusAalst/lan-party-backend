@@ -1,4 +1,4 @@
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Domain;
@@ -12,7 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeamInviteWorkflows, ITeamLogoCommands
 {

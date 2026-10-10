@@ -1,5 +1,5 @@
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Domain;
 using Mercurius.Modules.Shared;
@@ -14,7 +14,7 @@ using TeamCreatedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamCreate
 using TeamDeletedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamDeletedIntegrationEvent;
 using TeamRenamedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamRenamedIntegrationEvent;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, ITeamInviteWorkflows
 {

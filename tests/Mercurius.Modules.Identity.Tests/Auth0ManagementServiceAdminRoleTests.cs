@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using Mercurius.Modules.Identity.Options;
-using Mercurius.Modules.Identity.Services.Auth0;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

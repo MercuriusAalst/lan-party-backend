@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using Mercurius.Modules.Teams.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Infrastructure;
 
 internal static class TeamMutationLock
 {

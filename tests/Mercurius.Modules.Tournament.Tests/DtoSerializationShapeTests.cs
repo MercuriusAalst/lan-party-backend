@@ -1,13 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Mercurius.Modules.Identity.DTOs;
+using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Tournament.Application.DTOs.Registrations;
 using Mercurius.Modules.Discovery.Contracts;
 using Mercurius.Modules.Sponsorship.Application.DTOs;
 using Mercurius.Modules.Sponsorship.Domain;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 
 namespace Mercurius.Modules.Tournament.Tests;
 

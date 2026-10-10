@@ -4,7 +4,7 @@ using Mercurius.Modules.Shared;
 using Mercurius.Modules.Teams;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
