@@ -63,6 +63,61 @@ public class MatchServiceDeadlineTests
     }
 
     [Fact]
+    public async Task PublicRead_ShowsExpiredDeadlineWithoutPersistingIt()
+    {
+        var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        await using var dbContext = CreateDbContext();
+        var participant1Id = Guid.NewGuid();
+        var participant2Id = Guid.NewGuid();
+        var tournament = new TournamentAggregate(
+            "Running tournament",
+            BracketType.SingleElimination,
+            GameFormat.BestOf1,
+            GameFormat.BestOf1,
+            ParticipationMode.Individual)
+        {
+            Status = TournamentStatus.InProgress
+        };
+        var match = new Match
+        {
+            Id = Guid.NewGuid(),
+            TournamentId = tournament.Id,
+            Tournament = tournament,
+            Format = GameFormat.BestOf1,
+            ParticipationMode = ParticipationMode.Individual,
+            LifecycleState = MatchLifecycleState.ScoreConfirmation,
+            ScoreConfirmationDeadlineUtc = nowUtc.AddMinutes(-1),
+            UserParticipant1Id = participant1Id,
+            UserParticipant2Id = participant2Id,
+            Participant1ReportedScore1 = 1,
+            Participant1ReportedScore2 = 0
+        };
+        tournament.Matches.Add(match);
+        dbContext.Users.AddRange(
+            new User { Id = participant1Id, Auth0UserId = $"auth0|{participant1Id:N}" },
+            new User { Id = participant2Id, Auth0UserId = $"auth0|{participant2Id:N}" });
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var service = new MatchService(
+            new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
+            TournamentTestSupport.CreateIdentityModule(),
+            TournamentTestSupport.CreateTeamsModule(),
+            TournamentTestSupport.CreateModuleEventPublisher(),
+            new FixedTimeProvider(nowUtc),
+            new MatchBracketImpactAnalyzer(new TournamentDbContextAdapter<MercuriusDBContext>(dbContext)));
+
+        var result = await service.GetMatchByIdAsync(match.Id);
+
+        Assert.Equal(ContractLifecycleState.Completed, result.LifecycleState);
+        var persisted = await dbContext.Set<Match>().AsNoTracking().SingleAsync(candidate => candidate.Id == match.Id);
+        Assert.Equal(MatchLifecycleState.ScoreConfirmation, persisted.LifecycleState);
+        Assert.Null(persisted.Participant1Score);
+        Assert.Empty(await dbContext.OutboxMessages.ToListAsync());
+    }
+
+    [Fact]
     public async Task DeadlineProcessor_CompletesExpiredMatch_AndLoadsOnlyDirectNextMatches()
     {
         var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
