@@ -1,3 +1,5 @@
+using System.Numerics;
+
 
 namespace Mercurius.Modules.Tournament.Tests;
 
@@ -64,6 +66,77 @@ public class MatchModeratorTests
         Assert.All(matches, match => Assert.Equal(ParticipationMode.Team, match.ParticipationMode));
         Assert.All(matches, match => Assert.Null(match.UserParticipant1Id));
         Assert.All(matches, match => Assert.Null(match.UserParticipant2Id));
+    }
+
+    public static TheoryData<int> BracketSizes()
+    {
+        var sizes = new TheoryData<int>();
+        for (var participantCount = 2; participantCount <= 33; participantCount++)
+            sizes.Add(participantCount);
+        return sizes;
+    }
+
+    [Theory]
+    [MemberData(nameof(BracketSizes))]
+    public void SingleElimination_GenerateMatchesForTournament_SeedsByesAgainstRealParticipants(int participantCount)
+    {
+        var tournament = new TournamentAggregate("Bracket", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
+        for (var i = 1; i <= participantCount; i++)
+            AddIndividualRegistration(tournament, CreateUser(i));
+
+        var matches = new SingleEliminationMatchModerator().GenerateMatchesForTournament(tournament).ToList();
+
+        AssertValidFirstRound(tournament, matches);
+    }
+
+    [Theory]
+    [MemberData(nameof(BracketSizes))]
+    public void DoubleElimination_GenerateMatchesForTournament_SeedsByesAgainstRealParticipants(int participantCount)
+    {
+        var tournament = new TournamentAggregate("Bracket", BracketType.DoubleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
+        for (var i = 1; i <= participantCount; i++)
+            AddIndividualRegistration(tournament, CreateUser(i));
+
+        var matches = new DoubleEliminationMatchModerator().GenerateMatchesForTournament(tournament).ToList();
+
+        AssertValidFirstRound(tournament, matches.Where(match => !match.IsLowerBracketMatch).ToList());
+    }
+
+    [Theory]
+    [MemberData(nameof(BracketSizes))]
+    public void SingleElimination_PlaysThroughToPlacements(int participantCount) =>
+        AssertPlaysThroughToPlacements(BracketType.SingleElimination, new SingleEliminationMatchModerator(), participantCount);
+
+    private static void AssertPlaysThroughToPlacements(BracketType bracketType, IMatchModerator moderator, int participantCount)
+    {
+        var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
+        for (var i = 1; i <= participantCount; i++)
+            AddIndividualRegistration(tournament, CreateUser(i));
+        tournament.Matches = moderator.GenerateMatchesForTournament(tournament).ToList();
+
+        while (tournament.Matches.FirstOrDefault(match => match.HasBothParticipants && !match.HasWinner()) is { } playable)
+            playable.SetScoresAndWinner(1, 0);
+
+        moderator.DeterminePlacements(tournament);
+        var placed = tournament.Placements.SelectMany(placement => placement.Users).Select(user => user.UserId).ToList();
+        Assert.Equal(tournament.GetActiveRegisteredUserIds().Order(), placed.Order());
+    }
+
+    private static void AssertValidFirstRound(TournamentAggregate tournament, IReadOnlyList<Match> upperBracket)
+    {
+        var participantIds = tournament.GetActiveRegisteredUserIds();
+        var slotCount = (int)BitOperations.RoundUpToPowerOf2((uint)participantIds.Count);
+        var firstRound = upperBracket.Where(match => match.RoundNumber == 1).ToList();
+
+        Assert.Equal(slotCount / 2, firstRound.Count);
+        Assert.DoesNotContain(firstRound, match => !match.HasParticipant1() && !match.HasParticipant2());
+        Assert.Equal(slotCount - participantIds.Count, firstRound.Count(match => match.HasParticipant1() != match.HasParticipant2()));
+        var seated = firstRound
+            .SelectMany(match => new[] { match.UserParticipant1Id, match.UserParticipant2Id })
+            .OfType<Guid>()
+            .ToList();
+        Assert.Equal(participantIds.Order(), seated.Order());
+        Assert.DoesNotContain(upperBracket, match => match.RoundNumber > 1 && (match.Participant1IsBYE || match.Participant2IsBYE || match.HasWinner()));
     }
 
     private static User CreateUser(int id)

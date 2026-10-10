@@ -113,22 +113,6 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
         for (int i = 0; i < shuffled.Count; i++)
             slots[slotOrder[i]] = shuffled[i];
 
-        for (int i = 0; i < slots.Length; i += 2)
-        {
-            if (slots[i] == null && slots[i + 1] == null)
-            {
-                for (int j = i + 2; j < slots.Length; j++)
-                {
-                    if (slots[j] != null)
-                    {
-                        slots[i] = slots[j];
-                        slots[j] = null;
-                        break;
-                    }
-                }
-            }
-        }
-
         return slots;
     }
 
