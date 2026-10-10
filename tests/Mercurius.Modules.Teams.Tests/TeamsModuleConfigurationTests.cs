@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using System.Reflection;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Identity.Contracts;
@@ -174,7 +175,8 @@ public class TeamsModuleConfigurationTests
     [Fact]
     public async Task TeamsModuleFacade_PreCancelledRead_ThrowsOperationCanceledException()
     {
-        var services = CreateServiceCollection();
+        await using var database = PostgresTestDatabase.Create();
+        var services = CreateServiceCollection(database.ConnectionString);
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var teamsModule = scope.ServiceProvider.GetRequiredService<ITeamsModule>();
@@ -185,14 +187,14 @@ public class TeamsModuleConfigurationTests
             teamsModule.GetTeamSummaryAsync(new TeamId(Guid.NewGuid()), cancellationSource.Token));
     }
 
-    private static ServiceCollection CreateServiceCollection()
+    private static ServiceCollection CreateServiceCollection(string? connectionString = null)
     {
         var services = new ServiceCollection();
         var configuration = CreateConfiguration();
 
         services.AddSingleton<IConfiguration>(configuration);
         services.AddDbContext<MercuriusDBContext>(options =>
-            options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+            options.UseNpgsql(connectionString));
         services.AddSingleton<IIdentityModule, StubIdentityModule>();
         services.AddSingleton<IMediaModule, NoopMediaModule>();
         services.AddSingleton<ITeamTournamentReadService, NoopTeamTournamentReadService>();

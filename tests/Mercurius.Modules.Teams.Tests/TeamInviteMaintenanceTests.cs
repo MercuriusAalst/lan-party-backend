@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using System.Collections.Concurrent;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Migrations;
@@ -217,14 +218,7 @@ public class TeamInviteMaintenanceTests
             TimeProvider.System);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static User CreateUser(string username)
     {

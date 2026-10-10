@@ -37,7 +37,7 @@ public class MatchServiceReversalGuardTests
         tournament.Matches.Add(unassignedMatch);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -141,7 +141,7 @@ public class MatchServiceReversalGuardTests
         tournament.Matches.Add(completedMatch);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -219,7 +219,7 @@ public class MatchServiceReversalGuardTests
         tournament.Matches.Add(downstream);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -261,7 +261,7 @@ public class MatchServiceReversalGuardTests
         tournament.Matches.Add(downstream);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -307,7 +307,7 @@ public class MatchServiceReversalGuardTests
         tournament.Matches.Add(downstream);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -375,7 +375,7 @@ public class MatchServiceReversalGuardTests
         tournament.Matches.Add(nestedTarget);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();

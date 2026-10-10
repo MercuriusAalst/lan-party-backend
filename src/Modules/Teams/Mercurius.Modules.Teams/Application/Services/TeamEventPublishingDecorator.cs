@@ -358,27 +358,20 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
             var result = await operation();
             await publishDurableEvents(result);
 
-            if (transaction is not null)
-                await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return result;
         }
         catch
         {
-            if (transaction is not null)
-                await transaction.RollbackAsync(cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
 
             throw;
         }
     }
 
-    private async Task<IDbContextTransaction?> BeginDurableEventTransactionAsync(CancellationToken cancellationToken)
-    {
-        if (!_dbContext.Database.IsRelational())
-            return null;
-
-        return await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-    }
+    private Task<IDbContextTransaction> BeginDurableEventTransactionAsync(CancellationToken cancellationToken) =>
+        _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
     private async Task<TResult> PublishExpiredInviteEventsAroundAsync<TResult>(
         Func<Task<TResult>> operation,
@@ -406,13 +399,11 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
                 operationException = ExceptionDispatchInfo.Capture(exception);
             }
 
-            if (transaction is not null)
-                await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
-            if (transaction is not null)
-                await transaction.RollbackAsync(CancellationToken.None);
+            await transaction.RollbackAsync(CancellationToken.None);
 
             throw;
         }

@@ -31,91 +31,66 @@ internal sealed class TeamInviteMaintenanceService
 
     public async Task<int> RunBatchAsync(CancellationToken cancellationToken = default)
     {
-        var relational = _dbContext.Database.IsRelational();
         var now = UtcNow();
         var retentionCutoff = now.AddDays(-_options.RetentionDays);
-        var lockedTeamIds = relational
-            ? await GetMaintenanceTeamIdsAsync(now, retentionCutoff, cancellationToken)
-            : null;
-        IDbContextTransaction? transaction = null;
+        var lockedTeamIds = await GetMaintenanceTeamIdsAsync(now, retentionCutoff, cancellationToken);
         var expiredEvents = new List<ExpiredInviteEvent>();
         var deletedCount = 0;
 
-        try
+        await using (var transaction = await _dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken))
         {
-            if (relational)
+            try
             {
-                transaction = await _dbContext.Database.BeginTransactionAsync(
-                    IsolationLevel.ReadCommitted,
-                    cancellationToken);
-
                 if (!await TryAcquireMaintenanceLockAsync(cancellationToken))
                 {
                     await transaction.RollbackAsync(cancellationToken);
                     return 0;
                 }
 
-                foreach (var teamId in lockedTeamIds!)
+                foreach (var teamId in lockedTeamIds)
                     await TeamMutationLock.AcquireAsync(_dbContext, teamId, cancellationToken);
-            }
 
-            now = UtcNow();
-            var expiredInvitesQuery = TeamInvites
-                .Where(invite =>
-                    invite.Status == TeamInviteStatus.Pending &&
-                    invite.ExpiresAt <= now);
-            if (lockedTeamIds is not null)
-                expiredInvitesQuery = expiredInvitesQuery.Where(invite => lockedTeamIds.Contains(invite.TeamId));
+                now = UtcNow();
+                var expiredInvites = await TeamInvites
+                    .Where(invite =>
+                        invite.Status == TeamInviteStatus.Pending &&
+                        invite.ExpiresAt <= now &&
+                        lockedTeamIds.Contains(invite.TeamId))
+                    .OrderBy(invite => invite.ExpiresAt)
+                    .ThenBy(invite => invite.Id)
+                    .Take(_options.MaintenanceBatchSize)
+                    .ToListAsync(cancellationToken);
 
-            var expiredInvites = await expiredInvitesQuery
-                .OrderBy(invite => invite.ExpiresAt)
-                .ThenBy(invite => invite.Id)
-                .Take(_options.MaintenanceBatchSize)
-                .ToListAsync(cancellationToken);
-
-            foreach (var invite in expiredInvites)
-            {
-                invite.Expire(now);
-                expiredEvents.Add(new ExpiredInviteEvent(invite.TeamId, invite.Id, invite.UserId));
-            }
-
-            if (expiredInvites.Count > 0)
-                await _dbContext.SaveChangesAsync(cancellationToken);
-
-            var cleanupIds = await GetTerminalInviteCleanupCandidateIdsAsync(
-                retentionCutoff,
-                cancellationToken,
-                lockedTeamIds);
-
-            if (cleanupIds.Count > 0)
-            {
-                var cleanupQuery = TeamInvites.Where(invite => cleanupIds.Contains(invite.Id));
-                if (_dbContext.Database.IsRelational())
+                foreach (var invite in expiredInvites)
                 {
-                    deletedCount = await cleanupQuery.ExecuteDeleteAsync(cancellationToken);
+                    invite.Expire(now);
+                    expiredEvents.Add(new ExpiredInviteEvent(invite.TeamId, invite.Id, invite.UserId));
                 }
-                else
-                {
-                    var cleanupInvites = await cleanupQuery.ToListAsync(cancellationToken);
-                    TeamInvites.RemoveRange(cleanupInvites);
-                    deletedCount = await _dbContext.SaveChangesAsync(cancellationToken);
-                }
-            }
 
-            if (transaction is not null)
+                if (expiredInvites.Count > 0)
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+
+                var cleanupIds = await GetTerminalInviteCleanupCandidateIdsAsync(
+                    retentionCutoff,
+                    cancellationToken,
+                    lockedTeamIds);
+
+                if (cleanupIds.Count > 0)
+                {
+                    deletedCount = await TeamInvites
+                        .Where(invite => cleanupIds.Contains(invite.Id))
+                        .ExecuteDeleteAsync(cancellationToken);
+                }
+
                 await transaction.CommitAsync(cancellationToken);
-        }
-        catch
-        {
-            if (transaction is not null)
+            }
+            catch
+            {
                 await transaction.RollbackAsync(CancellationToken.None);
-
-            throw;
-        }
-        finally
-        {
-            if (transaction is not null)
-                await transaction.DisposeAsync();
+                throw;
+            }
         }
 
         await PublishExpiredInviteEventsAsync(expiredEvents);
@@ -225,14 +200,6 @@ internal sealed class TeamInviteMaintenanceService
 
     private async Task<bool> TryAcquireMaintenanceLockAsync(CancellationToken cancellationToken)
     {
-        if (!string.Equals(
-                _dbContext.Database.ProviderName,
-                "Npgsql.EntityFrameworkCore.PostgreSQL",
-                StringComparison.Ordinal))
-        {
-            return true;
-        }
-
         return await _dbContext.Database
             .SqlQueryRaw<bool>($"SELECT pg_try_advisory_xact_lock({MaintenanceLockKey}) AS \"Value\"")
             .SingleAsync(cancellationToken);

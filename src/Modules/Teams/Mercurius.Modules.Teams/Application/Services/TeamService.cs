@@ -571,13 +571,11 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             await _dbContext.SaveChangesAsync(cancellationToken);
             // Once SaveChanges succeeds, the new asset may be referenced even if CommitAsync fails ambiguously.
             committed = true;
-            if (transaction is not null)
-                await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
-            if (transaction is not null)
-                await transaction.RollbackAsync(CancellationToken.None);
+            await transaction.RollbackAsync(CancellationToken.None);
             if (!committed && !string.Equals(asset.Url, previousLogo, StringComparison.Ordinal))
                 await DeleteImageBestEffortAsync(asset.Url, "compensate an uncommitted Team logo replacement");
             throw;
@@ -600,19 +598,15 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         team.LogoUrl = null;
         cancellationToken.ThrowIfCancellationRequested();
         await _dbContext.SaveChangesAsync(cancellationToken);
-        if (transaction is not null)
-            await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         await RetireLogoIfUnreferencedAsync(previousLogo, null);
         return new TeamLogoResponseDTO(team.Id, null);
     }
 
-    private async Task<IDbContextTransaction?> BeginTeamMutationTransactionAsync(
+    private async Task<IDbContextTransaction> BeginTeamMutationTransactionAsync(
         Guid teamId,
         CancellationToken cancellationToken)
     {
-        if (!_dbContext.Database.IsRelational())
-            return null;
-
         var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {

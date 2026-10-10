@@ -1,4 +1,5 @@
 using Npgsql;
+using Testcontainers.PostgreSql;
 using Mercurius.LAN.API.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -56,9 +57,22 @@ internal static class PostgresTestDatabase
         dbContext.Database.Migrate();
     }
 
-    private static string GetBaseConnectionString() =>
-        Environment.GetEnvironmentVariable("TEST_POSTGRES_CONNECTION")
-        ?? "Host=localhost;Port=5432;Username=postgres;Password=postgres;Timeout=5;Command Timeout=30";
+    // CI points TEST_POSTGRES_CONNECTION at its service container; elsewhere one PostgreSQL 17 container is
+    // started per test process (Testcontainers' reaper removes it when the process exits).
+    private static readonly Lazy<string> BaseConnectionString = new(() =>
+        Environment.GetEnvironmentVariable("TEST_POSTGRES_CONNECTION") is { Length: > 0 } configured
+            ? configured
+            : StartContainer());
+
+    private static string GetBaseConnectionString() => BaseConnectionString.Value;
+
+    private static string StartContainer()
+    {
+        var container = new PostgreSqlBuilder("postgres:17").Build();
+        // Start off xUnit's synchronization context: blocking on it while every test thread waits here deadlocks.
+        Task.Run(() => container.StartAsync()).GetAwaiter().GetResult();
+        return container.GetConnectionString();
+    }
 
     private sealed class DisposableMercuriusDbContext(
         DbContextOptions<MercuriusDBContext> options,

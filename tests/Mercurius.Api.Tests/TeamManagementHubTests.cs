@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using System.Security.Claims;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Hubs;
@@ -137,19 +138,13 @@ public class TeamManagementHubTests
         return services.BuildServiceProvider();
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static User CreateUser() => new()
     {
         Id = Guid.NewGuid(),
         Auth0UserId = $"auth0|{Guid.NewGuid():N}",
-        Username = $"user-{Guid.NewGuid():N}",
+        Username = $"user-{Guid.NewGuid().ToString("N")[..12]}",
         Firstname = "Realtime",
         Lastname = "User",
         Email = "realtime@example.test"

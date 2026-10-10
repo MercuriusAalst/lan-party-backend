@@ -234,16 +234,13 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
             throw new ValidationException("Tournament cannot be deleted when already in progress.");
 
         var imageUrl = tournament.ImageUrl;
-        await using var transaction = _dbContext.Database.IsRelational()
-            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
-            : null;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         // The sponsorship FK restricts tournament deletes, so the owning module removes its placement first.
         await _sponsorshipModule.ReplaceSponsorPlacementAsync(new TournamentId(tournament.Id), null, cancellationToken);
         _dbContext.Tournaments.Remove(tournament);
         _moduleEventPublisher.Publish(new TournamentDeletedIntegrationEvent(new TournamentId(tournament.Id)));
         await _dbContext.SaveChangesAsync(cancellationToken);
-        if (transaction is not null)
-            await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         await DeleteImageBestEffortAsync(imageUrl, "retire a deleted tournament image");
     }
 

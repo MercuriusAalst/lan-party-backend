@@ -2055,14 +2055,7 @@ public class TeamTests
         };
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static void AddTeamRegistration(
         MercuriusDBContext dbContext,
@@ -2106,11 +2099,14 @@ public class TeamTests
 
     private static UniqueConstraintDbContext CreateUniqueConstraintDbContext()
     {
+        var database = PostgresTestDatabase.Create();
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseNpgsql(database.ConnectionString)
             .Options;
+        using (var migrationContext = new MercuriusDBContext(options))
+            PostgresTestDatabase.Initialize(migrationContext);
 
-        return new UniqueConstraintDbContext(options);
+        return new UniqueConstraintDbContext(options, database);
     }
 
     private static TeamEventPublishingDecorator CreateTeamService(
@@ -2232,9 +2228,9 @@ public class TeamTests
             return await dbContext.Set<TournamentRegistration>()
                 .AsNoTracking()
                 .Where(registration => registration.TeamId == teamId && registration.Status == TournamentRegistrationStatus.Active)
+                .OrderBy(registration => registration.Tournament.Name)
+                .ThenBy(registration => registration.TournamentId)
                 .Select(registration => new PublicTeamTournamentSummary(new TournamentId(registration.TournamentId), registration.Tournament.Name))
-                .OrderBy(tournament => tournament.Name)
-                .ThenBy(tournament => tournament.TournamentId.Value)
                 .ToListAsync(cancellationToken);
         }
 
@@ -2454,9 +2450,23 @@ public class TeamTests
         }
     }
 
-    private sealed class UniqueConstraintDbContext(DbContextOptions<MercuriusDBContext> options) : MercuriusDBContext(options)
+    private sealed class UniqueConstraintDbContext(
+        DbContextOptions<MercuriusDBContext> options,
+        PostgresTestDatabaseLease database) : MercuriusDBContext(options)
     {
         public bool ThrowTeamNameUniqueConstraint { get; set; }
+
+        public override async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await base.DisposeAsync();
+            }
+            finally
+            {
+                await database.DisposeAsync();
+            }
+        }
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {

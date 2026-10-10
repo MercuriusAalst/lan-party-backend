@@ -54,6 +54,7 @@ public class TournamentPerformanceRegressionTests
 
         dbContext.Users.Add(user);
         dbContext.Set<TournamentAggregate>().Add(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
 
         var sponsorPlacement = CreateSponsorPlacement(tournament.Id);
@@ -92,6 +93,7 @@ public class TournamentPerformanceRegressionTests
         fourth.Set(x => x.Id, Guid.Parse("00000000-0000-0000-0000-000000000001"));
         fourth.Set(x => x.PlannedStartTime, new DateTime(2026, 8, 1, 18, 0, 0, DateTimeKind.Utc));
         dbContext.Set<TournamentAggregate>().AddRange(first, second, third, fourth);
+        dbContext.AddReferencedParticipants(first, second, third, fourth);
         await dbContext.SaveChangesAsync();
         var sponsorshipModule = new StaticSponsorshipModule(null);
         var service = CreateTournamentService(dbContext, [], sponsorPlacement: null, sponsorshipModule);
@@ -139,6 +141,7 @@ public class TournamentPerformanceRegressionTests
         tournament.TournamentRegistrations.Add(CreateActiveIndividualRegistration(tournament, secondUser));
         dbContext.Users.AddRange(firstUser, secondUser);
         dbContext.Set<TournamentAggregate>().Add(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -161,6 +164,7 @@ public class TournamentPerformanceRegressionTests
         tournament.TournamentRegistrations.Add(CreateActiveIndividualRegistration(tournament, user));
         dbContext.Users.Add(user);
         dbContext.Set<TournamentAggregate>().Add(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -225,6 +229,8 @@ public class TournamentPerformanceRegressionTests
         }
 
         dbContext.Set<TournamentAggregate>().Add(tournament);
+
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -376,6 +382,8 @@ public class TournamentPerformanceRegressionTests
         }
 
         dbContext.Set<TournamentAggregate>().Add(tournament);
+
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
 
         var teamsModule = new TrackingCurrentCaptainTeamsModule(
@@ -458,14 +466,7 @@ public class TournamentPerformanceRegressionTests
             TimeProvider.System);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static MercuriusDBContext CreateTranslationDbContext()
     {

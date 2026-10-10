@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity;
@@ -1019,6 +1020,8 @@ public class UserTests
         var bravoSecond = CreateStoredUser("auth0|bravo-second", "bravo-second@example.com", "Bravo");
         bravoFirst.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
         bravoSecond.Id = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        // Usernames are unique among active accounts only, so a deleted account exercises the id tie-break.
+        bravoSecond.IsDeleted = true;
         dbContext.Users.AddRange(bravoSecond, alpha, bravoFirst);
         await dbContext.SaveChangesAsync();
 
@@ -1171,14 +1174,7 @@ public class UserTests
         Assert.DoesNotContain("::text", sql, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static UserService CreateUserService(
         MercuriusDBContext dbContext,

@@ -6,12 +6,8 @@ namespace Mercurius.Modules.Teams.Infrastructure;
 
 internal static class TeamMutationLock
 {
-    private const string PostgreSqlProvider = "Npgsql.EntityFrameworkCore.PostgreSQL";
-
     public static async Task AcquireAsync(ITeamsDbContext dbContext, Guid teamId, CancellationToken cancellationToken)
     {
-        if (!string.Equals(dbContext.Database.ProviderName, PostgreSqlProvider, StringComparison.Ordinal))
-            return;
         if (dbContext.Database.CurrentTransaction is null)
             throw new InvalidOperationException("Team mutation locks require an active database transaction.");
 

@@ -14,6 +14,7 @@ using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Sponsorship.Contracts;
 using Mercurius.Modules.Teams.Contracts;
+using Mercurius.Modules.Teams.Domain;
 using Platform.Eventing;
 
 namespace Mercurius.Modules.Tournament.Tests;
@@ -129,11 +130,16 @@ internal static class TournamentTestSupport
 
     public static StubMediaModule CreateMediaModule(string url = "images/tournament.webp") => new(url);
 
-    public static void AddReferencedUsers(
+    // Seeds placeholder users and teams for every id the tournaments reference, so PostgreSQL foreign keys hold.
+    public static void AddReferencedParticipants(
         this MercuriusDBContext dbContext,
-        TournamentAggregate tournament)
+        params TournamentAggregate[] tournaments)
     {
-        var referencedUserIds = tournament.Matches
+        var registrations = tournaments.SelectMany(tournament => tournament.TournamentRegistrations).ToArray();
+        var rosterMembers = registrations.SelectMany(registration => registration.RosterMembers).ToArray();
+        var matches = tournaments.SelectMany(tournament => tournament.Matches).ToArray();
+
+        var referencedUserIds = matches
             .SelectMany(match => new[]
             {
                 match.UserParticipant1Id,
@@ -142,17 +148,13 @@ internal static class TournamentTestSupport
                 match.UserLoserId,
                 match.ResultRecordedByUserId
             })
-            .Concat(tournament.AssignedAdminUserId is { } assignedAdminUserId
-                ? [assignedAdminUserId]
-                : [])
-            .Where(userId => userId.HasValue)
+            .Concat(tournaments.Select(tournament => tournament.AssignedAdminUserId))
+            .Concat(registrations.SelectMany(registration => new[] { registration.RegisteredByUserId, registration.UserId }))
+            .Concat(rosterMembers.Select(member => (Guid?)member.UserId))
+            .Where(userId => userId.HasValue && userId.Value != Guid.Empty)
             .Select(userId => userId!.Value)
-            .Distinct()
-            .ToArray();
-
-        var existingUserIds = dbContext.Users.Local
-            .Select(user => user.Id)
-            .ToHashSet();
+            .Distinct();
+        var existingUserIds = dbContext.Users.Local.Select(user => user.Id).ToHashSet();
         dbContext.Users.AddRange(referencedUserIds
             .Where(userId => !existingUserIds.Contains(userId))
             .Select(userId => new User
@@ -160,6 +162,27 @@ internal static class TournamentTestSupport
                 Id = userId,
                 Auth0UserId = $"auth0|{userId:N}"
             }));
+
+        var referencedTeamIds = matches
+            .SelectMany(match => new[]
+            {
+                match.TeamParticipant1Id,
+                match.TeamParticipant2Id,
+                match.TeamWinnerId,
+                match.TeamLoserId
+            })
+            .Concat(registrations.Select(registration => registration.TeamId))
+            .Concat(rosterMembers.Select(member => member.TeamId))
+            .Where(teamId => teamId.HasValue && teamId.Value != Guid.Empty)
+            .Select(teamId => teamId!.Value)
+            .Distinct();
+        var existingTeamIds = dbContext.Teams.Local.Select(team => team.Id).ToHashSet();
+        foreach (var teamId in referencedTeamIds.Where(teamId => !existingTeamIds.Contains(teamId)))
+        {
+            var team = new Team { Id = teamId };
+            team.UpdateName($"Team {teamId:N}");
+            dbContext.Teams.Add(team);
+        }
     }
 
     internal sealed class RecordingTournamentRealtimePublisher : ITournamentRealtimePublisher

@@ -141,7 +141,8 @@ public sealed class LeaderboardTests
     [Fact]
     public async Task ReadModels_ProjectRankedRowsAndOrderedAdminHistory()
     {
-        var options = CreateDbOptions();
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateDbOptions(database);
         await using (var seedDb = new MercuriusDBContext(options))
         {
             var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
@@ -180,7 +181,8 @@ public sealed class LeaderboardTests
     [Fact]
     public async Task Lifecycle_StartsScheduledLeaderboardWithoutGeneratingMatches()
     {
-        var options = CreateDbOptions();
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateDbOptions(database);
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
         seedDb.Set<TournamentAggregate>().Add(tournament);
@@ -202,7 +204,8 @@ public sealed class LeaderboardTests
     [Fact]
     public async Task Lifecycle_RejectsScheduledLeaderboardCompletionOnLeaderboardPrecondition()
     {
-        var options = CreateDbOptions();
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateDbOptions(database);
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
         seedDb.Set<TournamentAggregate>().Add(tournament);
@@ -221,7 +224,8 @@ public sealed class LeaderboardTests
     [Fact]
     public async Task Lifecycle_CompletesGuestPlacementsAndResetClearsLeaderboard()
     {
-        var options = CreateDbOptions();
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateDbOptions(database);
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
         AddParticipant(tournament, "Guest winner", null, 50m);
@@ -250,7 +254,8 @@ public sealed class LeaderboardTests
     [Fact]
     public async Task Lifecycle_RejectsCompletingEmptyLeaderboard()
     {
-        var options = CreateDbOptions();
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateDbOptions(database);
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.FastestTime);
         tournament.Start(DateTime.UtcNow);
@@ -275,7 +280,8 @@ public sealed class LeaderboardTests
     [Fact]
     public async Task RecordAttempt_PersistsLinkedParticipantForActiveProfile()
     {
-        var options = CreateDbOptionsIgnoringInMemoryTransactions();
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateDbOptions(database);
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
         tournament.Start(DateTime.UtcNow);
@@ -308,7 +314,8 @@ public sealed class LeaderboardTests
     [Fact]
     public async Task RecordAttempt_RejectsDeletedLinkedProfileWithoutPersisting()
     {
-        var options = CreateDbOptionsIgnoringInMemoryTransactions();
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateDbOptions(database);
         await using var seedDb = new MercuriusDBContext(options);
         var tournament = CreateTournament(metric: LeaderboardRankingMetric.HighestScore);
         tournament.Start(DateTime.UtcNow);
@@ -403,14 +410,15 @@ public sealed class LeaderboardTests
         tournament.LeaderboardParticipants.Add(participant);
     }
 
-    private static DbContextOptions<MercuriusDBContext> CreateDbOptions() =>
-        new DbContextOptionsBuilder<MercuriusDBContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-
-    private static DbContextOptions<MercuriusDBContext> CreateDbOptionsIgnoringInMemoryTransactions() =>
-        new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+    private static DbContextOptions<MercuriusDBContext> CreateDbOptions(PostgresTestDatabaseLease database)
+    {
+        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
+            .UseNpgsql(database.ConnectionString)
             .Options;
+        using var migrationContext = new MercuriusDBContext(options);
+        PostgresTestDatabase.Initialize(migrationContext);
+        return options;
+    }
 
     private static LeaderboardService CreateLeaderboardService(MercuriusDBContext db, IReadOnlyCollection<User>? users = null) => new(
         new TournamentDbContextAdapter<MercuriusDBContext>(db),

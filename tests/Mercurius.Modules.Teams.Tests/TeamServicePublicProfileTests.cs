@@ -69,16 +69,17 @@ public class TeamServicePublicProfileTests
         var bravoMember = CreateUser("Bravo");
         var unnamedMember = CreateUser(null);
         var blankMember = CreateUser(" ");
+        var invitedUser = CreateUser("Invited");
         var team = new Team("Privacy Squad", captain.Id) { Id = Guid.NewGuid() };
         team.AddMember(captain.Id);
         team.AddMember(bravoMember.Id);
         team.AddMember(unnamedMember.Id);
         team.AddMember(blankMember.Id);
-        dbContext.Users.AddRange(captain, bravoMember, unnamedMember, blankMember);
+        dbContext.Users.AddRange(captain, bravoMember, unnamedMember, blankMember, invitedUser);
         team.TeamInvites.Add(new TeamInvite
         {
             TeamId = team.Id,
-            UserId = Guid.NewGuid(),
+            UserId = invitedUser.Id,
             Status = TeamInviteStatus.Pending
         });
         dbContext.Teams.Add(team);
@@ -154,14 +155,7 @@ public class TeamServicePublicProfileTests
             TimeProvider.System);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static User CreateUser(string? username)
     {
@@ -172,7 +166,7 @@ public class TeamServicePublicProfileTests
             Username = username,
             Firstname = "First",
             Lastname = "Last",
-            Email = "user@example.com",
+            Email = $"{Guid.NewGuid():N}@example.com",
             DiscordId = "discord",
             SteamId = "steam",
             RiotId = "riot"
@@ -233,11 +227,11 @@ public class TeamServicePublicProfileTests
             return await dbContext.Set<TournamentRegistration>()
                 .AsNoTracking()
                 .Where(registration => registration.TeamId == teamId && registration.Status == TournamentRegistrationStatus.Active)
+                .OrderBy(registration => registration.Tournament.Name)
+                .ThenBy(registration => registration.TournamentId)
                 .Select(registration => new PublicTeamTournamentSummary(
                     new TournamentId(registration.TournamentId),
                     registration.Tournament.Name))
-                .OrderBy(tournament => tournament.Name)
-                .ThenBy(tournament => tournament.TournamentId.Value)
                 .ToListAsync(cancellationToken);
         }
 

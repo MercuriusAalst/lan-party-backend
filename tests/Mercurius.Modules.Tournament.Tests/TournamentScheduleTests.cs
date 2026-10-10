@@ -166,7 +166,7 @@ public class TournamentScheduleTests
     public async Task StartTournamentAsync_RejectsEstimatedScheduleDateOverflow()
     {
         await using var dbContext = CreateDbContext();
-        var tournament = CreateScheduledTournament(plannedStartTime: DateTime.MaxValue.AddMinutes(-5));
+        var tournament = CreateScheduledTournament(plannedStartTime: DateTime.SpecifyKind(DateTime.MaxValue.AddMinutes(-5), DateTimeKind.Utc));
         dbContext.Set<TournamentAggregate>().Add(tournament);
         AddIndividualRegistration(dbContext, tournament, CreateUser(1));
         AddIndividualRegistration(dbContext, tournament, CreateUser(2));
@@ -291,6 +291,7 @@ public class TournamentScheduleTests
         return new User
         {
             Id = Guid.NewGuid(),
+            Auth0UserId = $"auth0|user{id}",
             Username = $"user{id}",
             Firstname = $"First{id}",
             Lastname = $"Last{id}",
@@ -298,14 +299,7 @@ public class TournamentScheduleTests
         };
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static void AddIndividualRegistration(MercuriusDBContext dbContext, TournamentAggregate tournament, User user)
     {

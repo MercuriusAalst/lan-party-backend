@@ -522,14 +522,7 @@ public class ModuleEventingTests
         return provider;
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static TeamEventPublishingDecorator CreateTeamService(MercuriusDBContext dbContext)
     {

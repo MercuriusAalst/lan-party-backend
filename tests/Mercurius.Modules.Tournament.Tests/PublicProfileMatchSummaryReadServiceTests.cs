@@ -87,6 +87,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             matchNumber: 1));
 
         dbContext.Set<TournamentAggregate>().AddRange(tournament, canceledTournament);
+
+        dbContext.AddReferencedParticipants(tournament, canceledTournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -138,6 +140,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             new DateTime(2026, 8, 10, 10, 0, 0, DateTimeKind.Utc)));
 
         dbContext.Set<TournamentAggregate>().AddRange(individualTournament, teamTournament);
+
+        dbContext.AddReferencedParticipants(individualTournament, teamTournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -204,6 +208,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             new DateTime(2026, 8, 5, 10, 0, 0, DateTimeKind.Utc)));
 
         dbContext.Set<TournamentAggregate>().AddRange(tournament, captainTournament);
+
+        dbContext.AddReferencedParticipants(tournament, captainTournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -247,6 +253,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             new DateTime(2026, 8, 8, 10, 0, 0, DateTimeKind.Utc)));
 
         dbContext.Set<TournamentAggregate>().AddRange(individualTournament, teamTournament);
+
+        dbContext.AddReferencedParticipants(individualTournament, teamTournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -299,6 +307,7 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         tournament.Matches.Add(delayed);
         unscheduledTournament.Matches.Add(unscheduled);
         dbContext.Set<TournamentAggregate>().AddRange(tournament, unscheduledTournament);
+        dbContext.AddReferencedParticipants(tournament, unscheduledTournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -349,6 +358,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         tournament.Matches.Add(bye);
 
         dbContext.Set<TournamentAggregate>().Add(tournament);
+
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
 
         var summaries = await CreateService(dbContext)
@@ -380,6 +391,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         tournament.Matches.Add(forfeited);
 
         dbContext.Set<TournamentAggregate>().Add(tournament);
+
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -427,6 +440,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         }
 
         dbContext.Set<TournamentAggregate>().Add(tournament);
+
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -448,13 +463,7 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             TournamentTestSupport.CreateIdentityModule(users),
             TournamentTestSupport.CreateTeamsModule(teams, users));
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static MercuriusDBContext CreateTranslationDbContext()
     {

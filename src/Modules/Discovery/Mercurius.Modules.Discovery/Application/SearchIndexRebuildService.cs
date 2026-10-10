@@ -138,7 +138,7 @@ internal sealed class SearchIndexRebuildService
             _logger.LogError(exception, "Discovery search-index rebuild job {JobId} failed.", job.Id);
             try
             {
-                await ClearStagedDocumentsAsync(job.Id, cancellationToken);
+                await ClearStagedDocumentsAsync(cancellationToken);
             }
             catch (Exception cleanupException)
             {
@@ -168,7 +168,7 @@ internal sealed class SearchIndexRebuildService
 
         foreach (var job in interruptedJobs)
         {
-            await ClearStagedDocumentsAsync(job.Id, cancellationToken);
+            await ClearStagedDocumentsAsync(cancellationToken);
             job.Status = SearchIndexRebuildJobStatus.Pending;
             job.StartedAtUtc = null;
             job.CompletedAtUtc = null;
@@ -193,10 +193,7 @@ internal sealed class SearchIndexRebuildService
         await StageTournamentDocumentsAsync(job, sourceVersion, updatedAtUtc, cancellationToken);
         await StageSponsorDocumentsAsync(job, sourceVersion, updatedAtUtc, cancellationToken);
 
-        if (_dbContext.IsRelational)
-            await MergeStagedDocumentsRelationalAsync(job, sourceVersion, updatedAtUtc, cancellationToken);
-        else
-            await MergeStagedDocumentsInMemoryAsync(job, sourceVersion, updatedAtUtc, cancellationToken);
+        await MergeStagedDocumentsRelationalAsync(job, sourceVersion, updatedAtUtc, cancellationToken);
     }
 
     private async Task StageUserDocumentsAsync(
@@ -404,7 +401,7 @@ internal sealed class SearchIndexRebuildService
                     AND staged.entity_id = document.entity_id);
             """, cancellationToken);
 
-        await ClearStagedDocumentsAsync(job.Id, cancellationToken);
+        await ClearStagedDocumentsAsync(cancellationToken);
         job.Status = SearchIndexRebuildJobStatus.Completed;
         job.CompletedAtUtc = UtcNow();
         await _ownership.EnsureOwnedAsync(cancellationToken);
@@ -413,87 +410,12 @@ internal sealed class SearchIndexRebuildService
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private async Task MergeStagedDocumentsInMemoryAsync(
-        SearchIndexRebuildJob job,
-        long sourceVersion,
-        DateTime updatedAtUtc,
-        CancellationToken cancellationToken)
+    private async Task ClearStagedDocumentsAsync(CancellationToken cancellationToken)
     {
         await _ownership.EnsureOwnedAsync(cancellationToken);
-        var stagedDocuments = await _dbContext.SearchIndexRebuildDocuments
-            .Where(document => document.JobId == job.Id)
-            .ToListAsync(cancellationToken);
-        var stagedKeys = stagedDocuments
-            .Select(document => (document.EntityType, document.EntityId))
-            .ToHashSet();
-        var existingDocuments = await _dbContext.SearchDocuments.ToListAsync(cancellationToken);
-        var documentsByKey = existingDocuments.ToDictionary(document => (document.EntityType, document.EntityId));
-
-        foreach (var staged in stagedDocuments)
-        {
-            if (!documentsByKey.TryGetValue((staged.EntityType, staged.EntityId), out var document))
-            {
-                document = new SearchDocument
-                {
-                    EntityType = staged.EntityType,
-                    EntityId = staged.EntityId
-                };
-                _dbContext.SearchDocuments.Add(document);
-            }
-            else if (document.SourceVersion > staged.SourceVersion)
-            {
-                continue;
-            }
-
-            document.Title = staged.Title;
-            document.Subtitle = staged.Subtitle;
-            document.ImageUrl = staged.ImageUrl;
-            document.Route = staged.Route;
-            document.NormalizedText = staged.NormalizedText;
-            document.TypeOrder = staged.TypeOrder;
-            document.SourceVersion = staged.SourceVersion;
-            document.IsDeleted = false;
-            document.UpdatedAtUtc = staged.UpdatedAtUtc;
-        }
-
-        foreach (var document in existingDocuments.Where(document =>
-                     !document.IsDeleted &&
-                     document.SourceVersion <= sourceVersion &&
-                     !stagedKeys.Contains((document.EntityType, document.EntityId))))
-        {
-            document.Title = string.Empty;
-            document.Subtitle = string.Empty;
-            document.ImageUrl = null;
-            document.Route = string.Empty;
-            document.NormalizedText = string.Empty;
-            document.SourceVersion = sourceVersion;
-            document.IsDeleted = true;
-            document.UpdatedAtUtc = updatedAtUtc;
-        }
-
-        _dbContext.SearchIndexRebuildDocuments.RemoveRange(stagedDocuments);
-        job.Status = SearchIndexRebuildJobStatus.Completed;
-        job.CompletedAtUtc = UtcNow();
-        await _ownership.EnsureOwnedAsync(cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task ClearStagedDocumentsAsync(Guid jobId, CancellationToken cancellationToken)
-    {
-        await _ownership.EnsureOwnedAsync(cancellationToken);
-        if (_dbContext.IsRelational)
-        {
-            await _dbContext.ExecuteSqlInterpolatedAsync($"""
-                TRUNCATE TABLE discovery.search_index_rebuild_documents;
-                """, cancellationToken);
-            return;
-        }
-
-        var stagedDocuments = await _dbContext.SearchIndexRebuildDocuments
-            .Where(document => document.JobId == jobId)
-            .ToListAsync(cancellationToken);
-        _dbContext.SearchIndexRebuildDocuments.RemoveRange(stagedDocuments);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.ExecuteSqlInterpolatedAsync($"""
+            TRUNCATE TABLE discovery.search_index_rebuild_documents;
+            """, cancellationToken);
     }
 
     private static DiscoverySearchIndexRebuildJob ToContract(SearchIndexRebuildJob job)
