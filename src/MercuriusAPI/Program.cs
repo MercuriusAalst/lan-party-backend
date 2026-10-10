@@ -84,7 +84,8 @@ public class Program
         var app = builder.Build();
         app.UseTransportSecurity(app.Environment);
         app.UseCors(CorsPolicyName);
-        app.ApplyMigrations<MercuriusDBContext>();
+        if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
+            app.ApplyMigrations<MercuriusDBContext>();
         app.UseApiExceptionHandling();
         app.UseSecurityPipeline();
         app.UseImageflowWithCaching(
