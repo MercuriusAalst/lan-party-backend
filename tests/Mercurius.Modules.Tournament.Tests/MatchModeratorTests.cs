@@ -118,6 +118,27 @@ public class MatchModeratorTests
         AssertPlaysThroughToPlacements(BracketType.DoubleElimination, new DoubleEliminationMatchModerator(), participantCount);
     }
 
+    [Theory]
+    [MemberData(nameof(BracketSizes))]
+    public void EliminationBrackets_ByeAdvancementKeepsNullSourceMatch(int participantCount)
+    {
+        foreach (var (bracketType, moderator) in new (BracketType, IMatchModerator)[]
+        {
+            (BracketType.SingleElimination, new SingleEliminationMatchModerator()),
+            (BracketType.DoubleElimination, new DoubleEliminationMatchModerator())
+        })
+        {
+            var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1);
+            for (var i = 1; i <= participantCount; i++)
+                AddTeamRegistration(tournament, CreateTeam(i));
+
+            var matches = moderator.GenerateMatchesForTournament(tournament).ToList();
+
+            Assert.DoesNotContain(matches, match =>
+                match.Participant1SourceMatchId == Guid.Empty || match.Participant2SourceMatchId == Guid.Empty);
+        }
+    }
+
     private static void AssertPlaysThroughToPlacements(BracketType bracketType, IMatchModerator moderator, int participantCount)
     {
         var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);

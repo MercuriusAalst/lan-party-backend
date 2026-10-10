@@ -18,26 +18,14 @@ internal static class MatchExtensions
             if (match.ParticipationMode == ParticipationMode.Individual)
             {
                 if (match.MatchNumber % 2 != 0)
-                {
                     targetMatch.SetIndividualParticipant1(match.UserWinnerId);
-                    targetMatch.Participant1SourceMatchId = match.Id;
-                }
                 else
-                {
                     targetMatch.SetIndividualParticipant2(match.UserWinnerId);
-                    targetMatch.Participant2SourceMatchId = match.Id;
-                }
             }
             else if (match.MatchNumber % 2 != 0)
-            {
                 targetMatch.SetTeamParticipant1(match.TeamWinnerId);
-                targetMatch.Participant1SourceMatchId = match.Id;
-            }
             else
-            {
                 targetMatch.SetTeamParticipant2(match.TeamWinnerId);
-                targetMatch.Participant2SourceMatchId = match.Id;
-            }
         }
 
         foreach (var match in matches)
