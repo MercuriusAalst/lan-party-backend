@@ -89,7 +89,8 @@ public class Program
         if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
             app.ApplyMigrations<MercuriusDBContext>();
         app.UseApiExceptionHandling();
-        // Public media and static assets are served ahead of the security pipeline: anonymous and not rate limited.
+        // Public media, static assets and the Swagger UI are served ahead of the security pipeline:
+        // anonymous (the fallback policy only covers what runs after UseAuthorization) and not rate limited.
         app.UseImageflowWithCaching(
             requestPath: "/images",
             storagePath: app.Configuration["FileStorage:Location"],
@@ -99,8 +100,8 @@ public class Program
             FileProvider = new PhysicalFileProvider(Path.Combine(AppContext.BaseDirectory, "staticfiles")),
             RequestPath = "/staticfiles"
         });
-        app.UseSecurityPipeline();
         app.UseVersionedSwaggerUI(customJavascriptPath: "/staticfiles/swagger-custom.js");
+        app.UseSecurityPipeline();
 
         app.MapTournamentModule();
         app.MapIdentityModule();
