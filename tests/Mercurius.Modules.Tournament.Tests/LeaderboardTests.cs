@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Tournament.Application.DTOs.Leaderboards;
@@ -345,7 +346,7 @@ public sealed class LeaderboardTests
 
     private static TournamentAggregate CreateTournament(
         ParticipationMode mode = ParticipationMode.Individual,
-        LeaderboardRankingMetric? metric = LeaderboardRankingMetric.HighestScore) => new(
+        LeaderboardRankingMetric? metric = LeaderboardRankingMetric.HighestScore) => new TournamentAggregate(
         "Leaderboard",
         BracketType.Leaderboard,
         GameFormat.BestOf1,
@@ -355,10 +356,7 @@ public sealed class LeaderboardTests
         DateTime.UtcNow,
         0,
         0,
-        metric)
-        {
-            Id = Guid.NewGuid()
-        };
+        metric).Set(x => x.Id, Guid.NewGuid());
 
     private static void AddParticipant(
         TournamentAggregate tournament,

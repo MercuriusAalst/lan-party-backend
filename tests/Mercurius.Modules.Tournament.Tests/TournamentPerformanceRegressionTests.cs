@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using System.Reflection;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament;
@@ -26,14 +27,12 @@ public class TournamentPerformanceRegressionTests
         await using var dbContext = CreateDbContext();
         var user = CreateUser("Alpha");
         var tournament = CreateTournament("Summary vs detail");
-        tournament.Matches.Add(new Match
-        {
-            TournamentId = tournament.Id,
-            RoundNumber = 1,
-            MatchNumber = 1,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual
-        });
+        tournament.Matches.Add(new Match()
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.RoundNumber, 1)
+            .Set(x => x.MatchNumber, 1)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual));
         tournament.Placements.Add(new Placement
         {
             Place = 1,
@@ -81,17 +80,17 @@ public class TournamentPerformanceRegressionTests
     {
         await using var dbContext = CreateDbContext();
         var first = CreateTournament("Zulu");
-        first.Id = Guid.Parse("00000000-0000-0000-0000-000000000004");
-        first.PlannedStartTime = new DateTime(2026, 8, 2, 18, 0, 0, DateTimeKind.Utc);
+        first.Set(x => x.Id, Guid.Parse("00000000-0000-0000-0000-000000000004"));
+        first.Set(x => x.PlannedStartTime, new DateTime(2026, 8, 2, 18, 0, 0, DateTimeKind.Utc));
         var second = CreateTournament("Beta");
-        second.Id = Guid.Parse("00000000-0000-0000-0000-000000000003");
-        second.PlannedStartTime = new DateTime(2026, 8, 1, 18, 0, 0, DateTimeKind.Utc);
+        second.Set(x => x.Id, Guid.Parse("00000000-0000-0000-0000-000000000003"));
+        second.Set(x => x.PlannedStartTime, new DateTime(2026, 8, 1, 18, 0, 0, DateTimeKind.Utc));
         var third = CreateTournament("Alpha");
-        third.Id = Guid.Parse("00000000-0000-0000-0000-000000000002");
-        third.PlannedStartTime = new DateTime(2026, 8, 1, 18, 0, 0, DateTimeKind.Utc);
+        third.Set(x => x.Id, Guid.Parse("00000000-0000-0000-0000-000000000002"));
+        third.Set(x => x.PlannedStartTime, new DateTime(2026, 8, 1, 18, 0, 0, DateTimeKind.Utc));
         var fourth = CreateTournament("Alpha");
-        fourth.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
-        fourth.PlannedStartTime = new DateTime(2026, 8, 1, 18, 0, 0, DateTimeKind.Utc);
+        fourth.Set(x => x.Id, Guid.Parse("00000000-0000-0000-0000-000000000001"));
+        fourth.Set(x => x.PlannedStartTime, new DateTime(2026, 8, 1, 18, 0, 0, DateTimeKind.Utc));
         dbContext.Set<TournamentAggregate>().AddRange(first, second, third, fourth);
         await dbContext.SaveChangesAsync();
         var sponsorshipModule = new StaticSponsorshipModule(null);
@@ -205,28 +204,24 @@ public class TournamentPerformanceRegressionTests
     {
         await using var dbContext = CreateDbContext();
         var tournament = CreateTournament("Large match read");
-        var targetMatch = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            RoundNumber = 1,
-            MatchNumber = 1
-        };
+        var targetMatch = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.RoundNumber, 1)
+            .Set(x => x.MatchNumber, 1);
         tournament.Matches.Add(targetMatch);
         for (var matchNumber = 2; matchNumber <= 101; matchNumber++)
         {
-            tournament.Matches.Add(new Match
-            {
-                Id = Guid.NewGuid(),
-                TournamentId = tournament.Id,
-                Format = GameFormat.BestOf1,
-                ParticipationMode = ParticipationMode.Individual,
-                RoundNumber = matchNumber,
-                MatchNumber = 1
-            });
+            tournament.Matches.Add(new Match()
+                .Set(x => x.Id, Guid.NewGuid())
+                .Set(x => x.TournamentId, tournament.Id)
+                .Set(x => x.Format, GameFormat.BestOf1)
+                .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+                .Set(x => x.RoundNumber, matchNumber)
+                .Set(x => x.MatchNumber, 1));
         }
 
         dbContext.Set<TournamentAggregate>().Add(tournament);

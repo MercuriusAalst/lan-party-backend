@@ -125,15 +125,13 @@ internal sealed class RoundRobinMatchModerator : IMatchModerator
                 if (participant1 == null || participant2 == null)
                     continue;
 
-                var match = new Match
-                {
-                    TournamentId = tournament.Id,
-                    RoundNumber = round,
-                    MatchNumber = matchNumber++,
-                    BracketType = tournament.BracketType,
-                    Format = tournament.Format,
-                    ParticipationMode = tournament.ParticipationMode
-                };
+                var match = new Match(
+                    tournament.Id,
+                    round,
+                    matchNumber++,
+                    tournament.BracketType,
+                    tournament.Format,
+                    tournament.ParticipationMode);
 
                 assignParticipants(match, participant1.Value, participant2.Value);
                 matches.Add(match);

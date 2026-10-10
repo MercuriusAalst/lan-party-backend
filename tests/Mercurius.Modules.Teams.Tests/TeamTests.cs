@@ -587,10 +587,8 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
-        {
-            Id = Guid.NewGuid(),
-            Status = (TournamentStatus)status
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, (TournamentStatus)status);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         dbContext.Set<TournamentAggregate>().Add(tournament);
@@ -670,10 +668,8 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.InProgress
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.InProgress);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         dbContext.Set<TournamentAggregate>().Add(tournament);
@@ -698,10 +694,8 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
-        {
-            Id = Guid.NewGuid(),
-            Status = (TournamentStatus)status
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, (TournamentStatus)status);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         dbContext.Set<TournamentAggregate>().Add(tournament);
@@ -742,10 +736,8 @@ public class TeamTests
         var captain = CreateUser();
         var team = CreateTeam("Alpha", captain);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1)
-        {
-            Id = Guid.NewGuid(),
-            Status = (TournamentStatus)status
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, (TournamentStatus)status);
         dbContext.Users.Add(captain);
         dbContext.Teams.Add(team);
         dbContext.Set<TournamentAggregate>().Add(tournament);
@@ -770,19 +762,15 @@ public class TeamTests
         team.LogoUrl = "/images/alpha.webp";
         team.AddMember(member.Id);
         var tournament = new TournamentAggregate("Completed Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.Completed
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.Completed);
         var placement = new Placement { Id = Guid.NewGuid(), Tournament = tournament, TournamentId = tournament.Id, Place = 1 };
-        var match = new Match
-        {
-            Id = Guid.NewGuid(),
-            Tournament = tournament,
-            TournamentId = tournament.Id,
-            ParticipationMode = ParticipationMode.Team,
-            TeamParticipant1Id = team.Id
-        };
+        var match = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.ParticipationMode, ParticipationMode.Team)
+            .Set(x => x.TeamParticipant1Id, team.Id);
         AddTeamRegistration(dbContext, tournament, team, captain, [captain, member], TournamentRegistrationStatus.Active);
         placement.Teams = [new PlacementTeam { TeamId = team.Id }];
         var invite = new TeamInvite
@@ -968,10 +956,8 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         team.LogoUrl = "/images/original.webp";
         var tournament = new TournamentAggregate("Completed Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 1)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.Completed
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.Completed);
         dbContext.Users.Add(captain);
         dbContext.Teams.Add(team);
         dbContext.Set<TournamentAggregate>().Add(tournament);
@@ -1042,10 +1028,7 @@ public class TeamTests
         var member = CreateUser();
         var team = CreateTeam("Tournament Team", captain);
         team.AddMember(member.Id);
-        var tournament = new TournamentAggregate("Team Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
-        {
-            Id = Guid.NewGuid()
-        };
+        var tournament = new TournamentAggregate("Team Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2).Set(x => x.Id, Guid.NewGuid());
         var rosterMember = new TournamentRegistrationRosterMember
         {
             Id = Guid.NewGuid(),
@@ -2011,10 +1994,7 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         team.AddMember(member.Id);
         var otherTeam = CreateTeam("Bravo", captain);
-        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
-        {
-            Id = Guid.NewGuid()
-        };
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2).Set(x => x.Id, Guid.NewGuid());
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.AddRange(team, otherTeam);
         dbContext.Set<TeamInvite>().Add(CreatePendingInvite(otherTeam, member));

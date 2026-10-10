@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Infrastructure;
@@ -269,10 +270,8 @@ public sealed class TournamentMediaLifecycleTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid(),
-            ImageUrl = PreviousImageUrl
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.ImageUrl, PreviousImageUrl);
     }
 
     private static CreateTournamentDTO CreateTournamentDto()

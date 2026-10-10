@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.Modules.Shared;
@@ -185,10 +186,7 @@ public class TeamServicePublicProfileTests
             GameFormat.BestOf3,
             GameFormat.BestOf5,
             ParticipationMode.Team,
-            5)
-        {
-            Id = id
-        };
+            5).Set(x => x.Id, id);
     }
 
     private static void AddActiveTeamRegistration(MercuriusDBContext dbContext, TournamentAggregate tournament, Team team, User captain)

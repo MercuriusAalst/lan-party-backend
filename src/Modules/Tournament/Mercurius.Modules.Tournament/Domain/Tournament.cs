@@ -8,35 +8,35 @@ internal sealed class Tournament
     private const int MaxAverageGameDurationMinutes = 1440;
     internal const int MaximumTeamSize = 50;
 
-    public Guid Id { get; set; }
-    public string Name { get; set; } = null!;
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
-    public DateTime PlannedStartTime { get; set; }
-    public int AverageGameDurationMinutes { get; set; }
-    public int RoundBreakDurationMinutes { get; set; }
-    public DateTime? EstimatedEndTime { get; set; }
-    public TournamentStatus Status { get; set; }
-    public BracketType BracketType { get; set; }
-    public LeaderboardRankingMetric? LeaderboardRankingMetric { get; set; }
-    public GameFormat Format { get; set; }
-    public GameFormat FinalsFormat { get; set; }
-    public ParticipationMode ParticipationMode { get; set; }
-    public int? TeamSize { get; set; }
-    public Guid? AssignedAdminUserId { get; set; }
-    public string? FirstPlacePrize { get; set; }
-    public string? SecondPlacePrize { get; set; }
-    public string? ThirdPlacePrize { get; set; }
-    public IList<Placement> Placements { get; set; } = [];
-    public IList<Match> Matches { get; set; } = [];
-    public IList<TournamentRegistration> TournamentRegistrations { get; set; } = [];
-    public IList<LeaderboardParticipant> LeaderboardParticipants { get; set; } = [];
+    public Guid Id { get; private set; }
+    public string Name { get; private set; } = null!;
+    public DateTime StartTime { get; private set; }
+    public DateTime EndTime { get; private set; }
+    public DateTime PlannedStartTime { get; private set; }
+    public int AverageGameDurationMinutes { get; private set; }
+    public int RoundBreakDurationMinutes { get; private set; }
+    public DateTime? EstimatedEndTime { get; private set; }
+    public TournamentStatus Status { get; private set; }
+    public BracketType BracketType { get; private set; }
+    public LeaderboardRankingMetric? LeaderboardRankingMetric { get; private set; }
+    public GameFormat Format { get; private set; }
+    public GameFormat FinalsFormat { get; private set; }
+    public ParticipationMode ParticipationMode { get; private set; }
+    public int? TeamSize { get; private set; }
+    public Guid? AssignedAdminUserId { get; private set; }
+    public string? FirstPlacePrize { get; private set; }
+    public string? SecondPlacePrize { get; private set; }
+    public string? ThirdPlacePrize { get; private set; }
+    public IList<Placement> Placements { get; private set; } = [];
+    public IList<Match> Matches { get; private set; } = [];
+    public IList<TournamentRegistration> TournamentRegistrations { get; private set; } = [];
+    public IList<LeaderboardParticipant> LeaderboardParticipants { get; private set; } = [];
     /// <summary>
     /// Shared optimistic-concurrency revision for the tournament aggregate, including configuration, lifecycle, registration, and leaderboard mutations.
     /// The legacy property and database column name do not limit the scope of the token.
     /// </summary>
-    public long LeaderboardRevision { get; set; }
-    public string? ImageUrl { get; set; }
+    public long LeaderboardRevision { get; private set; }
+    public string? ImageUrl { get; private set; }
 
     public Tournament(
         string name,
@@ -153,6 +153,40 @@ internal sealed class Tournament
         LeaderboardParticipants.Clear();
         LeaderboardRevision++;
     }
+
+    public void SetContactAndPrizes(
+        Guid? assignedAdminUserId,
+        string? firstPlacePrize,
+        string? secondPlacePrize,
+        string? thirdPlacePrize)
+    {
+        AssignedAdminUserId = assignedAdminUserId;
+        FirstPlacePrize = firstPlacePrize;
+        SecondPlacePrize = secondPlacePrize;
+        ThirdPlacePrize = thirdPlacePrize;
+    }
+
+    public void IncrementRevision() => LeaderboardRevision++;
+
+    public void SetImageUrl(string? imageUrl) => ImageUrl = imageUrl;
+
+    public void ReplaceMatches(IList<Match> matches) => Matches = matches;
+
+    public void SetEstimatedEndTime(DateTime? estimatedEndTime) => EstimatedEndTime = estimatedEndTime;
+
+    // Builds a detached aggregate carrying only the fields that registration eligibility checks read.
+    public static Tournament ForEligibilityCheck(
+        Guid id,
+        ParticipationMode participationMode,
+        TournamentStatus status,
+        int? teamSize = null) =>
+        new()
+        {
+            Id = id,
+            ParticipationMode = participationMode,
+            Status = status,
+            TeamSize = teamSize
+        };
 
     public int GetRegisteredParticipantCount()
     {

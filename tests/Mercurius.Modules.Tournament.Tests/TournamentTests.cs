@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Shared.Exceptions;
 using DataAnnotations = System.ComponentModel.DataAnnotations;
@@ -92,7 +93,7 @@ public class TournamentTests
     public void Update_ThrowsException_WhenStatusIsInProgressOrCompleted(int status)
     {
         var tournament = CreateTournament();
-        tournament.Status = (TournamentStatus)status;
+        tournament.Set(x => x.Status, (TournamentStatus)status);
 
         Assert.Throws<ValidationException>(() =>
             tournament.Update("New", BracketType.Swiss, GameFormat.BestOf1, GameFormat.BestOf3, ParticipationMode.Team, 5, tournament.PlannedStartTime, tournament.AverageGameDurationMinutes, tournament.RoundBreakDurationMinutes));
@@ -138,7 +139,7 @@ public class TournamentTests
     public void Cancel_SetsStatusToCanceled_WhenNotCompleted()
     {
         var tournament = CreateTournament();
-        tournament.Status = TournamentStatus.InProgress;
+        tournament.Set(x => x.Status, TournamentStatus.InProgress);
 
         tournament.Cancel();
 
@@ -149,7 +150,7 @@ public class TournamentTests
     public void Cancel_ThrowsValidationException_WhenStatusIsCompleted()
     {
         var tournament = CreateTournament();
-        tournament.Status = TournamentStatus.Completed;
+        tournament.Set(x => x.Status, TournamentStatus.Completed);
 
         Assert.Throws<ValidationException>(() => tournament.Cancel());
     }
@@ -171,7 +172,7 @@ public class TournamentTests
     public void Start_ThrowsException_WhenNotScheduled()
     {
         var tournament = CreateTournament();
-        tournament.Status = TournamentStatus.InProgress;
+        tournament.Set(x => x.Status, TournamentStatus.InProgress);
         AddIndividualRegistration(tournament, CreateUser(1));
         AddIndividualRegistration(tournament, CreateUser(2));
 
@@ -191,7 +192,7 @@ public class TournamentTests
     public void Complete_SetsStatusAndEndTime_WhenInProgress()
     {
         var tournament = CreateTournament();
-        tournament.Status = TournamentStatus.InProgress;
+        tournament.Set(x => x.Status, TournamentStatus.InProgress);
 
         tournament.Complete();
 
@@ -203,7 +204,7 @@ public class TournamentTests
     public void Complete_ThrowsException_WhenNotInProgress()
     {
         var tournament = CreateTournament();
-        tournament.Status = TournamentStatus.Scheduled;
+        tournament.Set(x => x.Status, TournamentStatus.Scheduled);
 
         Assert.Throws<ValidationException>(() => tournament.Complete());
     }
@@ -214,9 +215,9 @@ public class TournamentTests
     public void Reset_SetsStatusAndClearsCollections_WhenCompletedOrCanceled(int status)
     {
         var tournament = CreateTournament();
-        tournament.Status = (TournamentStatus)status;
-        tournament.StartTime = DateTime.UtcNow;
-        tournament.EndTime = DateTime.UtcNow;
+        tournament.Set(x => x.Status, (TournamentStatus)status);
+        tournament.Set(x => x.StartTime, DateTime.UtcNow);
+        tournament.Set(x => x.EndTime, DateTime.UtcNow);
         tournament.Matches.Add(new Match());
 
         tournament.Reset();
@@ -231,7 +232,7 @@ public class TournamentTests
     public void Reset_ThrowsException_WhenNotCompletedOrCanceled()
     {
         var tournament = CreateTournament();
-        tournament.Status = TournamentStatus.InProgress;
+        tournament.Set(x => x.Status, TournamentStatus.InProgress);
 
         Assert.Throws<ValidationException>(() => tournament.Reset());
     }

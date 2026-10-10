@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Tournament.Infrastructure;
@@ -74,7 +75,7 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         tournament.Matches.Add(upcomingEarly);
 
         var canceledTournament = CreateTournament("Canceled Cup", ParticipationMode.Individual);
-        canceledTournament.Status = TournamentStatus.Canceled;
+        canceledTournament.Set(x => x.Status, TournamentStatus.Canceled);
         AddIndividualRegistration(canceledTournament, userId, "profile-player");
         AddIndividualRegistration(canceledTournament, opponentId, "public-opponent");
         canceledTournament.Matches.Add(CreateCompletedMatch(
@@ -274,7 +275,7 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             new DateTime(2099, 8, 10, 10, 0, 0, DateTimeKind.Utc),
             roundNumber: 1,
             matchNumber: 1);
-        started.StartTime = new DateTime(2026, 8, 10, 9, 0, 0, DateTimeKind.Utc);
+        started.Set(x => x.StartTime, new DateTime(2026, 8, 10, 9, 0, 0, DateTimeKind.Utc));
 
         var delayed = CreateUpcomingMatch(
             tournament,
@@ -291,8 +292,8 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             userId,
             opponentId,
             new DateTime(2099, 8, 11, 8, 0, 0, DateTimeKind.Utc));
-        unscheduled.EstimatedStartTime = null;
-        unscheduled.EstimatedEndTime = null;
+        unscheduled.Set(x => x.EstimatedStartTime, null);
+        unscheduled.Set(x => x.EstimatedEndTime, null);
 
         tournament.Matches.Add(started);
         tournament.Matches.Add(delayed);
@@ -330,19 +331,19 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             userId,
             opponentId,
             new DateTime(2026, 8, 1, 10, 0, 0, DateTimeKind.Utc));
-        reversed.LifecycleState = DomainMatchLifecycleState.Reversed;
+        reversed.Set(x => x.LifecycleState, DomainMatchLifecycleState.Reversed);
         var unresolved = CreateUpcomingMatch(
             tournament,
             userId,
             opponentId,
             new DateTime(2099, 8, 2, 10, 0, 0, DateTimeKind.Utc));
-        unresolved.LifecycleState = DomainMatchLifecycleState.Disputed;
+        unresolved.Set(x => x.LifecycleState, DomainMatchLifecycleState.Disputed);
         var bye = CreateUpcomingMatch(
             tournament,
             userId,
             participant2Id: null,
             new DateTime(2099, 8, 1, 10, 0, 0, DateTimeKind.Utc));
-        bye.Participant1IsBYE = true;
+        bye.Set(x => x.Participant1IsBYE, true);
         tournament.Matches.Add(reversed);
         tournament.Matches.Add(unresolved);
         tournament.Matches.Add(bye);
@@ -372,10 +373,10 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             userId,
             opponentId,
             new DateTime(2026, 8, 6, 10, 0, 0, DateTimeKind.Utc));
-        forfeited.LifecycleState = DomainMatchLifecycleState.Forfeited;
-        forfeited.ResultKind = DomainMatchResultKind.Forfeit;
-        forfeited.Participant1Score = null;
-        forfeited.Participant2Score = null;
+        forfeited.Set(x => x.LifecycleState, DomainMatchLifecycleState.Forfeited);
+        forfeited.Set(x => x.ResultKind, DomainMatchResultKind.Forfeit);
+        forfeited.Set(x => x.Participant1Score, null);
+        forfeited.Set(x => x.Participant2Score, null);
         tournament.Matches.Add(forfeited);
 
         dbContext.Set<TournamentAggregate>().Add(tournament);
@@ -471,10 +472,7 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             mode,
-            mode == ParticipationMode.Team ? 2 : null)
-        {
-            Id = Guid.NewGuid()
-        };
+            mode == ParticipationMode.Team ? 2 : null).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static TournamentRegistration AddIndividualRegistration(
@@ -529,25 +527,23 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         int roundNumber = 1,
         int matchNumber = 1)
     {
-        return new Match
-        {
-            Id = Guid.NewGuid(),
-            Tournament = tournament,
-            TournamentId = tournament.Id,
-            ParticipationMode = ParticipationMode.Individual,
-            Format = GameFormat.BestOf1,
-            UserParticipant1Id = participant1Id,
-            UserParticipant2Id = participant2Id,
-            Participant1Score = 1,
-            Participant2Score = 0,
-            StartTime = resultRecordedAtUtc.AddMinutes(-30),
-            EndTime = resultRecordedAtUtc,
-            ResultRecordedAtUtc = resultRecordedAtUtc,
-            ResultKind = DomainMatchResultKind.Score,
-            LifecycleState = DomainMatchLifecycleState.Completed,
-            RoundNumber = roundNumber,
-            MatchNumber = matchNumber
-        };
+        return new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.UserParticipant1Id, participant1Id)
+            .Set(x => x.UserParticipant2Id, participant2Id)
+            .Set(x => x.Participant1Score, 1)
+            .Set(x => x.Participant2Score, 0)
+            .Set(x => x.StartTime, resultRecordedAtUtc.AddMinutes(-30))
+            .Set(x => x.EndTime, resultRecordedAtUtc)
+            .Set(x => x.ResultRecordedAtUtc, resultRecordedAtUtc)
+            .Set(x => x.ResultKind, DomainMatchResultKind.Score)
+            .Set(x => x.LifecycleState, DomainMatchLifecycleState.Completed)
+            .Set(x => x.RoundNumber, roundNumber)
+            .Set(x => x.MatchNumber, matchNumber);
     }
 
     private static Match CreateCompletedTeamMatch(
@@ -557,11 +553,11 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         DateTime resultRecordedAtUtc)
     {
         var match = CreateCompletedMatch(tournament, participant1Id, participant2Id, resultRecordedAtUtc);
-        match.ParticipationMode = ParticipationMode.Team;
-        match.UserParticipant1Id = null;
-        match.UserParticipant2Id = null;
-        match.TeamParticipant1Id = participant1Id;
-        match.TeamParticipant2Id = participant2Id;
+        match.Set(x => x.ParticipationMode, ParticipationMode.Team);
+        match.Set(x => x.UserParticipant1Id, null);
+        match.Set(x => x.UserParticipant2Id, null);
+        match.Set(x => x.TeamParticipant1Id, participant1Id);
+        match.Set(x => x.TeamParticipant2Id, participant2Id);
         return match;
     }
 
@@ -573,22 +569,20 @@ public sealed class PublicProfileMatchSummaryReadServiceTests
         int roundNumber = 1,
         int matchNumber = 1)
     {
-        return new Match
-        {
-            Id = Guid.NewGuid(),
-            Tournament = tournament,
-            TournamentId = tournament.Id,
-            ParticipationMode = ParticipationMode.Individual,
-            Format = GameFormat.BestOf1,
-            UserParticipant1Id = participant1Id,
-            UserParticipant2Id = participant2Id,
-            EstimatedStartTime = estimatedStartTime,
-            EstimatedEndTime = estimatedStartTime.AddMinutes(30),
-            StartTime = DateTime.MinValue,
-            EndTime = DateTime.MinValue,
-            LifecycleState = DomainMatchLifecycleState.AwaitingEndedConfirmation,
-            RoundNumber = roundNumber,
-            MatchNumber = matchNumber
-        };
+        return new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.UserParticipant1Id, participant1Id)
+            .Set(x => x.UserParticipant2Id, participant2Id)
+            .Set(x => x.EstimatedStartTime, estimatedStartTime)
+            .Set(x => x.EstimatedEndTime, estimatedStartTime.AddMinutes(30))
+            .Set(x => x.StartTime, DateTime.MinValue)
+            .Set(x => x.EndTime, DateTime.MinValue)
+            .Set(x => x.LifecycleState, DomainMatchLifecycleState.AwaitingEndedConfirmation)
+            .Set(x => x.RoundNumber, roundNumber)
+            .Set(x => x.MatchNumber, matchNumber);
     }
 }

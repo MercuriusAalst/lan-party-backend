@@ -4,55 +4,77 @@ namespace Mercurius.Modules.Tournament.Domain;
 
 internal sealed class Match
 {
-    public Guid Id { get; set; }
-    public DateTime StartTime { get; set; }
-    public DateTime EndTime { get; set; }
-    public DateTime? EstimatedStartTime { get; set; }
-    public DateTime? EstimatedEndTime { get; set; }
-    public BracketType BracketType { get; set; }
-    public GameFormat Format { get; set; }
-    public ParticipationMode ParticipationMode { get; set; }
-    public int RoundNumber { get; set; }
-    public int MatchNumber { get; set; }
-    public bool IsLowerBracketMatch { get; set; }
-    public Guid TournamentId { get; set; }
-    public Guid? UserParticipant1Id { get; set; }
-    public Guid? UserParticipant2Id { get; set; }
-    public Guid? UserWinnerId { get; set; }
-    public Guid? UserLoserId { get; set; }
-    public Guid? TeamParticipant1Id { get; set; }
-    public Guid? TeamParticipant2Id { get; set; }
-    public Guid? TeamWinnerId { get; set; }
-    public Guid? TeamLoserId { get; set; }
-    public int? Participant1Score { get; set; }
-    public int? Participant2Score { get; set; }
-    public Guid? WinnerNextMatchId { get; set; }
-    public Guid? LoserNextMatchId { get; set; }
+    public Guid Id { get; private set; }
+    public DateTime StartTime { get; private set; }
+    public DateTime EndTime { get; private set; }
+    public DateTime? EstimatedStartTime { get; private set; }
+    public DateTime? EstimatedEndTime { get; private set; }
+    public BracketType BracketType { get; private set; }
+    public GameFormat Format { get; private set; }
+    public ParticipationMode ParticipationMode { get; private set; }
+    public int RoundNumber { get; private set; }
+    public int MatchNumber { get; private set; }
+    public bool IsLowerBracketMatch { get; private set; }
+    public Guid TournamentId { get; private set; }
+    public Guid? UserParticipant1Id { get; private set; }
+    public Guid? UserParticipant2Id { get; private set; }
+    public Guid? UserWinnerId { get; private set; }
+    public Guid? UserLoserId { get; private set; }
+    public Guid? TeamParticipant1Id { get; private set; }
+    public Guid? TeamParticipant2Id { get; private set; }
+    public Guid? TeamWinnerId { get; private set; }
+    public Guid? TeamLoserId { get; private set; }
+    public int? Participant1Score { get; private set; }
+    public int? Participant2Score { get; private set; }
+    public Guid? WinnerNextMatchId { get; private set; }
+    public Guid? LoserNextMatchId { get; private set; }
     // A populated downstream slot is reversible only when its source edge is known.
     // Null means that the slot was part of the original bracket assignment.
-    public Guid? Participant1SourceMatchId { get; set; }
-    public Guid? Participant2SourceMatchId { get; set; }
-    public bool Participant1IsBYE { get; set; }
-    public bool Participant2IsBYE { get; set; }
-    public MatchLifecycleState LifecycleState { get; set; } = MatchLifecycleState.AwaitingEndedConfirmation;
-    public DateTime? Participant1EndedConfirmedAtUtc { get; set; }
-    public DateTime? Participant2EndedConfirmedAtUtc { get; set; }
-    public int? Participant1ReportedScore1 { get; set; }
-    public int? Participant1ReportedScore2 { get; set; }
-    public int? Participant2ReportedScore1 { get; set; }
-    public int? Participant2ReportedScore2 { get; set; }
-    public DateTime? ScoreConfirmationDeadlineUtc { get; set; }
-    public DateTime? CorrectionDeadlineUtc { get; set; }
-    public int Participant1CorrectionCount { get; set; }
-    public int Participant2CorrectionCount { get; set; }
-    public int? ForfeitedParticipantNumber { get; set; }
-    public MatchResultKind? ResultKind { get; set; }
-    public Guid? ResultRecordedByUserId { get; set; }
-    public DateTime? ResultRecordedAtUtc { get; set; }
-    public int ResultVersion { get; set; }
-    public TournamentAggregate Tournament { get; set; } = null!;
-    public Match? WinnerNextMatch { get; set; }
-    public Match? LoserNextMatch { get; set; }
+    public Guid? Participant1SourceMatchId { get; private set; }
+    public Guid? Participant2SourceMatchId { get; private set; }
+    public bool Participant1IsBYE { get; private set; }
+    public bool Participant2IsBYE { get; private set; }
+    public MatchLifecycleState LifecycleState { get; private set; } = MatchLifecycleState.AwaitingEndedConfirmation;
+    public DateTime? Participant1EndedConfirmedAtUtc { get; private set; }
+    public DateTime? Participant2EndedConfirmedAtUtc { get; private set; }
+    public int? Participant1ReportedScore1 { get; private set; }
+    public int? Participant1ReportedScore2 { get; private set; }
+    public int? Participant2ReportedScore1 { get; private set; }
+    public int? Participant2ReportedScore2 { get; private set; }
+    public DateTime? ScoreConfirmationDeadlineUtc { get; private set; }
+    public DateTime? CorrectionDeadlineUtc { get; private set; }
+    public int Participant1CorrectionCount { get; private set; }
+    public int Participant2CorrectionCount { get; private set; }
+    public int? ForfeitedParticipantNumber { get; private set; }
+    public MatchResultKind? ResultKind { get; private set; }
+    public Guid? ResultRecordedByUserId { get; private set; }
+    public DateTime? ResultRecordedAtUtc { get; private set; }
+    public int ResultVersion { get; private set; }
+    public TournamentAggregate Tournament { get; private set; } = null!;
+    public Match? WinnerNextMatch { get; private set; }
+    public Match? LoserNextMatch { get; private set; }
+
+    public Match()
+    {
+    }
+
+    public Match(
+        Guid tournamentId,
+        int roundNumber,
+        int matchNumber,
+        BracketType bracketType,
+        GameFormat format,
+        ParticipationMode participationMode,
+        bool isLowerBracketMatch = false)
+    {
+        TournamentId = tournamentId;
+        RoundNumber = roundNumber;
+        MatchNumber = matchNumber;
+        BracketType = bracketType;
+        Format = format;
+        ParticipationMode = participationMode;
+        IsLowerBracketMatch = isLowerBracketMatch;
+    }
 
     public bool Participant1Ended => Participant1EndedConfirmedAtUtc.HasValue;
     public bool Participant2Ended => Participant2EndedConfirmedAtUtc.HasValue;
@@ -347,6 +369,19 @@ internal sealed class Match
         ResultRecordedAtUtc = EndTime;
         ResultVersion++;
         UpdateParticipantsNextMatch();
+    }
+
+    public void SetWinnerNextMatch(Match? match) => WinnerNextMatch = match;
+
+    public void SetLoserNextMatch(Match? match) => LoserNextMatch = match;
+
+    public void RecordResultBy(Guid userId) => ResultRecordedByUserId = userId;
+
+    // A lower bracket slot that no live feed can ever reach; unlike SetParticipantBYEs it applies in any round.
+    public void MarkBothParticipantsAsBYE()
+    {
+        Participant1IsBYE = true;
+        Participant2IsBYE = true;
     }
 
     public void SetEstimatedWindow(DateTime estimatedStartTime, DateTime estimatedEndTime)

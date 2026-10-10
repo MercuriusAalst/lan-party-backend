@@ -137,7 +137,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             UpdatedAtUtc = now
         };
 
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         _dbContext.TournamentRegistrations.Add(registration);
         await _persistenceCoordinator.SaveChangesAsync("User already has pending or active participation for this tournament.", cancellationToken);
         var dto = await _mapper.ToRegistrationDtoAsync(
@@ -315,7 +315,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             registration.UpdatedAtUtc = now;
         }
 
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         await _persistenceCoordinator.SaveChangesAsync("One or more roster members already has pending or active participation for this tournament.", cancellationToken);
         var dto = await _mapper.ToRegistrationDtoAsync(
             await GetRegistrationByIdAsync(registration.Id, cancellationToken),

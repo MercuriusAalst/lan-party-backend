@@ -188,7 +188,7 @@ internal sealed class MatchService : IMatchService
         match.SubmitScore((int)side, request.Participant1Score, request.Participant2Score, now);
         if (!wasResult && match.HasResult)
         {
-            match.ResultRecordedByUserId = userId;
+            match.RecordResultBy(userId);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -230,7 +230,7 @@ internal sealed class MatchService : IMatchService
         match.Forfeit((int)targetSide.Value, now);
         if (!wasResult)
         {
-            match.ResultRecordedByUserId = userId;
+            match.RecordResultBy(userId);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -250,7 +250,7 @@ internal sealed class MatchService : IMatchService
         var now = UtcNow();
         ApplyDeadline(tournament, match, now);
         match.ResolveScore(request.Participant1Score, request.Participant2Score, now);
-        match.ResultRecordedByUserId = userId;
+        match.RecordResultBy(userId);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -280,7 +280,7 @@ internal sealed class MatchService : IMatchService
 
         _bracketImpactAnalyzer.ClearDownstreamAssignments(match, reversalAnalysis);
         match.ReverseResult(UtcNow());
-        match.ResultRecordedByUserId = userId;
+        match.RecordResultBy(userId);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -298,7 +298,7 @@ internal sealed class MatchService : IMatchService
         var now = UtcNow();
         ApplyDeadline(tournament, match, now);
         match.ResolveScore(updateMatchDTO.Participant1Score, updateMatchDTO.Participant2Score, now);
-        match.ResultRecordedByUserId = userId;
+        match.RecordResultBy(userId);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <Compile Include="..\TestInfrastructure\PostgresTestDatabase.cs" Link="TestInfrastructure\PostgresTestDatabase.cs" />
+    <Compile Include="..\TestInfrastructure\EntityStateExtensions.cs" Link="TestInfrastructure\EntityStateExtensions.cs" />
   </ItemGroup>
 
   <ItemGroup>

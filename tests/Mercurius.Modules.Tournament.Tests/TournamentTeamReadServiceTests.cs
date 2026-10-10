@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -60,10 +61,7 @@ public sealed class TournamentTeamReadServiceTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             ParticipationMode.Team,
-            5)
-        {
-            Id = Guid.NewGuid()
-        };
+            5).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static TournamentRegistration CreateTeamRegistration(TournamentAggregate tournament, string logoUrl)

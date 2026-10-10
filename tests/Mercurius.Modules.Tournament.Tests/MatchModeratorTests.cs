@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using System.Numerics;
 
 
@@ -144,7 +145,7 @@ public class MatchModeratorTests
         var tournament = new TournamentAggregate("Bracket", bracketType, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Individual);
         for (var i = 1; i <= participantCount; i++)
             AddIndividualRegistration(tournament, CreateUser(i));
-        tournament.Matches = moderator.GenerateMatchesForTournament(tournament).ToList();
+        tournament.Set(x => x.Matches, moderator.GenerateMatchesForTournament(tournament).ToList());
 
         while (tournament.Matches.FirstOrDefault(match => match.HasBothParticipants && !match.HasWinner()) is { } playable)
             playable.SetScoresAndWinner(1, 0);

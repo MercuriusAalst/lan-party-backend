@@ -580,10 +580,7 @@ public sealed class LeaderboardPersistenceTests
             DateTime.UtcNow,
             0,
             0,
-            LeaderboardRankingMetric.HighestScore)
-        {
-            Id = Guid.NewGuid()
-        };
+            LeaderboardRankingMetric.HighestScore).Set(x => x.Id, Guid.NewGuid());
         addParticipants?.Invoke(tournament);
         tournament.Start();
         await using var seedDb = new MercuriusDBContext(options);

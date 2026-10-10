@@ -124,7 +124,7 @@ internal sealed class LeaderboardService(ITournamentDbContext dbContext, IIdenti
         if (existingParticipant is null)
             dbContext.LeaderboardParticipants.Add(participant);
         dbContext.LeaderboardAttempts.Add(attempt);
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         await SaveMutationAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ToAdminParticipantDto(participant);
@@ -146,7 +146,7 @@ internal sealed class LeaderboardService(ITournamentDbContext dbContext, IIdenti
             request.Score,
             request.DurationMilliseconds,
             DateTime.UtcNow);
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         await SaveMutationAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ToAttemptDto(attempt);
@@ -157,7 +157,7 @@ internal sealed class LeaderboardService(ITournamentDbContext dbContext, IIdenti
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var tournament = await GetLeaderboardForMutationAsync(tournamentId, cancellationToken);
         tournament.RemoveLeaderboardAttempt(attemptId, rowVersion);
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         await SaveMutationAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }

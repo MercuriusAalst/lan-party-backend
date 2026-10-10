@@ -16,8 +16,8 @@ public sealed class MatchOpponentProfileTests
         var unrelated = CreateUser("unrelated");
         var tournament = CreateTournament(ParticipationMode.Individual);
         var match = CreateMatch(tournament, ParticipationMode.Individual);
-        match.UserParticipant1Id = current.Id;
-        match.UserParticipant2Id = opponent.Id;
+        match.Set(x => x.UserParticipant1Id, current.Id);
+        match.Set(x => x.UserParticipant2Id, opponent.Id);
         tournament.Matches.Add(match);
 
         await using var dbContext = CreateDbContext();
@@ -46,8 +46,8 @@ public sealed class MatchOpponentProfileTests
         var team2 = CreateTeam("Team Two", captain2);
         var tournament = CreateTournament(ParticipationMode.Team);
         var match = CreateMatch(tournament, ParticipationMode.Team);
-        match.TeamParticipant1Id = team1.Id;
-        match.TeamParticipant2Id = team2.Id;
+        match.Set(x => x.TeamParticipant1Id, team1.Id);
+        match.Set(x => x.TeamParticipant2Id, team2.Id);
         tournament.Matches.Add(match);
 
         await using var dbContext = CreateDbContext();
@@ -70,8 +70,8 @@ public sealed class MatchOpponentProfileTests
         deletedOpponent.IsDeleted = true;
         var tournament = CreateTournament(ParticipationMode.Individual);
         var match = CreateMatch(tournament, ParticipationMode.Individual);
-        match.UserParticipant1Id = current.Id;
-        match.UserParticipant2Id = deletedOpponent.Id;
+        match.Set(x => x.UserParticipant1Id, current.Id);
+        match.Set(x => x.UserParticipant2Id, deletedOpponent.Id);
         tournament.Matches.Add(match);
 
         await using var dbContext = CreateDbContext();
@@ -84,26 +84,22 @@ public sealed class MatchOpponentProfileTests
 
     private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
-    private static TournamentAggregate CreateTournament(ParticipationMode mode) => new(
+    private static TournamentAggregate CreateTournament(ParticipationMode mode) => new TournamentAggregate(
         "Profile privacy tournament",
         BracketType.SingleElimination,
         GameFormat.BestOf1,
         GameFormat.BestOf1,
         mode,
         mode == ParticipationMode.Team ? 2 : null)
-    {
-        Id = Guid.NewGuid(),
-        Status = TournamentStatus.InProgress
-    };
+        .Set(x => x.Id, Guid.NewGuid())
+        .Set(x => x.Status, TournamentStatus.InProgress);
 
-    private static Match CreateMatch(TournamentAggregate tournament, ParticipationMode mode) => new()
-    {
-        Id = Guid.NewGuid(),
-        TournamentId = tournament.Id,
-        Tournament = tournament,
-        ParticipationMode = mode,
-        Format = GameFormat.BestOf1
-    };
+    private static Match CreateMatch(TournamentAggregate tournament, ParticipationMode mode) => new Match()
+        .Set(x => x.Id, Guid.NewGuid())
+        .Set(x => x.TournamentId, tournament.Id)
+        .Set(x => x.Tournament, tournament)
+        .Set(x => x.ParticipationMode, mode)
+        .Set(x => x.Format, GameFormat.BestOf1);
 
     private static User CreateUser(string name) => new()
     {

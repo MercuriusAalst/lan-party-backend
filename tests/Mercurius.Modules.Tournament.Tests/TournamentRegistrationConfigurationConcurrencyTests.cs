@@ -187,10 +187,7 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf3,
-            ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid()
-        };
+            ParticipationMode.Individual).Set(x => x.Id, Guid.NewGuid());
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -218,10 +215,7 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             ParticipationMode.Team,
-            2)
-        {
-            Id = Guid.NewGuid()
-        };
+            2).Set(x => x.Id, Guid.NewGuid());
         var captain = new User
         {
             Id = Guid.NewGuid(),

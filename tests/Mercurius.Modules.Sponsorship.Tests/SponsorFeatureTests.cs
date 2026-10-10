@@ -387,10 +387,7 @@ public class SponsorFeatureTests
 
     private static TournamentAggregate CreateTournament()
     {
-        return new TournamentAggregate("Counter-Strike 2", BracketType.SingleElimination, GameFormat.BestOf3, GameFormat.BestOf5, ParticipationMode.Team, 5)
-        {
-            Id = Guid.NewGuid()
-        };
+        return new TournamentAggregate("Counter-Strike 2", BracketType.SingleElimination, GameFormat.BestOf3, GameFormat.BestOf5, ParticipationMode.Team, 5).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static Sponsor CreateSponsor(int id, string name, SponsorTier tier)
