@@ -1452,7 +1452,7 @@ public class TeamTests
     [InlineData(true)]
     public async Task DeleteTeamAsync_WaitsForConcurrentInviteAndNotifiesItsRecipient(bool deleteByTeamId)
     {
-        await using var database = PostgresTestDatabase.Create();
+        await using var database = PostgresTestDatabase.CreateMigrated();
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;
@@ -1529,7 +1529,7 @@ public class TeamTests
     [Fact]
     public async Task RespondToInviteAsync_WaitsForDeleteThenRejectsDeletedTeam()
     {
-        await using var database = PostgresTestDatabase.Create();
+        await using var database = PostgresTestDatabase.CreateMigrated();
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;
@@ -1601,7 +1601,7 @@ public class TeamTests
     [Fact]
     public async Task InviteMaintenance_WaitsForDeleteThenRechecksExpiredInvites()
     {
-        await using var database = PostgresTestDatabase.Create();
+        await using var database = PostgresTestDatabase.CreateMigrated();
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;
@@ -1929,7 +1929,7 @@ public class TeamTests
     [Fact]
     public async Task SaveChangesAsync_WhenTeamVersionChangedConcurrently_ThrowsConflictAndKeepsVersionsUnique()
     {
-        await using var database = PostgresTestDatabase.Create();
+        await using var database = PostgresTestDatabase.CreateMigrated();
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;
@@ -2099,7 +2099,7 @@ public class TeamTests
 
     private static UniqueConstraintDbContext CreateUniqueConstraintDbContext()
     {
-        var database = PostgresTestDatabase.Create();
+        var database = PostgresTestDatabase.CreateMigrated();
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;

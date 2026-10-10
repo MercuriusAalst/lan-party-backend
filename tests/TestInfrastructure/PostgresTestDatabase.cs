@@ -7,7 +7,13 @@ namespace Mercurius.TestInfrastructure;
 
 internal static class PostgresTestDatabase
 {
-    public static PostgresTestDatabaseLease Create()
+    // An empty database, for tests that drive migrations themselves.
+    public static PostgresTestDatabaseLease Create() => Create(template: null);
+
+    // A fully migrated database, copied from a template migrated once per test process.
+    public static PostgresTestDatabaseLease CreateMigrated() => Create(MigratedTemplate.Value);
+
+    private static PostgresTestDatabaseLease Create(string? template)
     {
         var databaseName = $"mercurius_tests_{Guid.NewGuid():N}";
         var adminBuilder = new NpgsqlConnectionStringBuilder(GetBaseConnectionString())
@@ -15,11 +21,9 @@ internal static class PostgresTestDatabase
             Database = "postgres"
         };
 
-        using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-        connection.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = $"CREATE DATABASE \"{databaseName}\"";
-        command.ExecuteNonQuery();
+        ExecuteAdmin(adminBuilder.ConnectionString, template is null
+            ? $"CREATE DATABASE \"{databaseName}\""
+            : $"CREATE DATABASE \"{databaseName}\" TEMPLATE \"{template}\"");
 
         var databaseBuilder = new NpgsqlConnectionStringBuilder(adminBuilder.ConnectionString)
         {
@@ -34,22 +38,11 @@ internal static class PostgresTestDatabase
 
     public static MercuriusDBContext CreateDbContext()
     {
-        var database = Create();
+        var database = CreateMigrated();
         var options = new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;
-        try
-        {
-            using (var migrationContext = new MercuriusDBContext(options))
-                migrationContext.Database.Migrate();
-
-            return new DisposableMercuriusDbContext(options, database);
-        }
-        catch
-        {
-            database.Dispose();
-            throw;
-        }
+        return new DisposableMercuriusDbContext(options, database);
     }
 
     public static void Initialize(MercuriusDBContext dbContext)
@@ -65,6 +58,42 @@ internal static class PostgresTestDatabase
             : StartContainer());
 
     private static string GetBaseConnectionString() => BaseConnectionString.Value;
+
+    private static readonly Lazy<string> MigratedTemplate = new(CreateMigratedTemplate);
+
+    private static string CreateMigratedTemplate()
+    {
+        var templateName = $"mercurius_template_{Guid.NewGuid():N}";
+        var adminConnectionString = new NpgsqlConnectionStringBuilder(GetBaseConnectionString())
+        {
+            Database = "postgres"
+        }.ConnectionString;
+        ExecuteAdmin(adminConnectionString, $"CREATE DATABASE \"{templateName}\"");
+
+        // No pooling: PostgreSQL refuses to copy a template that still has open connections.
+        var templateConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString)
+        {
+            Database = templateName,
+            Pooling = false
+        }.ConnectionString;
+        using (var migrationContext = new MercuriusDBContext(new DbContextOptionsBuilder<MercuriusDBContext>()
+            .UseNpgsql(templateConnectionString)
+            .Options))
+            migrationContext.Database.Migrate();
+
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            ExecuteAdmin(adminConnectionString, $"DROP DATABASE IF EXISTS \"{templateName}\" WITH (FORCE)");
+        return templateName;
+    }
+
+    private static void ExecuteAdmin(string adminConnectionString, string sql)
+    {
+        using var connection = new NpgsqlConnection(adminConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
 
     private static string StartContainer()
     {

@@ -523,7 +523,7 @@ public class DiscoveryModuleTests
     internal static ServiceProvider CreateProvider(DiscoverySources sources)
     {
         var services = new ServiceCollection();
-        var database = PostgresTestDatabase.Create();
+        var database = PostgresTestDatabase.CreateMigrated();
         ConfigureServices(services, sources, database.ConnectionString);
         services.AddSingleton<PostgresTestDatabaseLease>(_ => database);
 
