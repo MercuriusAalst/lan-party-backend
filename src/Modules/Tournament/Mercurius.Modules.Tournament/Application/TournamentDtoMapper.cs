@@ -34,7 +34,8 @@ internal sealed class TournamentDtoMapper
         var context = await _contextBuilder.BuildAsync(
             tournament.TournamentRegistrations.ToList(),
             tournament.Placements.ToList(),
-            cancellationToken);
+            cancellationToken,
+            tournament.AssignedAdminUserId is { } contactAdminId ? [contactAdminId] : []);
 
         return ToGetTournamentDto(tournament, context, sponsorPlacement);
     }
@@ -56,11 +57,15 @@ internal sealed class TournamentDtoMapper
             .Select(tournament => new TournamentId(tournament.Id))
             .ToArray();
 
-        var context = registrations.Count == 0 && placements.Count == 0
+        var assignedAdminUserIds = tournaments
+            .Where(tournament => tournament.AssignedAdminUserId.HasValue)
+            .Select(tournament => tournament.AssignedAdminUserId!.Value)
+            .ToArray();
+        var context = registrations.Count == 0 && placements.Count == 0 && assignedAdminUserIds.Length == 0
             ? new RegistrationMappingContext(
                 new Dictionary<UserId, UserProfileSummary>(),
                 new Dictionary<TeamId, TeamRosterSnapshot>())
-            : await _contextBuilder.BuildAsync(registrations, placements, cancellationToken);
+            : await _contextBuilder.BuildAsync(registrations, placements, cancellationToken, assignedAdminUserIds);
         var sponsorPlacements = await _sponsorshipModule.GetSponsorPlacementsAsync(tournamentIds, cancellationToken);
 
         return tournaments
@@ -97,6 +102,19 @@ internal sealed class TournamentDtoMapper
             ParticipationMode = (Contracts.ParticipationMode)tournament.ParticipationMode,
             TeamSize = tournament.TeamSize,
             ImageUrl = tournament.ImageUrl,
+            FirstPlacePrize = tournament.FirstPlacePrize,
+            SecondPlacePrize = tournament.SecondPlacePrize,
+            ThirdPlacePrize = tournament.ThirdPlacePrize,
+            ContactAdmin = tournament.AssignedAdminUserId is { } contactAdminId &&
+                           context.Users.TryGetValue(new UserId(contactAdminId), out var contactAdmin) &&
+                           !contactAdmin.IsDeleted
+                ? new PublicUserDTO
+                {
+                    Id = contactAdmin.Id.Value,
+                    Username = string.IsNullOrWhiteSpace(contactAdmin.Username) ? "Incomplete profile" : contactAdmin.Username,
+                    DisplayName = contactAdmin.DisplayName
+                }
+                : null,
             Placements = tournament.Placements
                 .OrderBy(placement => placement.Place)
                 .Select(placement => ToGetPlacementDto(placement, context, tournament))

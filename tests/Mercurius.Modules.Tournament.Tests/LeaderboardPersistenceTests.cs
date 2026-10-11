@@ -642,6 +642,7 @@ public sealed class LeaderboardPersistenceTests
         new TournamentDbContextAdapter<MercuriusDBContext>(db),
         new LeaderboardModeratorFactory(),
         new UnsupportedMediaModule(),
+        TournamentTestSupport.CreateIdentityModule(),
         TournamentTestSupport.CreateSponsorshipModule(),
         TournamentTestSupport.CreateMapper(),
         TournamentTestSupport.CreateModuleEventPublisher(),

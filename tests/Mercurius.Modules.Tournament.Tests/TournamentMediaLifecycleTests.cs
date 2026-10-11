@@ -245,6 +245,7 @@ public sealed class TournamentMediaLifecycleTests
             dbContext,
             new UnsupportedMatchModeratorFactory(),
             mediaModule,
+            TournamentTestSupport.CreateIdentityModule(),
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             moduleEventPublisher ?? TournamentTestSupport.CreateModuleEventPublisher(),

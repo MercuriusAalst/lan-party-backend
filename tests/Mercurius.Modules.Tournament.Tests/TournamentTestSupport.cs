@@ -8,6 +8,8 @@ using Mercurius.Modules.Tournament.Application.DTOs.Registrations;
 using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Tournament.Contracts;
 using Mercurius.Modules.Identity.Contracts;
+using Mercurius.Modules.Identity.DTOs;
+using Mercurius.Modules.Identity.Services.Auth0;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Sponsorship.Contracts;
@@ -18,6 +20,15 @@ namespace Mercurius.Modules.Tournament.Tests;
 
 internal static class TournamentTestSupport
 {
+    internal sealed class NoopAuth0ManagementService : IAuth0ManagementService
+    {
+        public Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new Auth0ProfileSnapshot(null, null, false));
+
+        public Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SendPasswordResetEmailAsync(string email, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     public static PublicUserDTO ToPublicUserDTO(this User user)
     {
         return new PublicUserDTO(new UserProfileSummary(
@@ -99,8 +110,10 @@ internal static class TournamentTestSupport
 
     public static IIdentityModule CreateIdentityModule(
         IReadOnlyCollection<User>? users = null,
-        bool throwOnPublicUsernameLookup = false) =>
-        new StubIdentityModule(users ?? [], throwOnPublicUsernameLookup);
+        bool throwOnPublicUsernameLookup = false,
+        IReadOnlyCollection<Guid>? adminUserIds = null,
+        Exception? adminLookupFailure = null) =>
+        new StubIdentityModule(users ?? [], throwOnPublicUsernameLookup, adminUserIds, adminLookupFailure);
 
     public static ITeamsModule CreateTeamsModule(
         IReadOnlyCollection<Team>? teams = null,
@@ -192,9 +205,19 @@ internal static class TournamentTestSupport
 
     private sealed class StubIdentityModule(
         IReadOnlyCollection<User> users,
-        bool throwOnPublicUsernameLookup = false) : IIdentityModule
+        bool throwOnPublicUsernameLookup = false,
+        IReadOnlyCollection<Guid>? adminUserIds = null,
+        Exception? adminLookupFailure = null) : IIdentityModule
     {
         private readonly Dictionary<Guid, User> _users = users.ToDictionary(user => user.Id);
+        private readonly HashSet<Guid> _adminUserIds = adminUserIds?.ToHashSet() ?? [];
+
+        public Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default)
+        {
+            return adminLookupFailure is null
+                ? Task.FromResult(_adminUserIds.Contains(userId.Value))
+                : Task.FromException<bool>(adminLookupFailure);
+        }
 
         public Task<UserProfileSummary?> GetUserProfileAsync(UserId userId, CancellationToken cancellationToken = default)
             => Task.FromResult(ToSummary(_users.GetValueOrDefault(userId.Value)));

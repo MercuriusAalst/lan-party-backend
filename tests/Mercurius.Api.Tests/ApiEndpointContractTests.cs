@@ -7,6 +7,7 @@ using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Discovery;
 using Mercurius.Modules.Discovery.Contracts;
 using Mercurius.Modules.Identity;
+using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Services;
 using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
@@ -296,6 +297,7 @@ public class ApiEndpointContractTests
         services.AddScoped<PublicProfileMatchSummaryReadService>(_ => throw new NotSupportedException());
         services.AddScoped<ITeamEndpointService>(_ => throw new NotSupportedException());
         services.AddScoped<IUserService>(_ => throw new NotSupportedException());
+        services.AddScoped<IIdentityModule>(_ => throw new NotSupportedException());
         services.AddScoped<IDiscoveryModule>(_ => throw new NotSupportedException());
     }
 }

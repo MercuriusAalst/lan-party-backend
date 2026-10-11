@@ -198,6 +198,7 @@ public class SponsorFeatureTests
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
             new StubMatchModeratorFactory(),
             new StubMediaModule(),
+            identityModule,
             sponsorshipModule,
             new TournamentDtoMapper(
                 new RegistrationMappingContextBuilder(identityModule, teamsModule),
@@ -243,6 +244,7 @@ public class SponsorFeatureTests
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
             new StubMatchModeratorFactory(),
             new StubMediaModule(),
+            SponsorshipTournamentTestDoubles.CreateIdentityModule(),
             new RecordingSponsorshipModule([presentingSponsor.Id, prizeSponsor.Id]),
             new TournamentDtoMapper(
                 new RegistrationMappingContextBuilder(
@@ -285,6 +287,7 @@ public class SponsorFeatureTests
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
             new StubMatchModeratorFactory(),
             new StubMediaModule(),
+            SponsorshipTournamentTestDoubles.CreateIdentityModule(),
             new RecordingSponsorshipModule([]),
             new TournamentDtoMapper(
                 new RegistrationMappingContextBuilder(

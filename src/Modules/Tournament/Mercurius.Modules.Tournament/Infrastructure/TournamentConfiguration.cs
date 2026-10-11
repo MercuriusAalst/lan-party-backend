@@ -18,6 +18,9 @@ internal sealed class TournamentConfiguration : IEntityTypeConfiguration<Tournam
         entity.Property(tournament => tournament.RoundBreakDurationMinutes).IsRequired();
         entity.Property(tournament => tournament.EstimatedEndTime).IsRequired(false);
         entity.Property(tournament => tournament.TeamSize).IsRequired(false);
+        entity.Property(tournament => tournament.FirstPlacePrize).HasMaxLength(200).IsRequired(false);
+        entity.Property(tournament => tournament.SecondPlacePrize).HasMaxLength(200).IsRequired(false);
+        entity.Property(tournament => tournament.ThirdPlacePrize).HasMaxLength(200).IsRequired(false);
         entity.Property(tournament => tournament.Status).IsConcurrencyToken();
         entity.Property(tournament => tournament.LeaderboardRevision).IsConcurrencyToken();
     }

@@ -2,7 +2,9 @@ using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Services.Auth0;
 using Mercurius.Modules.Shared;
+using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Mercurius.Modules.Identity;
@@ -10,10 +12,14 @@ namespace Mercurius.Modules.Identity;
 internal sealed class IdentityModuleFacade : IIdentityModule
 {
     private readonly IIdentityDbContext _dbContext;
+    private readonly IAuth0ManagementService _auth0ManagementService;
 
-    public IdentityModuleFacade(IIdentityDbContext dbContext)
+    public IdentityModuleFacade(
+        IIdentityDbContext dbContext,
+        IAuth0ManagementService auth0ManagementService)
     {
         _dbContext = dbContext;
+        _auth0ManagementService = auth0ManagementService;
     }
 
     public Task<UserProfileSummary?> GetUserProfileAsync(
@@ -149,6 +155,50 @@ internal sealed class IdentityModuleFacade : IIdentityModule
                 new UserId(user.Id),
                 user.Username!))
             .Take(Math.Clamp(pageSize, 1, 1000))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default)
+    {
+        var auth0UserId = await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.Id == userId.Value && !user.IsDeleted)
+            .Select(user => user.Auth0UserId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return !string.IsNullOrWhiteSpace(auth0UserId) &&
+               await _auth0ManagementService.HasAdminRoleAsync(auth0UserId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<UserProfileSummary>> GetAdminUsersAsync(
+        string normalizedQuery,
+        int pageSize,
+        CancellationToken cancellationToken = default,
+        int page = 1)
+    {
+        var boundedPageSize = Math.Clamp(pageSize, 1, 100);
+        var offset = ((long)page - 1) * boundedPageSize;
+        cancellationToken.ThrowIfCancellationRequested();
+        if (offset > int.MaxValue)
+            return [];
+
+        var auth0UserIds = await _auth0ManagementService.GetAdminUserIdsAsync(cancellationToken);
+        if (auth0UserIds.Count == 0)
+            return [];
+
+        return await _dbContext.Users
+            .AsNoTracking()
+            .Where(user =>
+                auth0UserIds.Contains(user.Auth0UserId) &&
+                !user.IsDeleted &&
+                (normalizedQuery.Length == 0 ||
+                 (!string.IsNullOrWhiteSpace(user.NormalizedUsername) &&
+                  user.NormalizedUsername.Contains(normalizedQuery))))
+            .OrderBy(user => user.NormalizedUsername)
+            .ThenBy(user => user.Id)
+            .Skip((int)offset)
+            .Take(boundedPageSize)
+            .Select(user => ToUserProfileSummary(user))
             .ToListAsync(cancellationToken);
     }
 

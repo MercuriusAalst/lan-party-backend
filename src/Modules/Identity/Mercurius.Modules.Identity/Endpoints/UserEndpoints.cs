@@ -83,7 +83,7 @@ internal static class UserEndpoints
                 cancellationToken));
         })
         .RequireAuthorization()
-        .RequireRateLimiting("authenticated-search")
+        .RequireRateLimiting(SearchRateLimitPolicyNames.Authenticated)
         .Produces<IReadOnlyList<GetUserDTO>>()
         .ProducesValidationProblem();
 
@@ -107,6 +107,18 @@ internal static class UserEndpoints
 
         var adminGroup = group.MapGroup("")
             .RequireAuthorization(new AuthorizeAttribute { Roles = "admin" });
+
+        adminGroup.MapGet("/admins", async Task<IResult> (string? query, int? page, int? pageSize, IUserService userService, CancellationToken cancellationToken) =>
+        {
+            var validationProblem = ValidatePaging(page, pageSize);
+            if (validationProblem is not null)
+                return validationProblem;
+
+            return Results.Ok(await userService.GetAdminUsersAsync(query, page, pageSize, cancellationToken));
+        })
+        .RequireRateLimiting(SearchRateLimitPolicyNames.Anonymous)
+        .Produces<IReadOnlyList<AdminUserOptionDTO>>()
+        .ProducesValidationProblem();
 
         adminGroup.MapPost("/", async (CreateUserProfileRequest request, IUserService userService) =>
         {

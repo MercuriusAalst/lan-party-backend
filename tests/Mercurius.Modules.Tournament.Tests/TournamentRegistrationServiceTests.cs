@@ -757,7 +757,7 @@ public class TournamentRegistrationServiceTests
         ITournamentRealtimePublisher? publisher = null,
         IModuleEventPublisher? moduleEventPublisher = null)
     {
-        var identityModule = new IdentityModuleFacade(dbContext);
+        var identityModule = new IdentityModuleFacade(dbContext, new TournamentTestSupport.NoopAuth0ManagementService());
         var teamsModule = new TeamsModuleFacade(
             new TeamsDbContextAdapter<MercuriusDBContext>(dbContext),
             identityModule,

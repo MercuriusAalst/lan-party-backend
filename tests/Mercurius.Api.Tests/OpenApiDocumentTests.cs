@@ -6,6 +6,7 @@ using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Discovery;
 using Mercurius.Modules.Discovery.Contracts;
 using Mercurius.Modules.Identity;
+using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Services;
 using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
@@ -63,6 +64,7 @@ public class OpenApiDocumentTests
             AssertOperationHasTag(document, "/v1/lan/users/{username}/match-summaries", OperationType.Get, "Users");
             AssertOperationHasTag(document, "/v1/lan/public/teams/{teamName}/match-summaries", OperationType.Get, "Public Teams");
             AssertPagedRawArrayOperation(document, "/v1/lan/users");
+            AssertPagedRawArrayOperation(document, "/v1/lan/users/admins");
             AssertPathHasOperation(document, "/v1/lan/tournaments/{tournamentId}/registrations/me", OperationType.Get);
             AssertPathHasOperation(document, "/v1/lan/tournaments/{tournamentId}/registrations/individual/eligibility", OperationType.Get);
             AssertPathHasOperation(document, "/v1/lan/tournaments/{tournamentId}/registrations/teams/{teamId}/eligibility", OperationType.Get);
@@ -177,6 +179,7 @@ public class OpenApiDocumentTests
         services.AddScoped<PublicProfileMatchSummaryReadService>(_ => throw new NotSupportedException());
         services.AddScoped<ITeamEndpointService>(_ => throw new NotSupportedException());
         services.AddScoped<IUserService>(_ => throw new NotSupportedException());
+        services.AddScoped<IIdentityModule>(_ => throw new NotSupportedException());
         services.AddScoped<IDiscoveryModule>(_ => throw new NotSupportedException());
     }
 }

@@ -452,6 +452,7 @@ public class TournamentPerformanceRegressionTests
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
             new FixedMatchModeratorFactory(),
             new StubMediaModule(),
+            TournamentTestSupport.CreateIdentityModule(users),
             sponsorshipModule ?? new StaticSponsorshipModule(sponsorPlacement),
             TournamentTestSupport.CreateMapper(
                 users,
