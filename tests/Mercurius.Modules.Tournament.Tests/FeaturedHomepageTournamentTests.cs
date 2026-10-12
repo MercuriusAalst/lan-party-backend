@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Tournament.Infrastructure;
@@ -5,6 +6,8 @@ using Mercurius.Modules.Shared;
 using Mercurius.Modules.Sponsorship.Contracts;
 using Mercurius.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TournamentDomain = Mercurius.Modules.Tournament.Domain;
@@ -267,10 +270,203 @@ public sealed class FeaturedHomepageTournamentTests
         Assert.True(storedOrder.SequenceEqual(firstSelection) || storedOrder.SequenceEqual(secondSelection));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReplacementWaitsForConcurrentCancelOrDeleteAndPreservesPreviousSelection(bool deleteTournament)
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        TournamentAggregate[] tournaments;
+        await using (var seedDb = new MercuriusDBContext(options))
+        {
+            await seedDb.Database.MigrateAsync();
+            tournaments = Enumerable.Range(0, 3).Select(CreateTournament).ToArray();
+            seedDb.Set<TournamentAggregate>().AddRange(tournaments);
+            await seedDb.SaveChangesAsync();
+            Assert.Null(await CreateService(seedDb).ReplaceFeaturedTournamentsAsync([tournaments[0].Id]));
+        }
+
+        await using var lifecycleDb = new MercuriusDBContext(options);
+        await using var replacementDb = new MercuriusDBContext(options);
+        await using var lifecycleTransaction = await lifecycleDb.Database.BeginTransactionAsync();
+        var lifecycleTournament = await lifecycleDb.Set<TournamentAggregate>()
+            .SingleAsync(tournament => tournament.Id == tournaments[1].Id);
+        if (deleteTournament)
+            lifecycleDb.Set<TournamentAggregate>().Remove(lifecycleTournament);
+        else
+            lifecycleTournament.Cancel();
+        await lifecycleDb.SaveChangesAsync();
+
+        var lifecycleBackendId = await GetBackendProcessIdAsync(lifecycleDb);
+        var replacementBackendId = await GetBackendProcessIdAsync(replacementDb);
+        var replacementTask = CreateService(replacementDb)
+            .ReplaceFeaturedTournamentsAsync([tournaments[1].Id]);
+        var waitedForLifecycleLock = await WaitForBlockingLockAsync(
+            database,
+            replacementBackendId,
+            lifecycleBackendId,
+            replacementTask);
+
+        await lifecycleTransaction.CommitAsync();
+        var errors = await replacementTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(waitedForLifecycleLock, "The replacement query did not wait for the lifecycle row lock.");
+        Assert.NotNull(errors);
+        Assert.Contains("tournamentIds", errors.Keys);
+
+        var replacementService = CreateService(replacementDb);
+        Assert.Equal(
+            new[] { tournaments[0].Id },
+            (await replacementService.GetFeaturedTournamentsAsync()).TournamentIds);
+        Assert.Null(await replacementService.ReplaceFeaturedTournamentsAsync([tournaments[2].Id]));
+        Assert.Equal(
+            new[] { tournaments[2].Id },
+            (await replacementService.GetFeaturedTournamentsAsync()).TournamentIds);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReplacementHoldsTournamentLockThroughUpsertBeforeConcurrentCancelOrDelete(bool deleteTournament)
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        TournamentAggregate[] tournaments;
+        await using (var seedDb = new MercuriusDBContext(options))
+        {
+            await seedDb.Database.MigrateAsync();
+            tournaments = Enumerable.Range(0, 3).Select(CreateTournament).ToArray();
+            seedDb.Set<TournamentAggregate>().AddRange(tournaments);
+            await seedDb.SaveChangesAsync();
+            Assert.Null(await CreateService(seedDb).ReplaceFeaturedTournamentsAsync([tournaments[0].Id]));
+        }
+
+        await using var selectionLockDb = new MercuriusDBContext(options);
+        await using var replacementDb = new MercuriusDBContext(options);
+        await using var lifecycleDb = new MercuriusDBContext(options);
+        await using var selectionLockTransaction = await selectionLockDb.Database.BeginTransactionAsync();
+        await using (var command = selectionLockDb.Database.GetDbConnection().CreateCommand())
+        {
+            command.Transaction = selectionLockDb.Database.CurrentTransaction!.GetDbTransaction();
+            command.CommandText = """
+                SELECT "Id"
+                FROM tournament.featured_homepage_tournaments
+                WHERE "Id" = 1
+                FOR UPDATE
+                """;
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(1, reader.GetInt32(0));
+        }
+
+        var selectionLockBackendId = await GetBackendProcessIdAsync(selectionLockDb);
+        var replacementBackendId = await GetBackendProcessIdAsync(replacementDb);
+        var lifecycleBackendId = await GetBackendProcessIdAsync(lifecycleDb);
+        var replacementIds = new[] { tournaments[2].Id, tournaments[1].Id };
+        var replacementTask = CreateService(replacementDb).ReplaceFeaturedTournamentsAsync(replacementIds);
+        var replacementWaitsForSelectionLock = await WaitForBlockingLockAsync(
+            database,
+            replacementBackendId,
+            selectionLockBackendId,
+            replacementTask);
+
+        var lifecycleTask = ApplyLifecycleMutationAsync(
+            lifecycleDb,
+            tournaments[2].Id,
+            deleteTournament);
+        var lifecycleWaitsForReplacement = await WaitForBlockingLockAsync(
+            database,
+            lifecycleBackendId,
+            replacementBackendId,
+            lifecycleTask);
+
+        await selectionLockTransaction.CommitAsync();
+        var replacementErrors = await replacementTask.WaitAsync(TimeSpan.FromSeconds(10));
+        await lifecycleTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(replacementWaitsForSelectionLock, "The replacement UPSERT did not wait for the singleton-row lock.");
+        Assert.True(lifecycleWaitsForReplacement, "The lifecycle write did not wait for the replacement's tournament-row lock.");
+        Assert.Null(replacementErrors);
+        Assert.Equal(replacementIds, await ReadSavedSelectionAsync(database.ConnectionString));
+
+        var response = await CreateService(lifecycleDb).GetFeaturedTournamentsAsync();
+        Assert.Equal(new[] { tournaments[1].Id, tournaments[0].Id }, response.TournamentIds);
+    }
+
     private static DbContextOptions<MercuriusDBContext> CreateOptions(PostgresTestDatabaseLease database) =>
         new DbContextOptionsBuilder<MercuriusDBContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;
+
+    private static async Task<int> GetBackendProcessIdAsync(MercuriusDBContext dbContext)
+    {
+        await dbContext.Database.OpenConnectionAsync();
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT pg_backend_pid()";
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<bool> WaitForBlockingLockAsync(
+        PostgresTestDatabaseLease database,
+        int waitingBackendId,
+        int blockingBackendId,
+        Task operationTask)
+    {
+        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT wait_event_type = 'Lock'
+                AND @blocking_backend_id = ANY(pg_blocking_pids(pid))
+            FROM pg_stat_activity
+            WHERE pid = @waiting_backend_id
+            """;
+        command.Parameters.AddWithValue("waiting_backend_id", waitingBackendId);
+        command.Parameters.AddWithValue("blocking_backend_id", blockingBackendId);
+
+        var timeout = Stopwatch.StartNew();
+        while (timeout.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            if (operationTask.IsCompleted)
+                return false;
+
+            if (await command.ExecuteScalarAsync() is true)
+                return true;
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25));
+        }
+
+        return false;
+    }
+
+    private static async Task<Guid[]> ReadSavedSelectionAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT \"TournamentIds\" FROM tournament.featured_homepage_tournaments WHERE \"Id\" = 1";
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return reader.GetFieldValue<Guid[]>(0);
+    }
+
+    private static async Task ApplyLifecycleMutationAsync(
+        MercuriusDBContext dbContext,
+        Guid tournamentId,
+        bool deleteTournament)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
+        var tournament = await dbContext.Set<TournamentAggregate>()
+            .SingleAsync(item => item.Id == tournamentId);
+        if (deleteTournament)
+            dbContext.Set<TournamentAggregate>().Remove(tournament);
+        else
+            tournament.Cancel();
+
+        await dbContext.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
 
     private static FeaturedHomepageTournamentService CreateService(
         MercuriusDBContext dbContext,

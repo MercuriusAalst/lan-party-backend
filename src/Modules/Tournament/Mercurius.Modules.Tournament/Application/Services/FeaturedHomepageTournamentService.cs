@@ -78,8 +78,17 @@ internal sealed class FeaturedHomepageTournamentService(
             return errors;
         }
 
-        var eligibleIds = await GetEligibleTournamentQuery()
-            .Where(tournament => tournamentIds.Contains(tournament.Id))
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var eligibleIds = await dbContext.Tournaments
+            .FromSqlInterpolated($"""
+                SELECT *
+                FROM tournament.tournaments
+                WHERE "Id" = ANY ({tournamentIds})
+                  AND "Status" <> {(int)TournamentStatus.Canceled}
+                ORDER BY "Id"
+                FOR SHARE
+                """)
+            .AsNoTracking()
             .Select(tournament => tournament.Id)
             .ToListAsync(cancellationToken);
         if (eligibleIds.Count != tournamentIds.Length)
@@ -96,6 +105,7 @@ internal sealed class FeaturedHomepageTournamentService(
             DO UPDATE SET "TournamentIds" = EXCLUDED."TournamentIds"
             """, cancellationToken);
 
+        await transaction.CommitAsync(cancellationToken);
         return null;
     }
 
