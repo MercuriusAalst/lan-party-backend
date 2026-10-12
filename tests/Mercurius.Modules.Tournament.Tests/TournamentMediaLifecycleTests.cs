@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Platform.Eventing;
+using Platform.Eventing.Persistence;
 
 namespace Mercurius.Modules.Tournament.Tests;
 
@@ -350,6 +351,7 @@ public sealed class TournamentMediaLifecycleTests
             _inner.Set<TournamentRegistrationRosterMember>();
         public DbSet<LeaderboardParticipant> LeaderboardParticipants => _inner.Set<LeaderboardParticipant>();
         public DbSet<LeaderboardAttempt> LeaderboardAttempts => _inner.Set<LeaderboardAttempt>();
+        public DbSet<OutboxMessage> OutboxMessages => _inner.Set<OutboxMessage>();
         public DatabaseFacade Database => _inner.Database;
         public int SaveChangesCallCount { get; private set; }
 

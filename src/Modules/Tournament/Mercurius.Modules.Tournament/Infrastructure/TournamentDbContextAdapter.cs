@@ -1,6 +1,7 @@
 using Mercurius.Modules.Tournament.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Platform.Eventing.Persistence;
 
 namespace Mercurius.Modules.Tournament.Infrastructure;
 
@@ -25,6 +26,7 @@ internal sealed class TournamentDbContextAdapter<TDbContext> : ITournamentDbCont
         _dbContext.Set<TournamentRegistrationRosterMember>();
     public DbSet<LeaderboardParticipant> LeaderboardParticipants => _dbContext.Set<LeaderboardParticipant>();
     public DbSet<LeaderboardAttempt> LeaderboardAttempts => _dbContext.Set<LeaderboardAttempt>();
+    public DbSet<OutboxMessage> OutboxMessages => _dbContext.Set<OutboxMessage>();
     public DatabaseFacade Database => _dbContext.Database;
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
