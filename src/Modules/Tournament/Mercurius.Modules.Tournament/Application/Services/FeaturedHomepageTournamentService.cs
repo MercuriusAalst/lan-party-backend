@@ -11,7 +11,7 @@ internal sealed class FeaturedHomepageTournamentService(
     ITournamentDbContext dbContext,
     ISponsorshipModule sponsorshipModule) : IFeaturedHomepageTournamentService
 {
-    private const int FeaturedTournamentCount = 4;
+    private const int MaximumFeaturedTournamentCount = 4;
 
     public async Task<FeaturedHomepageTournamentsDTO> GetFeaturedTournamentsAsync(
         CancellationToken cancellationToken = default)
@@ -28,7 +28,7 @@ internal sealed class FeaturedHomepageTournamentService(
                 .OrderBy(tournament => tournament.PlannedStartTime)
                 .ThenBy(tournament => tournament.Name)
                 .ThenBy(tournament => tournament.Id)
-                .Take(FeaturedTournamentCount)
+                .Take(MaximumFeaturedTournamentCount)
                 .Select(ToCard())
                 .ToListAsync(cancellationToken);
             return await CreateResponseAsync(fallback, cancellationToken);
@@ -44,7 +44,7 @@ internal sealed class FeaturedHomepageTournamentService(
             .Where(selectedById.ContainsKey)
             .Select(id => selectedById[id])
             .ToList();
-        var vacancyCount = FeaturedTournamentCount - ordered.Count;
+        var vacancyCount = tournamentIds.Length - ordered.Count;
 
         if (vacancyCount > 0)
         {
@@ -66,21 +66,15 @@ internal sealed class FeaturedHomepageTournamentService(
         CancellationToken cancellationToken = default)
     {
         var errors = new Dictionary<string, string[]>();
-        if (tournamentIds is null || tournamentIds.Length != FeaturedTournamentCount)
+        if (tournamentIds is null || tournamentIds.Length is < 1 or > MaximumFeaturedTournamentCount)
         {
-            errors["tournamentIds"] = ["Exactly four tournament IDs are required."];
+            errors["tournamentIds"] = ["Choose between one and four tournament IDs."];
             return errors;
         }
 
-        if (tournamentIds.Distinct().Count() != FeaturedTournamentCount)
+        if (tournamentIds.Distinct().Count() != tournamentIds.Length)
         {
             errors["tournamentIds"] = ["Tournament IDs must be distinct."];
-            return errors;
-        }
-
-        if (await GetEligibleTournamentQuery().CountAsync(cancellationToken) < FeaturedTournamentCount)
-        {
-            errors["tournamentIds"] = ["At least four eligible tournaments must exist before featured tournaments can be saved."];
             return errors;
         }
 
@@ -88,7 +82,7 @@ internal sealed class FeaturedHomepageTournamentService(
             .Where(tournament => tournamentIds.Contains(tournament.Id))
             .Select(tournament => tournament.Id)
             .ToListAsync(cancellationToken);
-        if (eligibleIds.Count != FeaturedTournamentCount)
+        if (eligibleIds.Count != tournamentIds.Length)
         {
             var invalidIds = tournamentIds.Except(eligibleIds);
             errors["tournamentIds"] = [$"Every ID must identify an existing non-canceled tournament. Invalid IDs: {string.Join(", ", invalidIds)}."];

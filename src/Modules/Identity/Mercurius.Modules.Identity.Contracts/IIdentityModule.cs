@@ -32,4 +32,14 @@ public interface IIdentityModule
         UserId? afterId,
         int pageSize,
         CancellationToken cancellationToken = default);
+
+    Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
+
+    Task<IReadOnlyList<UserProfileSummary>> GetAdminUsersAsync(
+        string normalizedQuery,
+        int pageSize,
+        CancellationToken cancellationToken = default,
+        int page = 1) =>
+        Task.FromResult<IReadOnlyList<UserProfileSummary>>([]);
 }

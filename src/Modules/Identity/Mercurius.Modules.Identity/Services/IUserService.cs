@@ -21,4 +21,5 @@ internal interface IUserService
     Task<IReadOnlyList<GetUserDTO>> GetAllUsersAsync(int page, int pageSize, CancellationToken cancellationToken = default);
     Task<GetUserDTO> GetUserByIdAsync(Guid id);
     Task<GetUserDTO> UpdateUserAsync(Guid id, UpdateUserProfileRequest request);
+    Task<IReadOnlyList<AdminUserOptionDTO>> GetAdminUsersAsync(string? query, int? page, int? pageSize, CancellationToken cancellationToken = default);
 }

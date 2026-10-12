@@ -11,7 +11,7 @@ internal sealed class FeaturedHomepageTournamentSelectionConfiguration : IEntity
         entity.ToTable("featured_homepage_tournaments", "tournament", table =>
         {
             table.HasCheckConstraint("CK_featured_homepage_tournaments_singleton", "\"Id\" = 1");
-            table.HasCheckConstraint("CK_featured_homepage_tournaments_count", "cardinality(\"TournamentIds\") = 4");
+            table.HasCheckConstraint("CK_featured_homepage_tournaments_count", "cardinality(\"TournamentIds\") BETWEEN 1 AND 4");
         });
         entity.HasKey(selection => selection.Id);
         entity.Property(selection => selection.TournamentIds)

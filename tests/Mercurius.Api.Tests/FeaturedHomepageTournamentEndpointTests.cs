@@ -64,12 +64,22 @@ public sealed class FeaturedHomepageTournamentEndpointTests
         using var forbiddenResponse = await client.SendAsync(regularUserRequest);
         Assert.Equal(HttpStatusCode.Forbidden, forbiddenResponse.StatusCode);
 
-        using var invalidRequest = CreatePutRequest(TournamentIds[..3]);
+        using var invalidRequest = CreatePutRequest([]);
         invalidRequest.Headers.Add("X-Test-Role", "admin");
         using var validationResponse = await client.SendAsync(invalidRequest);
         Assert.Equal(HttpStatusCode.BadRequest, validationResponse.StatusCode);
         using (var validationJson = JsonDocument.Parse(await validationResponse.Content.ReadAsStringAsync()))
             Assert.True(validationJson.RootElement.TryGetProperty("errors", out _));
+
+        using var tooManyRequest = CreatePutRequest([.. TournamentIds, Guid.NewGuid()]);
+        tooManyRequest.Headers.Add("X-Test-Role", "admin");
+        using var tooManyResponse = await client.SendAsync(tooManyRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, tooManyResponse.StatusCode);
+
+        using var duplicateRequest = CreatePutRequest([TournamentIds[0], TournamentIds[0]]);
+        duplicateRequest.Headers.Add("X-Test-Role", "admin");
+        using var duplicateResponse = await client.SendAsync(duplicateRequest);
+        Assert.Equal(HttpStatusCode.BadRequest, duplicateResponse.StatusCode);
 
         using var malformedRequest = new HttpRequestMessage(HttpMethod.Put, "/v1/lan/featured-tournaments")
         {
@@ -79,14 +89,18 @@ public sealed class FeaturedHomepageTournamentEndpointTests
         using var malformedResponse = await client.SendAsync(malformedRequest);
         Assert.Equal(HttpStatusCode.BadRequest, malformedResponse.StatusCode);
 
-        using var successRequest = CreatePutRequest(TournamentIds);
-        successRequest.Headers.Add("X-Test-Role", "admin");
-        using var successResponse = await client.SendAsync(successRequest);
-        Assert.Equal(HttpStatusCode.OK, successResponse.StatusCode);
-        using var successJson = JsonDocument.Parse(await successResponse.Content.ReadAsStringAsync());
-        Assert.Equal(TournamentIds, successJson.RootElement.GetProperty("tournamentIds")
-            .EnumerateArray().Select(value => value.GetGuid()));
-        Assert.Equal(2, service.ReplaceCallCount);
+        foreach (var selection in new[] { TournamentIds[..1], TournamentIds[..3], TournamentIds })
+        {
+            using var successRequest = CreatePutRequest(selection);
+            successRequest.Headers.Add("X-Test-Role", "admin");
+            using var successResponse = await client.SendAsync(successRequest);
+            Assert.Equal(HttpStatusCode.OK, successResponse.StatusCode);
+            using var successJson = JsonDocument.Parse(await successResponse.Content.ReadAsStringAsync());
+            Assert.Equal(selection, successJson.RootElement.GetProperty("tournamentIds")
+                .EnumerateArray().Select(value => value.GetGuid()));
+        }
+
+        Assert.Equal(6, service.ReplaceCallCount);
     }
 
     private static WebApplication CreateApp(StubFeaturedHomepageTournamentService service)
@@ -166,10 +180,10 @@ public sealed class FeaturedHomepageTournamentEndpointTests
             CancellationToken cancellationToken = default)
         {
             ReplaceCallCount++;
-            if (tournamentIds is null || tournamentIds.Length != 4 || tournamentIds.Distinct().Count() != 4)
+            if (tournamentIds is null || tournamentIds.Length is < 1 or > 4 || tournamentIds.Distinct().Count() != tournamentIds.Length)
                 return Task.FromResult<Dictionary<string, string[]>?>(new Dictionary<string, string[]>
                 {
-                    ["tournamentIds"] = ["Choose exactly four distinct tournaments."]
+                    ["tournamentIds"] = ["Choose between one and four distinct tournaments."]
                 });
 
             return Task.FromResult<Dictionary<string, string[]>?>(null);

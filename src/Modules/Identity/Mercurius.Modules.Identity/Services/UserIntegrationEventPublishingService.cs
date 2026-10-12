@@ -165,6 +165,15 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         return _inner.GetUserByIdAsync(id);
     }
 
+    public Task<IReadOnlyList<AdminUserOptionDTO>> GetAdminUsersAsync(
+        string? query,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        return _inner.GetAdminUsersAsync(query, page, pageSize, cancellationToken);
+    }
+
     public async Task<GetUserDTO> UpdateUserAsync(Guid id, UpdateUserProfileRequest request)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();

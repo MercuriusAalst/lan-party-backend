@@ -4,6 +4,7 @@ using Mercurius.Modules.Tournament.Domain;
 using Mercurius.Modules.Tournament.Extensions;
 using Mercurius.Modules.Tournament.Infrastructure;
 using Mercurius.Modules.Media.Contracts;
+using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.Modules.Sponsorship.Contracts;
@@ -27,6 +28,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
     private readonly ITournamentDbContext _dbContext;
     private readonly IMatchModeratorFactory _matchModeratorFactory;
     private readonly IMediaModule _mediaModule;
+    private readonly IIdentityModule _identityModule;
     private readonly ISponsorshipModule _sponsorshipModule;
     private readonly TournamentDtoMapper _mapper;
     private readonly IModuleEventPublisher _moduleEventPublisher;
@@ -36,6 +38,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         ITournamentDbContext dbContext,
         IMatchModeratorFactory matchModeratorFactory,
         IMediaModule mediaModule,
+        IIdentityModule identityModule,
         ISponsorshipModule sponsorshipModule,
         TournamentDtoMapper mapper,
         IModuleEventPublisher moduleEventPublisher,
@@ -44,6 +47,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         _dbContext = dbContext;
         _matchModeratorFactory = matchModeratorFactory;
         _mediaModule = mediaModule;
+        _identityModule = identityModule;
         _sponsorshipModule = sponsorshipModule;
         _mapper = mapper;
         _moduleEventPublisher = moduleEventPublisher;
@@ -59,6 +63,12 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         if (createTournamentDTO.Image is null)
             throw new ValidationException("A tournament banner/ image is required.");
 
+        var firstPlacePrize = NormalizePrize(createTournamentDTO.FirstPlacePrize, nameof(createTournamentDTO.FirstPlacePrize));
+        var secondPlacePrize = NormalizePrize(createTournamentDTO.SecondPlacePrize, nameof(createTournamentDTO.SecondPlacePrize));
+        var thirdPlacePrize = NormalizePrize(createTournamentDTO.ThirdPlacePrize, nameof(createTournamentDTO.ThirdPlacePrize));
+        var assignedAdminUserId = ParseOptionalAdminId(createTournamentDTO.AssignedAdminUserId);
+        await ValidateAssignedAdminAsync(assignedAdminUserId, cancellationToken);
+
         var tournament = new TournamentAggregate(
             createTournamentDTO.Name,
             (BracketType)createTournamentDTO.BracketType,
@@ -72,6 +82,10 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
             createTournamentDTO.LeaderboardRankingMetric.HasValue
                 ? (LeaderboardRankingMetric)createTournamentDTO.LeaderboardRankingMetric.Value
                 : null);
+        tournament.AssignedAdminUserId = assignedAdminUserId;
+        tournament.FirstPlacePrize = firstPlacePrize;
+        tournament.SecondPlacePrize = secondPlacePrize;
+        tournament.ThirdPlacePrize = thirdPlacePrize;
 
         await using var imageStream = createTournamentDTO.Image.OpenReadStream();
         var asset = await _mediaModule.SaveImageAsync(
@@ -147,6 +161,21 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         if (tournament.Name != tournamentDTO.Name && await TournamentNameExistsAsync(tournamentDTO.Name, cancellationToken))
             throw new ValidationException($"Tournament {tournamentDTO.Name} already exists");
 
+        var assignedAdminUserId = tournamentDTO.AssignedAdminUserIdSpecified
+            ? ParseOptionalAdminId(tournamentDTO.AssignedAdminUserId)
+            : tournament.AssignedAdminUserId;
+        var firstPlacePrize = tournamentDTO.FirstPlacePrizeSpecified
+            ? NormalizePrize(tournamentDTO.FirstPlacePrize, nameof(tournamentDTO.FirstPlacePrize))
+            : tournament.FirstPlacePrize;
+        var secondPlacePrize = tournamentDTO.SecondPlacePrizeSpecified
+            ? NormalizePrize(tournamentDTO.SecondPlacePrize, nameof(tournamentDTO.SecondPlacePrize))
+            : tournament.SecondPlacePrize;
+        var thirdPlacePrize = tournamentDTO.ThirdPlacePrizeSpecified
+            ? NormalizePrize(tournamentDTO.ThirdPlacePrize, nameof(tournamentDTO.ThirdPlacePrize))
+            : tournament.ThirdPlacePrize;
+        if (tournamentDTO.AssignedAdminUserIdSpecified)
+            await ValidateAssignedAdminAsync(assignedAdminUserId, cancellationToken);
+
         tournament.Update(
             tournamentDTO.Name,
             (BracketType)tournamentDTO.BracketType,
@@ -160,6 +189,10 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
             tournamentDTO.LeaderboardRankingMetric.HasValue
                 ? (LeaderboardRankingMetric)tournamentDTO.LeaderboardRankingMetric.Value
                 : null);
+        tournament.AssignedAdminUserId = assignedAdminUserId;
+        tournament.FirstPlacePrize = firstPlacePrize;
+        tournament.SecondPlacePrize = secondPlacePrize;
+        tournament.ThirdPlacePrize = thirdPlacePrize;
         tournament.LeaderboardRevision++;
 
         var previousImageUrl = tournament.ImageUrl;
@@ -417,6 +450,34 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         {
             _logger.LogWarning(exception, "Failed to {MediaCleanupAction} at {MediaUrl}.", action, imageUrl);
         }
+    }
+
+    private async Task ValidateAssignedAdminAsync(Guid? assignedAdminUserId, CancellationToken cancellationToken)
+    {
+        if (assignedAdminUserId.HasValue &&
+            !await _identityModule.IsAdminUserAsync(new UserId(assignedAdminUserId.Value), cancellationToken))
+        {
+            throw new ValidationException("Assigned contact must be an existing administrator.");
+        }
+    }
+
+    private static string? NormalizePrize(string? prize, string fieldName)
+    {
+        var normalized = prize?.Trim();
+        if (normalized?.Length > 200)
+            throw new ValidationException($"{fieldName} cannot exceed 200 characters.");
+
+        return string.IsNullOrEmpty(normalized) ? null : normalized;
+    }
+
+    private static Guid? ParseOptionalAdminId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return Guid.TryParse(value, out var parsed)
+            ? parsed
+            : throw new ValidationException($"{nameof(CreateTournamentDTO.AssignedAdminUserId)} must be a valid user id.");
     }
 
     private async Task SaveLifecycleAsync(bool isLeaderboardConflict, CancellationToken cancellationToken)

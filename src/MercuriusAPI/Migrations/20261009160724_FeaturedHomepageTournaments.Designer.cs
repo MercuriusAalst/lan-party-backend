@@ -849,6 +849,10 @@ namespace Mercurius.LAN.API.Migrations
                     b.Property<int>("FinalsFormat")
                         .HasColumnType("integer");
 
+                    b.Property<string>("FirstPlacePrize")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<int>("Format")
                         .HasColumnType("integer");
 
@@ -875,6 +879,10 @@ namespace Mercurius.LAN.API.Migrations
                     b.Property<int>("RoundBreakDurationMinutes")
                         .HasColumnType("integer");
 
+                    b.Property<string>("SecondPlacePrize")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<DateTime>("StartTime")
                         .HasColumnType("timestamp with time zone");
 
@@ -884,6 +892,10 @@ namespace Mercurius.LAN.API.Migrations
 
                     b.Property<int?>("TeamSize")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ThirdPlacePrize")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
 

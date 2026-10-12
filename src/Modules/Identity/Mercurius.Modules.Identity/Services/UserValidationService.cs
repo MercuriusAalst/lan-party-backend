@@ -153,6 +153,17 @@ internal class UserValidationService : IUserService
         _inner.GetAllUsersAsync(page, pageSize, cancellationToken);
     public Task<GetUserDTO> GetUserByIdAsync(Guid id) => _inner.GetUserByIdAsync(id);
 
+    public Task<IReadOnlyList<AdminUserOptionDTO>> GetAdminUsersAsync(
+        string? query,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        SearchRequest.ValidateQueryLength(SearchRequest.NormalizeQuery(query));
+
+        return _inner.GetAdminUsersAsync(query, page, pageSize, cancellationToken);
+    }
+
     private static void ValidateProfileRequest(
         string username,
         string firstname,

@@ -287,6 +287,7 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
         dbContext,
         new UnsupportedMatchModeratorFactory(),
         TournamentTestSupport.CreateMediaModule(),
+        TournamentTestSupport.CreateIdentityModule(),
         TournamentTestSupport.CreateSponsorshipModule(),
         TournamentTestSupport.CreateMapper(),
         TournamentTestSupport.CreateModuleEventPublisher(),

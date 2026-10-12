@@ -100,7 +100,7 @@ public sealed class FeaturedHomepageTournamentTests
     }
 
     [Fact]
-    public async Task ReplacementValidatesAndPersistsTheCompleteOrderAcrossContexts()
+    public async Task ReplacementAcceptsOneToFourItemsAndRejectsInvalidValuesAcrossContexts()
     {
         await using var database = PostgresTestDatabase.Create();
         var options = CreateOptions(database);
@@ -116,9 +116,18 @@ public sealed class FeaturedHomepageTournamentTests
 
             var service = CreateService(dbContext);
             selection = tournaments.Take(4).Select(tournament => tournament.Id).Reverse().ToArray();
+
+            var one = selection[..1];
+            var three = selection[..3];
+
+            Assert.Null(await service.ReplaceFeaturedTournamentsAsync(one));
+            Assert.Equal(one, (await service.GetFeaturedTournamentsAsync()).TournamentIds);
+            Assert.Null(await service.ReplaceFeaturedTournamentsAsync(three));
+            Assert.Equal(three, (await service.GetFeaturedTournamentsAsync()).TournamentIds);
             Assert.Null(await service.ReplaceFeaturedTournamentsAsync(selection));
 
-            Assert.NotNull(await service.ReplaceFeaturedTournamentsAsync(selection.Take(3).ToArray()));
+            Assert.NotNull(await service.ReplaceFeaturedTournamentsAsync([]));
+            Assert.NotNull(await service.ReplaceFeaturedTournamentsAsync([.. selection, tournaments[4].Id]));
             Assert.NotNull(await service.ReplaceFeaturedTournamentsAsync([selection[0], selection[1], selection[2], selection[2]]));
             Assert.NotNull(await service.ReplaceFeaturedTournamentsAsync([selection[0], selection[1], selection[2], Guid.NewGuid()]));
             Assert.NotNull(await service.ReplaceFeaturedTournamentsAsync([selection[0], selection[1], selection[2], canceled.Id]));
@@ -128,6 +137,47 @@ public sealed class FeaturedHomepageTournamentTests
         var response = await CreateService(reopenedContext).GetFeaturedTournamentsAsync();
 
         Assert.Equal(selection, response.TournamentIds);
+    }
+
+    [Fact]
+    public async Task ReplacementAllowsOneSelectionWhenItIsTheOnlyEligibleTournament()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        await using var dbContext = new MercuriusDBContext(options);
+        await dbContext.Database.MigrateAsync();
+        var tournament = CreateTournament(0);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+
+        var service = CreateService(dbContext);
+
+        Assert.Null(await service.ReplaceFeaturedTournamentsAsync([tournament.Id]));
+        Assert.Equal([tournament.Id], (await service.GetFeaturedTournamentsAsync()).TournamentIds);
+    }
+
+    [Fact]
+    public async Task PublicReadBackfillsSavedPartialSelectionOnlyToSavedCount()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        await using var dbContext = new MercuriusDBContext(options);
+        await dbContext.Database.MigrateAsync();
+        var tournaments = Enumerable.Range(0, 6).Select(CreateTournament).ToArray();
+        dbContext.Set<TournamentAggregate>().AddRange(tournaments);
+        await dbContext.SaveChangesAsync();
+
+        var selection = new[] { tournaments[5].Id, tournaments[3].Id, tournaments[4].Id };
+        var service = CreateService(dbContext);
+        Assert.Null(await service.ReplaceFeaturedTournamentsAsync(selection));
+
+        tournaments[3].Status = TournamentDomain.TournamentStatus.Canceled;
+        await dbContext.SaveChangesAsync();
+
+        var response = await service.GetFeaturedTournamentsAsync();
+
+        Assert.Equal(new[] { tournaments[5].Id, tournaments[4].Id, tournaments[0].Id }, response.TournamentIds);
+        Assert.Equal(response.TournamentIds, response.Tournaments.Select(tournament => tournament.Id));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.DTOs;
+using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.Modules.Identity.Services.Auth0;
@@ -14,13 +15,16 @@ internal class UserService : IUserService
     private const string GenericPasswordResetMessage = "If password reset is available for this account, a password reset email has been sent.";
     private readonly IIdentityDbContext _dbContext;
     private readonly IAuth0ManagementService _auth0ManagementService;
+    private readonly IIdentityModule _identityModule;
 
     public UserService(
         IIdentityDbContext dbContext,
-        IAuth0ManagementService auth0ManagementService)
+        IAuth0ManagementService auth0ManagementService,
+        IIdentityModule identityModule)
     {
         _dbContext = dbContext;
         _auth0ManagementService = auth0ManagementService;
+        _identityModule = identityModule;
     }
 
     public async Task<IReadOnlyList<GetUserDTO>> GetAllUsersAsync(
@@ -41,6 +45,26 @@ internal class UserService : IUserService
             .Take(pageSize)
             .Select(user => new GetUserDTO(user))
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AdminUserOptionDTO>> GetAdminUsersAsync(
+        string? query,
+        int? page,
+        int? pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var users = await _identityModule.GetAdminUsersAsync(
+            SearchRequest.NormalizeQuery(query),
+            SearchRequest.BoundPageSize(pageSize),
+            cancellationToken,
+            page ?? 1);
+
+        return users
+            .Select(user => new AdminUserOptionDTO(
+                user.Id.Value,
+                string.IsNullOrWhiteSpace(user.Username) ? "Incomplete profile" : user.Username,
+                user.DisplayName))
+            .ToList();
     }
 
     public async Task<GetUserDTO> CreateUserAsync(CreateUserProfileRequest request)

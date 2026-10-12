@@ -12,13 +12,15 @@ internal sealed class RegistrationMappingContextBuilder(
     public async Task<RegistrationMappingContext> BuildAsync(
         IReadOnlyCollection<TournamentRegistration> registrations,
         IReadOnlyCollection<Placement> placements,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<Guid>? additionalUserIds = null)
     {
         var userIds = registrations
             .SelectMany(registration =>
                 registration.RosterMembers.Select(member => member.UserId)
                     .Concat(registration.UserId.HasValue ? [registration.UserId.Value] : []))
             .Concat(placements.SelectMany(placement => placement.Users.Select(user => user.UserId)))
+            .Concat(additionalUserIds ?? [])
             .Distinct()
             .Select(userId => new UserId(userId))
             .ToArray();

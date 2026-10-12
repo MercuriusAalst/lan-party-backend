@@ -48,8 +48,13 @@ internal static class TournamentEndpoints
             return await tournamentManagementCommands.CreateTournamentAsync(createTournamentDTO, cancellationToken);
         }).DisableAntiforgery();
 
-        group.MapPatch("/{tournamentId}", async (Guid tournamentId, [FromForm] UpdateTournamentDTO updateTournamentDTO, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
+        group.MapPatch("/{tournamentId}", async (Guid tournamentId, [FromForm] UpdateTournamentDTO updateTournamentDTO, HttpRequest request, ITournamentManagementCommands tournamentManagementCommands, CancellationToken cancellationToken) =>
         {
+            var form = await request.ReadFormAsync(cancellationToken);
+            updateTournamentDTO.AssignedAdminUserIdSpecified = form.ContainsKey(nameof(UpdateTournamentDTO.AssignedAdminUserId));
+            updateTournamentDTO.FirstPlacePrizeSpecified = form.ContainsKey(nameof(UpdateTournamentDTO.FirstPlacePrize));
+            updateTournamentDTO.SecondPlacePrizeSpecified = form.ContainsKey(nameof(UpdateTournamentDTO.SecondPlacePrize));
+            updateTournamentDTO.ThirdPlacePrizeSpecified = form.ContainsKey(nameof(UpdateTournamentDTO.ThirdPlacePrize));
             return await tournamentManagementCommands.UpdateTournamentAsync(tournamentId, updateTournamentDTO, cancellationToken);
         }).DisableAntiforgery();
 

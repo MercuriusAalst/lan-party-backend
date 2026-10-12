@@ -17,6 +17,10 @@ internal class CreateTournamentDTO
     [Required]
     public IFormFile Image { get; set; } = null!;
     public int? TeamSize { get; set; }
+    public string? AssignedAdminUserId { get; set; }
+    public string? FirstPlacePrize { get; set; }
+    public string? SecondPlacePrize { get; set; }
+    public string? ThirdPlacePrize { get; set; }
     [Required]
     public DateTime PlannedStartTime { get; set; }
     public int AverageGameDurationMinutes { get; set; }

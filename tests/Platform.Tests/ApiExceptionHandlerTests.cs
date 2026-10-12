@@ -29,6 +29,7 @@ public class ApiExceptionHandlerTests
         yield return [new ValidationException("Validation failed."), StatusCodes.Status400BadRequest];
         yield return [new ConflictException("conflict", "Conflict."), StatusCodes.Status409Conflict];
         yield return [new NotFoundException("Missing."), StatusCodes.Status404NotFound];
+        yield return [new ServiceUnavailableException("Upstream unavailable."), StatusCodes.Status503ServiceUnavailable];
         yield return [new InvalidCredentialsException("Nope."), StatusCodes.Status401Unauthorized];
         yield return [new LockoutException(), StatusCodes.Status423Locked];
         yield return [new UnauthorizedAccessException("Denied."), StatusCodes.Status401Unauthorized];
