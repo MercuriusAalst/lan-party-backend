@@ -110,8 +110,8 @@ public class UserEndpointRouteTests
 
         Assert.DoesNotContain(endpoint.Metadata, metadata => metadata is IAllowAnonymous);
         Assert.Contains(endpoint.Metadata.OfType<AuthorizeAttribute>(), metadata => metadata.Roles == "admin");
-        var rateLimitMetadata = Assert.Single(endpoint.Metadata.Where(metadata =>
-            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null));
+        var rateLimitMetadata = Assert.Single(endpoint.Metadata, metadata =>
+            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null);
         Assert.Equal(
             RateLimitPolicies.AnonymousSearch,
             rateLimitMetadata.GetType().GetProperty("PolicyName")!.GetValue(rateLimitMetadata));
