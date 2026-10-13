@@ -193,7 +193,6 @@ public class MatchServiceDeadlineTests
         Assert.Equal(persistedSource.UserWinnerId, persistedDirectNext.UserParticipant1Id);
         Assert.Equal(source.Id, persistedDirectNext.Participant1SourceMatchId);
         Assert.Equal(MatchLifecycleState.ScoreConfirmation, persistedUnrelated.LifecycleState);
-        Assert.Contains(publisher.Events, payload => payload is Mercurius.Modules.Tournament.Contracts.MatchCompletedIntegrationEvent);
     }
 
     [Fact]

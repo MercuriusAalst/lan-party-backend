@@ -8,9 +8,7 @@ using Mercurius.Modules.Teams.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Eventing;
-using MatchCompletedIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchCompletedIntegrationEvent;
 using MatchResolutionRequiredIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchResolutionRequiredIntegrationEvent;
-using MatchResultReversedIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchResultReversedIntegrationEvent;
 using MatchParticipantSide = Mercurius.Modules.Tournament.Contracts.MatchParticipantSide;
 
 namespace Mercurius.Modules.Tournament.Application.Services;
@@ -191,7 +189,6 @@ internal sealed class MatchService : IMatchService
         if (!wasResult && match.HasResult)
         {
             match.ResultRecordedByUserId = userId;
-            PublishCompletion(match);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -234,7 +231,6 @@ internal sealed class MatchService : IMatchService
         if (!wasResult)
         {
             match.ResultRecordedByUserId = userId;
-            PublishCompletion(match);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -251,13 +247,10 @@ internal sealed class MatchService : IMatchService
         await using var transaction = await BeginTransactionAsync(cancellationToken);
         var (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
         EnsureInProgress(tournament);
-        var wasResult = match.HasResult;
         var now = UtcNow();
         ApplyDeadline(tournament, match, now);
         match.ResolveScore(request.Participant1Score, request.Participant2Score, now);
         match.ResultRecordedByUserId = userId;
-        if (!wasResult)
-            PublishCompletion(match);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -288,9 +281,6 @@ internal sealed class MatchService : IMatchService
         _bracketImpactAnalyzer.ClearDownstreamAssignments(match, reversalAnalysis);
         match.ReverseResult(UtcNow());
         match.ResultRecordedByUserId = userId;
-        _moduleEventPublisher.Publish(new MatchResultReversedIntegrationEvent(
-            new MatchId(match.Id),
-            new TournamentId(match.TournamentId)));
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -309,7 +299,6 @@ internal sealed class MatchService : IMatchService
         ApplyDeadline(tournament, match, now);
         match.ResolveScore(updateMatchDTO.Participant1Score, updateMatchDTO.Participant2Score, now);
         match.ResultRecordedByUserId = userId;
-        PublishCompletion(match);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -371,17 +360,6 @@ internal sealed class MatchService : IMatchService
                 new TournamentId(match.TournamentId),
                 tournament.AssignedAdminUserId));
         }
-    }
-
-    private void PublishCompletion(Match match)
-    {
-        var winnerId = match.GetWinnerId();
-        if (!winnerId.HasValue)
-            return;
-        _moduleEventPublisher.Publish(new MatchCompletedIntegrationEvent(
-            new MatchId(match.Id),
-            new TournamentId(match.TournamentId),
-            winnerId.Value));
     }
 
     private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken)

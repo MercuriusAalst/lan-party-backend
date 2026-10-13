@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Platform.Eventing;
-using MatchCompletedIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchCompletedIntegrationEvent;
 using MatchResolutionRequiredIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchResolutionRequiredIntegrationEvent;
 
 namespace Mercurius.Modules.Tournament.Application.Services;
@@ -117,15 +116,10 @@ internal sealed class MatchDeadlineProcessor : BackgroundService
         if (beforeState == match.LifecycleState && beforeResult == match.HasResult)
             return false;
 
-        if (!beforeResult && match.HasResult && match.GetWinnerId() is Guid winnerId)
+        if (!beforeResult && match.HasResult && match.GetWinnerId() is not null)
         {
             await LoadDirectNextMatchesAsync(dbContext, match, cancellationToken);
             match.UpdateParticipantsNextMatch();
-            eventPublisher.Publish(new MatchCompletedIntegrationEvent(
-                new Mercurius.Modules.Shared.MatchId(match.Id),
-                new Mercurius.Modules.Shared.TournamentId(match.TournamentId),
-                winnerId),
-                nowUtc);
         }
         else if (beforeState != MatchLifecycleState.AdminResolutionRequired &&
                 match.LifecycleState == MatchLifecycleState.AdminResolutionRequired)

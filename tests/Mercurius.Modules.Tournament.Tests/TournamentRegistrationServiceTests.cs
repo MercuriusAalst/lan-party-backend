@@ -754,8 +754,7 @@ public class TournamentRegistrationServiceTests
 
     private static TournamentRegistrationService CreateService(
         MercuriusDBContext dbContext,
-        ITournamentRealtimePublisher? publisher = null,
-        IModuleEventPublisher? moduleEventPublisher = null)
+        ITournamentRealtimePublisher? publisher = null)
     {
         var identityModule = new IdentityModuleFacade(dbContext, new TournamentTestSupport.NoopAuth0ManagementService());
         var teamsModule = new TeamsModuleFacade(
@@ -781,7 +780,6 @@ public class TournamentRegistrationServiceTests
                 new RegistrationMappingContextBuilder(identityModule, teamsModule),
                 new NullSponsorshipModule()),
             publisher ?? TournamentTestSupport.CreateRealtimePublisher(),
-            moduleEventPublisher ?? TournamentTestSupport.CreateModuleEventPublisher(),
             NullLogger<TournamentRegistrationService>.Instance);
     }
 

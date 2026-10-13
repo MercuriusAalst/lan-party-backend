@@ -21,10 +21,13 @@ internal sealed class SponsorshipOutboxWriter
         CancellationToken cancellationToken = default)
         where TPayload : notnull
     {
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
         await _dbContext.SaveChangesAsync(cancellationToken);
         _moduleEventPublisher.Publish(createPayload());
         await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
     }
 }

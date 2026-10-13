@@ -79,17 +79,8 @@ internal sealed class ModuleEventDispatcher : IModuleEventDispatcher
     {
         try
         {
-            var payloadType = ModuleEventTypeNames.Resolve(message.EventType);
-            var payloadJson = ModuleEventTypeNames.IsLegacy(message.EventType)
-                ? NormalizeLegacyPayload(message.Payload)
-                : message.Payload;
-            var payload = JsonSerializer.Deserialize(payloadJson, payloadType, SerializerOptions)
-                ?? throw new InvalidOperationException($"Module event payload '{message.EventType}' deserialized to null.");
-
-            var context = new ModuleEventContext(message.Id, message.EventType, message.OccurredAtUtc);
-            // Each handler commits its own inbox marker, so retries skip already completed consumers.
-            foreach (var handler in ResolveHandlers(payloadType))
-                await DispatchToHandlerAsync(handler, payloadType, payload, context, cancellationToken);
+            if (!ModuleEventTypeNames.IsRetired(message.EventType))
+                await DispatchToHandlersAsync(message, cancellationToken);
 
             var processedAtUtc = GetUtcNow();
             if (message.ClaimExpiresAtUtc <= processedAtUtc)
@@ -129,6 +120,21 @@ internal sealed class ModuleEventDispatcher : IModuleEventDispatcher
                 cancellationToken);
             return false;
         }
+    }
+
+    private async Task DispatchToHandlersAsync(OutboxMessage message, CancellationToken cancellationToken)
+    {
+        var payloadType = ModuleEventTypeNames.Resolve(message.EventType);
+        var payloadJson = ModuleEventTypeNames.IsLegacy(message.EventType)
+            ? NormalizeLegacyPayload(message.Payload)
+            : message.Payload;
+        var payload = JsonSerializer.Deserialize(payloadJson, payloadType, SerializerOptions)
+            ?? throw new InvalidOperationException($"Module event payload '{message.EventType}' deserialized to null.");
+
+        var context = new ModuleEventContext(message.Id, message.EventType, message.OccurredAtUtc);
+        // Each handler commits its own inbox marker, so retries skip already completed consumers.
+        foreach (var handler in ResolveHandlers(payloadType))
+            await DispatchToHandlerAsync(handler, payloadType, payload, context, cancellationToken);
     }
 
     private async Task SaveFailedDispatchStateAsync(

@@ -10,11 +10,8 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Eventing;
 using Platform.Realtime;
 using System.Runtime.ExceptionServices;
-using TeamCaptainTransferredIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamCaptainTransferredIntegrationEvent;
 using TeamCreatedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamCreatedIntegrationEvent;
 using TeamDeletedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamDeletedIntegrationEvent;
-using TeamMemberAddedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamMemberAddedIntegrationEvent;
-using TeamMemberRemovedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamMemberRemovedIntegrationEvent;
 using TeamRenamedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamRenamedIntegrationEvent;
 
 namespace Mercurius.Modules.Teams.Services;
@@ -185,11 +182,10 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
 
     public async Task<GetTeamDTO> RemoveMemberAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
     {
-        var team = await ExecuteWithDurableEventTransactionAsync(
+        var team = await ExecuteTeamMutationAsync(
+            id,
             () => _inner.RemoveMemberAsync(id, userId, cancellationToken),
-            _ => PublishTeamMemberRemovedAsync(id, userId, cancellationToken),
-            cancellationToken,
-            id);
+            cancellationToken);
 
         await _realtimeConnectionManager.RevokeUserFromGroupAsync(
             userId,
@@ -200,11 +196,10 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
 
     public async Task<TeamManagementSummaryDTO> RemoveMemberAsync(string auth0UserId, Guid teamId, Guid userId, CancellationToken cancellationToken = default)
     {
-        var team = await ExecuteWithDurableEventTransactionAsync(
+        var team = await ExecuteTeamMutationAsync(
+            teamId,
             () => _inner.RemoveMemberAsync(auth0UserId, teamId, userId, cancellationToken),
-            _ => PublishTeamMemberRemovedAsync(teamId, userId, cancellationToken),
-            cancellationToken,
-            teamId);
+            cancellationToken);
 
         await _realtimeConnectionManager.RevokeUserFromGroupAsync(
             userId,
@@ -216,16 +211,15 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
 
     public async Task<TeamManagementSummaryDTO> LeaveTeamAsync(string auth0UserId, Guid teamId, CancellationToken cancellationToken = default)
     {
-        var result = await ExecuteWithDurableEventTransactionAsync(
+        var result = await ExecuteTeamMutationAsync(
+            teamId,
             async () =>
             {
                 var team = await _inner.LeaveTeamAsync(auth0UserId, teamId, cancellationToken);
                 var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
                 return new TeamMemberRemovedResult(team, userId);
             },
-            result => PublishTeamMemberRemovedAsync(teamId, result.UserId, cancellationToken),
-            cancellationToken,
-            teamId);
+            cancellationToken);
 
         var userId = result.UserId;
         await _realtimeConnectionManager.RevokeUserFromGroupAsync(
@@ -238,13 +232,10 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
 
     public async Task<TeamInviteDTO> RespondToInviteAsync(Guid teamId, Guid userId, bool accept, CancellationToken cancellationToken = default)
     {
-        return await ExecuteWithDurableEventTransactionAsync(
+        return await ExecuteTeamMutationAsync(
+            teamId,
             () => _inner.RespondToInviteAsync(teamId, userId, accept, cancellationToken),
-            invite => accept
-                ? PublishTeamMemberAddedAsync(invite.TeamId, invite.UserId, cancellationToken)
-                : Task.CompletedTask,
-            cancellationToken,
-            teamId);
+            cancellationToken);
     }
 
     public async Task<TeamInviteDTO> RespondToInviteAsync(string auth0UserId, Guid inviteId, bool accept, CancellationToken cancellationToken = default)
@@ -257,13 +248,10 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
         if (!teamId.HasValue)
             throw new Mercurius.Modules.Shared.Exceptions.NotFoundException("No pending invite found");
 
-        var invite = await ExecuteWithDurableEventTransactionAsync(
+        var invite = await ExecuteTeamMutationAsync(
+            teamId.Value,
             () => _inner.RespondToInviteAsync(auth0UserId, inviteId, accept, cancellationToken),
-            invite => accept
-                ? PublishTeamMemberAddedAsync(invite.TeamId, invite.UserId, cancellationToken)
-                : Task.CompletedTask,
-            cancellationToken,
-            teamId.Value);
+            cancellationToken);
 
         await _teamEventPublisher.InviteChangedAsync(invite.TeamId, invite.Id, invite.UserId, invite.Status, CancellationToken.None);
         if (accept)
@@ -274,11 +262,10 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
 
     public async Task<TeamManagementSummaryDTO> TransferCaptainAsync(string auth0UserId, Guid teamId, Guid newCaptainUserId, CancellationToken cancellationToken = default)
     {
-        var team = await ExecuteWithDurableEventTransactionAsync(
+        var team = await ExecuteTeamMutationAsync(
+            teamId,
             () => _inner.TransferCaptainAsync(auth0UserId, teamId, newCaptainUserId, cancellationToken),
-            _ => PublishTeamCaptainTransferredAsync(teamId, newCaptainUserId, cancellationToken),
-            cancellationToken,
-            teamId);
+            cancellationToken);
 
         await _teamEventPublisher.CaptainTransferredAsync(teamId, newCaptainUserId, CancellationToken.None);
         return team;
@@ -304,40 +291,24 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
         var result = await ExecuteWithDurableEventTransactionAsync(
             async () =>
             {
-                var currentTeam = await _dbContext.Teams
+                var currentNormalizedName = await _dbContext.Teams
                     .AsNoTracking()
                     .Where(team => team.Id == id)
-                    .Select(team => new
-                    {
-                        team.NormalizedName,
-                        team.CaptainUserId
-                    })
+                    .Select(team => team.NormalizedName)
                     .FirstOrDefaultAsync(cancellationToken);
 
                 var team = await _inner.UpdateTeamAsync(id, teamDTO, cancellationToken);
 
                 var shouldPublishRenamed =
-                    currentTeam is not null &&
+                    currentNormalizedName is not null &&
                     teamDTO.Name is not null &&
-                    !string.Equals(currentTeam.NormalizedName, Team.NormalizeName(teamDTO.Name), StringComparison.Ordinal);
+                    !string.Equals(currentNormalizedName, Team.NormalizeName(teamDTO.Name), StringComparison.Ordinal);
 
-                var transferredCaptainUserId =
-                    currentTeam is not null &&
-                    teamDTO.CaptainUserId.HasValue &&
-                    teamDTO.CaptainUserId.Value != currentTeam.CaptainUserId
-                        ? teamDTO.CaptainUserId
-                        : null;
-
-                return new TeamUpdatedResult(team, shouldPublishRenamed, transferredCaptainUserId);
+                return new TeamUpdatedResult(team, shouldPublishRenamed);
             },
-            async result =>
-            {
-                if (result.NameChanged)
-                    await PublishTeamRenamedAsync(id, cancellationToken);
-
-                if (result.TransferredCaptainUserId.HasValue)
-                    await PublishTeamCaptainTransferredAsync(id, result.TransferredCaptainUserId.Value, cancellationToken);
-            },
+            result => result.NameChanged
+                ? PublishTeamRenamedAsync(id, cancellationToken)
+                : Task.CompletedTask,
             cancellationToken,
             id);
 
@@ -529,39 +500,6 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task PublishTeamMemberAddedAsync(Guid teamId, Guid userId, CancellationToken cancellationToken)
-    {
-        var team = await GetTeamForEventAsync(teamId, cancellationToken);
-        IncrementTeamVersion(team);
-        _moduleEventPublisher.Publish(new TeamMemberAddedIntegrationEvent(
-            new TeamId(team.Id),
-            team.Version,
-            new UserId(userId)));
-        await _dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task PublishTeamMemberRemovedAsync(Guid teamId, Guid userId, CancellationToken cancellationToken)
-    {
-        var team = await GetTeamForEventAsync(teamId, cancellationToken);
-        IncrementTeamVersion(team);
-        _moduleEventPublisher.Publish(new TeamMemberRemovedIntegrationEvent(
-            new TeamId(team.Id),
-            team.Version,
-            new UserId(userId)));
-        await _dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    private async Task PublishTeamCaptainTransferredAsync(Guid teamId, Guid newCaptainUserId, CancellationToken cancellationToken)
-    {
-        var team = await GetTeamForEventAsync(teamId, cancellationToken);
-        IncrementTeamVersion(team);
-        _moduleEventPublisher.Publish(new TeamCaptainTransferredIntegrationEvent(
-            new TeamId(team.Id),
-            team.Version,
-            new UserId(newCaptainUserId)));
-        await _dbContext.SaveChangesAsync(cancellationToken);
-    }
-
     private async Task<Team> GetTeamForEventAsync(Guid teamId, CancellationToken cancellationToken)
     {
         return await _dbContext.Teams.FindAsync([teamId], cancellationToken)
@@ -623,8 +561,7 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
 
     private sealed record TeamUpdatedResult(
         GetTeamDTO Team,
-        bool NameChanged,
-        Guid? TransferredCaptainUserId);
+        bool NameChanged);
 
     private sealed record TeamDeletionResult(bool TeamDeleted, TeamService.TeamDeletionState? PreviousState);
 

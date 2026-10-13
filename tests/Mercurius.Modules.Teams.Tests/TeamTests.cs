@@ -1223,30 +1223,6 @@ public class TeamTests
     }
 
     [Fact]
-    public async Task TransferCaptainAsync_DoesNotPublishRealtime_WhenDurableEventPublishingFails()
-    {
-        await using var dbContext = CreateDbContext();
-        var captain = CreateUser();
-        var newCaptain = CreateUser();
-        var team = CreateTeam("Alpha", captain);
-        team.AddMember(newCaptain.Id);
-        dbContext.Users.AddRange(captain, newCaptain);
-        dbContext.Teams.Add(team);
-        await dbContext.SaveChangesAsync();
-
-        var publisher = new RecordingTeamEventPublisher();
-        var teamService = CreateTeamService(
-            dbContext,
-            eventPublisher: publisher,
-            moduleEventPublisher: new ThrowingModuleEventPublisher());
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            teamService.TransferCaptainAsync(captain.Auth0UserId, team.Id, newCaptain.Id));
-
-        Assert.Empty(publisher.CaptainEvents);
-    }
-
-    [Fact]
     public async Task RemoveMemberAsync_RevokesAfterCommitBeforeMembershipBroadcast()
     {
         await using var dbContext = CreateDbContext();
@@ -1276,9 +1252,6 @@ public class TeamTests
         Assert.Equal(member.Id, revocation.UserId);
         Assert.Equal(TeamRealtimeGroups.GetTeamGroup(team.Id), revocation.GroupName);
         Assert.Equal(CancellationToken.None, revocation.CancellationToken);
-        Assert.Contains(
-            await dbContext.OutboxMessages.Select(message => message.EventType).ToListAsync(),
-            eventType => eventType == typeof(TeamMemberRemovedIntegrationEvent).FullName);
     }
 
     [Fact]
@@ -1890,30 +1863,7 @@ public class TeamTests
     }
 
     [Fact]
-    public async Task RemoveMemberAsync_DoesNotRevokeWhenDurableEventPublicationFails()
-    {
-        await using var dbContext = CreateDbContext();
-        var captain = CreateUser();
-        var member = CreateUser();
-        var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
-        dbContext.Users.AddRange(captain, member);
-        dbContext.Teams.Add(team);
-        await dbContext.SaveChangesAsync();
-        var realtimeConnectionManager = new RecordingRealtimeConnectionManager();
-        var teamService = CreateTeamService(
-            dbContext,
-            moduleEventPublisher: new ThrowingModuleEventPublisher(),
-            realtimeConnectionManager: realtimeConnectionManager);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            teamService.RemoveMemberAsync(captain.Auth0UserId, team.Id, member.Id));
-
-        Assert.Empty(realtimeConnectionManager.UserGroupRevocations);
-    }
-
-    [Fact]
-    public async Task RemoveMemberAsync_PostCommitRevocationFailureLeavesMutationAndOutboxCommitted()
+    public async Task RemoveMemberAsync_PostCommitRevocationFailureLeavesMutationCommitted()
     {
         await using var dbContext = CreateDbContext();
         var captain = CreateUser();
@@ -1943,9 +1893,6 @@ public class TeamTests
             .Include(candidate => candidate.Members)
             .SingleAsync(candidate => candidate.Id == team.Id);
         Assert.DoesNotContain(persistedTeam.Members, candidate => candidate.UserId == member.Id);
-        Assert.Contains(
-            await dbContext.OutboxMessages.Select(message => message.EventType).ToListAsync(),
-            eventType => eventType == typeof(TeamMemberRemovedIntegrationEvent).FullName);
         Assert.Empty(publisher.MembershipEvents);
     }
 
@@ -1992,6 +1939,95 @@ public class TeamTests
         Assert.True(await authorizer.CanSubscribeToTeamAsync(new TeamId(team.Id), new UserId(member.Id)));
         Assert.False(await authorizer.CanSubscribeToTeamAsync(new TeamId(team.Id), new UserId(outsider.Id)));
         Assert.False(await authorizer.CanSubscribeToTeamAsync(new TeamId(deletedTeam.Id), new UserId(deletedCaptain.Id)));
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_WhenTeamVersionChangedConcurrently_ThrowsConflictAndKeepsVersionsUnique()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
+            .UseNpgsql(database.ConnectionString)
+            .Options;
+        await using var setupContext = new MercuriusDBContext(options);
+        PostgresTestDatabase.Initialize(setupContext);
+        var captain = CreateUser();
+        var team = CreateTeam("Alpha", captain);
+        setupContext.Users.Add(captain);
+        setupContext.Teams.Add(team);
+        await setupContext.SaveChangesAsync();
+        await using var firstContext = new MercuriusDBContext(options);
+        await using var secondContext = new MercuriusDBContext(options);
+        var firstTeam = await firstContext.Teams.SingleAsync(candidate => candidate.Id == team.Id);
+        var secondTeam = await secondContext.Teams.SingleAsync(candidate => candidate.Id == team.Id);
+        firstTeam.Version++;
+        secondTeam.Version++;
+
+        await new TeamsDbContextAdapter<MercuriusDBContext>(firstContext).SaveChangesAsync();
+        var conflict = await Assert.ThrowsAsync<ConflictException>(() =>
+            new TeamsDbContextAdapter<MercuriusDBContext>(secondContext).SaveChangesAsync());
+
+        Assert.Equal("team_changed", conflict.Code);
+        setupContext.ChangeTracker.Clear();
+        Assert.Equal(1, (await setupContext.Teams.SingleAsync(candidate => candidate.Id == team.Id)).Version);
+    }
+
+    [Fact]
+    public async Task DeleteUserByIdAsync_WithCrossModuleReferences_AnonymizesUserWithoutHardDelete()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var (member, _) = await SeedCrossModuleReferencesAsync(dbContext);
+
+        await new Mercurius.Modules.Identity.Services.UserService(dbContext, null!, null!).DeleteUserByIdAsync(member.Id);
+
+        dbContext.ChangeTracker.Clear();
+        Assert.True(await dbContext.Users.AnyAsync(user => user.Id == member.Id && user.IsDeleted));
+        Assert.True(await dbContext.Set<PlacementUser>().AnyAsync(placementUser => placementUser.UserId == member.Id));
+        var hardDelete = await Assert.ThrowsAsync<Npgsql.PostgresException>(() =>
+            dbContext.Users.Where(user => user.Id == member.Id).ExecuteDeleteAsync());
+        Assert.Equal(Npgsql.PostgresErrorCodes.ForeignKeyViolation, hardDelete.SqlState);
+    }
+
+    [Fact]
+    public async Task DeleteTeamAsync_WithCrossModuleReferences_SoftDeletesTeamWithoutHardDelete()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var (_, team) = await SeedCrossModuleReferencesAsync(dbContext);
+
+        await CreateTeamService(dbContext).DeleteTeamAsync(team.Id);
+
+        dbContext.ChangeTracker.Clear();
+        Assert.True(await dbContext.Teams.AnyAsync(candidate => candidate.Id == team.Id && candidate.IsDeleted));
+        Assert.True(await dbContext.Set<PlacementTeam>().AnyAsync(placementTeam => placementTeam.TeamId == team.Id));
+        var hardDelete = await Assert.ThrowsAsync<Npgsql.PostgresException>(() =>
+            dbContext.Teams.Where(candidate => candidate.Id == team.Id).ExecuteDeleteAsync());
+        Assert.Equal(Npgsql.PostgresErrorCodes.ForeignKeyViolation, hardDelete.SqlState);
+    }
+
+    private static async Task<(User Member, Team Team)> SeedCrossModuleReferencesAsync(MercuriusDBContext dbContext)
+    {
+        var captain = CreateUser();
+        var member = CreateUser();
+        var team = CreateTeam("Alpha", captain);
+        team.AddMember(member.Id);
+        var otherTeam = CreateTeam("Bravo", captain);
+        var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2)
+        {
+            Id = Guid.NewGuid()
+        };
+        dbContext.Users.AddRange(captain, member);
+        dbContext.Teams.AddRange(team, otherTeam);
+        dbContext.Set<TeamInvite>().Add(CreatePendingInvite(otherTeam, member));
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        dbContext.Set<Placement>().Add(new Placement
+        {
+            Id = Guid.NewGuid(),
+            Place = 1,
+            TournamentId = tournament.Id,
+            Users = [new PlacementUser { UserId = member.Id }],
+            Teams = [new PlacementTeam { TeamId = team.Id }]
+        });
+        await dbContext.SaveChangesAsync();
+        return (member, team);
     }
 
     private static User CreateUser()

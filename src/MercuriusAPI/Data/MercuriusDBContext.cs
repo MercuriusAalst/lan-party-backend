@@ -61,14 +61,14 @@ public class MercuriusDBContext : DbContext, IModuleEventDbContext, IIdentityDbC
             .HasOne(typeof(User).FullName!, null)
             .WithMany()
             .HasForeignKey("UserId")
-            .OnDelete(DeleteBehavior.Cascade)
+            .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("FK_team_members_users_UserId");
 
         modelBuilder.Entity(TeamInviteEntityType)
             .HasOne(typeof(User).FullName!, null)
             .WithMany()
             .HasForeignKey("UserId")
-            .OnDelete(DeleteBehavior.Cascade)
+            .OnDelete(DeleteBehavior.Restrict)
             .HasConstraintName("FK_team_invites_users_UserId");
 
         ConfigureOptionalCrossModuleReference(modelBuilder, MatchEntityType, "UserParticipant1Id");
@@ -85,14 +85,14 @@ public class MercuriusDBContext : DbContext, IModuleEventDbContext, IIdentityDbC
         ConfigureOptionalCrossModuleReference(modelBuilder, TournamentRegistrationEntityType, "TeamId", typeof(Team).FullName!, DeleteBehavior.Restrict);
         ConfigureRequiredCrossModuleReference(modelBuilder, TournamentRegistrationRosterMemberEntityType, "UserId", DeleteBehavior.Restrict);
         ConfigureOptionalCrossModuleReference(modelBuilder, TournamentRegistrationRosterMemberEntityType, "TeamId", typeof(Team).FullName!, DeleteBehavior.Restrict);
-        ConfigureRequiredCrossModuleReference(modelBuilder, PlacementUserEntityType, "UserId", DeleteBehavior.Cascade);
-        ConfigureRequiredCrossModuleReference(modelBuilder, PlacementTeamEntityType, "TeamId", DeleteBehavior.Cascade, typeof(Team).FullName!);
+        ConfigureRequiredCrossModuleReference(modelBuilder, PlacementUserEntityType, "UserId", DeleteBehavior.Restrict);
+        ConfigureRequiredCrossModuleReference(modelBuilder, PlacementTeamEntityType, "TeamId", DeleteBehavior.Restrict, typeof(Team).FullName!);
 
         modelBuilder.Entity(TournamentEntityType)
             .HasOne(TournamentSponsorPlacementEntityType, null)
             .WithOne()
             .HasForeignKey(TournamentSponsorPlacementEntityType, "TournamentId")
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private static void ConfigureOptionalCrossModuleReference(
