@@ -171,6 +171,7 @@ public class SponsorFeatureTests
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
             new StubMatchModeratorFactory(),
             new StubMediaModule(),
+            identityModule,
             sponsorshipModule,
             new TournamentDtoMapper(
                 new RegistrationMappingContextBuilder(identityModule, teamsModule),
