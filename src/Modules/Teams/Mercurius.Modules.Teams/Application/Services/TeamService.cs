@@ -728,7 +728,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
     private static void EnsureCaptain(Team team, Guid userId)
     {
         if (team.CaptainUserId != userId)
-            throw new UnauthorizedAccessException("Only the team captain can perform this action.");
+            throw new ForbiddenException("team_captain_required", "Only the team captain can perform this action.");
     }
 
     private async Task ExpirePendingInviteAsync(Guid teamId, Guid userId, CancellationToken cancellationToken)

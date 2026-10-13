@@ -229,9 +229,9 @@ internal sealed class MatchService : IMatchService
         if (!isAdmin)
         {
             if (!actorSide.HasValue)
-                throw new UnauthorizedAccessException("Only a participant or team captain can forfeit this match.");
+                throw new ForbiddenException("match_participant_required", "Only a participant or team captain can forfeit this match.");
             if (targetSide.HasValue && targetSide != actorSide)
-                throw new UnauthorizedAccessException("Participants may only forfeit their own side.");
+                throw new ForbiddenException("match_own_side_required", "Participants may only forfeit their own side.");
             targetSide = actorSide;
         }
         else if (!targetSide.HasValue)
@@ -492,7 +492,7 @@ internal sealed class MatchService : IMatchService
     {
         var side = await FindParticipantSideAsync(match, userId, cancellationToken);
         if (!side.HasValue)
-            throw new UnauthorizedAccessException("Only a participant or team captain can perform this action.");
+            throw new ForbiddenException("match_participant_required", "Only a participant or team captain can perform this action.");
         return side.Value;
     }
 

@@ -1,0 +1,6 @@
+# Allowlist: the image only needs global.json and src/.
+*
+!global.json
+!src/
+**/bin/
+**/obj/

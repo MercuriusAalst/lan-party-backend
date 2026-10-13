@@ -533,7 +533,7 @@ public class TeamTests
 
         var teamService = CreateTeamService(dbContext);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
             teamService.InviteUserAsync(outsider.Auth0UserId, team.Id, invited.Id));
     }
 
@@ -637,7 +637,7 @@ public class TeamTests
         await dbContext.SaveChangesAsync();
         var teamService = CreateTeamService(dbContext);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
             teamService.RemoveMemberAsync(outsider.Auth0UserId, team.Id, member.Id));
 
         Assert.Contains(team.Members, teamMember => teamMember.UserId == member.Id);
@@ -726,7 +726,7 @@ public class TeamTests
 
         var teamService = CreateTeamService(dbContext);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
             teamService.DeleteTeamAsync(outsider.Auth0UserId, team.Id));
 
         Assert.False((await dbContext.Teams.FindAsync(team.Id))!.IsDeleted);

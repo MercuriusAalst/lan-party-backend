@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Net.Http.Headers;
 
@@ -56,7 +57,8 @@ public static class AuthenticationExtensions
                 ValidAlgorithms = [SecurityAlgorithms.RsaSha256]
             };
         });
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+            options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
         return services;
     }

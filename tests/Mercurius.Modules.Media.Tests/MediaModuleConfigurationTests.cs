@@ -1,3 +1,4 @@
+using Imageflow.Fluent;
 using Mercurius.Modules.Media;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Shared.Exceptions;
@@ -49,7 +50,39 @@ public class MediaModuleConfigurationTests
             var asset = await mediaModule.SaveImageAsync(new MediaUpload(stream, "untrusted.gif", "image/gif", image.Length));
 
             Assert.Matches("^images/[0-9a-f]{32}\\.webp$", asset.Url);
-            Assert.True(File.Exists(Path.Combine(storagePath, Path.GetFileName(asset.Url))));
+            var stored = await File.ReadAllBytesAsync(Path.Combine(storagePath, Path.GetFileName(asset.Url)));
+            Assert.Equal("WEBP", System.Text.Encoding.ASCII.GetString(stored, 8, 4));
+            Assert.DoesNotContain("VP8L", System.Text.Encoding.ASCII.GetString(stored), StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(storagePath);
+        }
+    }
+
+    [Fact]
+    public async Task SaveImageAsync_RejectsImagesBeyondTheDimensionLimitWithoutLeavingAFile()
+    {
+        // Arrange
+        var storagePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var mediaModule = CreateMediaModule(storagePath);
+        var canvas = await new ImageJob()
+            .CreateCanvasBgra32(9000, 10, AnyColor.Black)
+            .EncodeToBytes(new LodePngEncoder())
+            .Finish()
+            .InProcessAsync();
+        var image = canvas.First!.TryGetBytes()!.Value.ToArray();
+
+        try
+        {
+            // Act
+            await using var stream = new MemoryStream(image);
+            var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+                mediaModule.SaveImageAsync(new MediaUpload(stream, "wide.png", "image/png", image.Length)));
+
+            // Assert
+            Assert.Equal("The image could not be processed or exceeds the maximum dimensions.", exception.Message);
+            Assert.Empty(Directory.EnumerateFiles(storagePath));
         }
         finally
         {

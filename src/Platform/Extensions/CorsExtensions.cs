@@ -5,13 +5,13 @@ public static class CorsExtensions
     public static IServiceCollection AddWildcardSubdomainCors(
         this IServiceCollection services,
         string policyName,
-        string allowedOrigin)
+        params string[] allowedOrigins)
     {
         services.AddCors(options =>
         {
             options.AddPolicy(policyName, policy =>
             {
-                policy.WithOrigins(allowedOrigin)
+                policy.WithOrigins(allowedOrigins)
                     .SetIsOriginAllowedToAllowWildcardSubdomains()
                     .AllowAnyHeader()
                     .AllowAnyMethod();

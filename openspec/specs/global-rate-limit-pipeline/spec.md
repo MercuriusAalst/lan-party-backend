@@ -14,9 +14,9 @@ The API host MUST authenticate each request before selecting its existing global
 - **WHEN** an authenticated caller without the required role repeats a request to a protected endpoint until its global fixed-window bucket is exhausted
 - **THEN** the endpoint MUST return its normal forbidden response before exhaustion and the existing 429 rate-limit response after exhaustion
 
-### Requirement: Global rate limiting precedes Imageflow handling
-The API host MUST invoke Imageflow processing and cache handling for `/images` only after global rate-limit enforcement.
+### Requirement: Public assets and health probes bypass the global limiter
+The API host MUST serve `/images`, `/staticfiles`, and the Swagger UI ahead of the security pipeline, and MUST exclude `/health/live` and `/health/ready` from rate limiting, so these requests never consume or get rejected by a global fixed-window bucket.
 
-#### Scenario: Repeated image request
-- **WHEN** a caller repeats a request under `/images` until its global fixed-window bucket is exhausted
-- **THEN** the existing 429 rate-limit response MUST be produced before terminal image processing or cache handling executes
+#### Scenario: Repeated image or health request
+- **WHEN** a caller repeats a request under `/images`, `/staticfiles`, `/health/live`, or `/health/ready` after its global fixed-window bucket is exhausted
+- **THEN** the request MUST be served normally and MUST NOT receive the 429 rate-limit response

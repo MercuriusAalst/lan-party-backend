@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.LAN.API.Middleware;
 using Microsoft.AspNetCore.Http;
@@ -37,24 +38,57 @@ public class ApiExceptionHandlerTests
     }
 
     [Fact]
-    public async Task TryHandleAsync_ForbiddenException_WritesStableCodeAndMessage()
+    public async Task TryHandleAsync_ForbiddenException_WritesProblemDetailsWithCodeAndMessage()
     {
+        // Arrange
         var handler = new ApiExceptionHandler();
         var httpContext = new DefaultHttpContext
         {
             Response = { Body = new MemoryStream() }
         };
 
+        // Act
         var handled = await handler.TryHandleAsync(
             httpContext,
-            new ForbiddenException("admin_not_assigned", "Assigned administrator required."),
+            new ForbiddenException("team_captain_required", "Only the team captain can perform this action."),
             CancellationToken.None);
 
+        // Assert
         Assert.True(handled);
         Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);
+        Assert.StartsWith("application/problem+json", httpContext.Response.ContentType, StringComparison.Ordinal);
+        var body = await ReadJsonAsync(httpContext);
+        Assert.Equal(403, body.GetProperty("status").GetInt32());
+        Assert.Equal("Forbidden", body.GetProperty("title").GetString());
+        Assert.Equal("Only the team captain can perform this action.", body.GetProperty("detail").GetString());
+        Assert.Equal("Only the team captain can perform this action.", body.GetProperty("message").GetString());
+        Assert.Equal("team_captain_required", body.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_UncodedException_WritesProblemDetailsWithoutCode()
+    {
+        // Arrange
+        var handler = new ApiExceptionHandler();
+        var httpContext = new DefaultHttpContext
+        {
+            Response = { Body = new MemoryStream() }
+        };
+
+        // Act
+        await handler.TryHandleAsync(httpContext, new ValidationException("Validation failed."), CancellationToken.None);
+
+        // Assert
+        var body = await ReadJsonAsync(httpContext);
+        Assert.Equal("Validation failed.", body.GetProperty("detail").GetString());
+        Assert.Equal("Validation failed.", body.GetProperty("message").GetString());
+        Assert.False(body.TryGetProperty("code", out _));
+    }
+
+    private static async Task<JsonElement> ReadJsonAsync(HttpContext httpContext)
+    {
         httpContext.Response.Body.Position = 0;
-        var responseBody = await new StreamReader(httpContext.Response.Body, Encoding.UTF8).ReadToEndAsync();
-        Assert.Contains("\"code\":\"admin_not_assigned\"", responseBody, StringComparison.Ordinal);
-        Assert.Contains("Assigned administrator required.", responseBody, StringComparison.Ordinal);
+        using var document = await JsonDocument.ParseAsync(httpContext.Response.Body);
+        return document.RootElement.Clone();
     }
 }

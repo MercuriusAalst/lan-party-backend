@@ -43,30 +43,6 @@ public class RateLimitingPipelineTests
         Assert.Equal(StatusCodes.Status429TooManyRequests, secondResponse.StatusCode);
     }
 
-    [Fact]
-    public async Task UseSecurityPipeline_LimitsImageRequestsBeforeTerminalImageHandling()
-    {
-        var services = CreateServices();
-        await using var provider = services.BuildServiceProvider();
-        var imageHandlerCalls = 0;
-        var app = new ApplicationBuilder(provider);
-        app.UseSecurityPipeline();
-        app.Run(context =>
-        {
-            imageHandlerCalls++;
-            context.Response.StatusCode = StatusCodes.Status204NoContent;
-            return Task.CompletedTask;
-        });
-        var pipeline = app.Build();
-
-        var firstResponse = await SendAsync(provider, pipeline, "/images/example.webp");
-        var secondResponse = await SendAsync(provider, pipeline, "/images/example.webp");
-
-        Assert.Equal(StatusCodes.Status204NoContent, firstResponse.StatusCode);
-        Assert.Equal(StatusCodes.Status429TooManyRequests, secondResponse.StatusCode);
-        Assert.Equal(1, imageHandlerCalls);
-    }
-
     private static ServiceCollection CreateServices()
     {
         var services = new ServiceCollection();
