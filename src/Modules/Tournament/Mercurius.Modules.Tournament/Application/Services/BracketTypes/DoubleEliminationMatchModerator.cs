@@ -113,22 +113,6 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
         for (int i = 0; i < shuffled.Count; i++)
             slots[slotOrder[i]] = shuffled[i];
 
-        for (int i = 0; i < slots.Length; i += 2)
-        {
-            if (slots[i] == null && slots[i + 1] == null)
-            {
-                for (int j = i + 2; j < slots.Length; j++)
-                {
-                    if (slots[j] != null)
-                    {
-                        slots[i] = slots[j];
-                        slots[j] = null;
-                        break;
-                    }
-                }
-            }
-        }
-
         return slots;
     }
 
@@ -234,6 +218,8 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
     /// <param name="matches">The list to which the grand final match will be added.</param>
     private void GenerateGrandFinalMatch(TournamentAggregate tournament, List<Match> matches)
     {
+        // Intentionally a single grand final without a bracket reset: if the lower bracket winner wins,
+        // it takes the title even though the upper bracket winner has then lost only once.
         var grandFinalMatch = new Match
         {
             TournamentId = tournament.Id,
@@ -280,8 +266,6 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
                 m.RoundNumber == targetLBRoundNumber &&
                 m.MatchNumber == nextLBMatchNumber);
 
-            PropagateBYEStatus(currentUBMatch, nextUBMatch, nextLBMatch);
-
             currentUBMatch.LoserNextMatch = nextLBMatch;
         }
 
@@ -296,38 +280,62 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
                 m.MatchNumber == nextLBMatchNumber);
 
             currentLBMatch.WinnerNextMatch = nextLBMatch;
-
-            if (currentLBMatch.Participant1IsBYE && currentLBMatch.Participant2IsBYE && nextLBMatch != null)
-            {
-                nextLBMatch.Participant2IsBYE = true;
-            }
         }
 
         LinkFinalMatches(uBMatches, lBMatches, grandFinal);
 
-        return uBMatches.Concat(lBMatches).Append(grandFinal);
+        var linkedMatches = uBMatches.Concat(lBMatches).Append(grandFinal).ToList();
+        MarkByes(linkedMatches);
+        return linkedMatches;
     }
 
     /// <summary>
-    /// Propagates BYE status to the next matches in the tournament.
+    /// Flags the lower bracket slots that can never be filled because their feeding match yields nobody
+    /// (a first-round bye produces no loser), so a lone participant advances automatically
+    /// and a match is never decided before its second real participant arrives.
     /// </summary>
-    /// <param name="currentUBMatch">The current upper bracket match.</param>
-    /// <param name="nextUBMatch">The next upper bracket match.</param>
-    /// <param name="nextLBMatch">The next lower bracket match.</param>
-    private void PropagateBYEStatus(Match currentUBMatch, Match? nextUBMatch, Match? nextLBMatch)
+    /// <param name="matches">The linked matches, ordered so every feeding match precedes the match it feeds.</param>
+    private static void MarkByes(List<Match> matches)
     {
-        if (currentUBMatch.Participant1IsBYE && currentUBMatch.Participant2IsBYE)
-        {
-            nextLBMatch?.SetParticipantBYEs(nextLBMatch.MatchNumber % 2 != 0, nextLBMatch.MatchNumber % 2 == 0);
-            if (nextUBMatch != null)
+        var feeds = matches
+            .SelectMany(match => new[]
             {
-                nextUBMatch.SetParticipantBYEs(currentUBMatch.MatchNumber % 2 != 0, currentUBMatch.MatchNumber % 2 == 0);
-            }
-        }
-        else if (currentUBMatch.Participant1IsBYE || currentUBMatch.Participant2IsBYE)
+                (Source: match, Target: match.WinnerNextMatch, IsLoser: false),
+                (Source: match, Target: match.LoserNextMatch, IsLoser: true)
+            })
+            .Where(feed => feed.Target is not null)
+            .ToLookup(feed => feed.Target!);
+        var participantCounts = new Dictionary<Match, int>();
+
+        foreach (var match in matches)
         {
-            nextLBMatch?.SetParticipantBYEs(currentUBMatch.RoundNumber != 1 || currentUBMatch.MatchNumber % 2 != 0,
-                                            currentUBMatch.RoundNumber == 1 && currentUBMatch.MatchNumber % 2 == 0);
+            if (!match.IsLowerBracketMatch)
+            {
+                // Seeding never pairs two byes, so every upper bracket match after the first round is full.
+                participantCounts[match] = match.RoundNumber > 1
+                    ? 2
+                    : (match.HasParticipant1() ? 1 : 0) + (match.HasParticipant2() ? 1 : 0);
+                continue;
+            }
+
+            var liveFeeds = feeds[match]
+                .Where(feed => feed.IsLoser ? participantCounts[feed.Source] == 2 : participantCounts[feed.Source] > 0)
+                .ToList();
+            participantCounts[match] = liveFeeds.Count;
+
+            if (liveFeeds.Count == 0)
+            {
+                match.Participant1IsBYE = true;
+                match.Participant2IsBYE = true;
+            }
+            else if (liveFeeds.Count == 1)
+            {
+                // Mirrors Match.UpdateParticipantsNextMatch: losers take participant 1 (participant 2 from even
+                // first-round matches) and a lone lower bracket winner takes the empty participant 2.
+                var (source, _, isLoser) = liveFeeds[0];
+                var landsInParticipant1 = isLoser && !(source.RoundNumber == 1 && source.MatchNumber % 2 == 0);
+                match.SetParticipantBYEs(!landsInParticipant1, landsInParticipant1);
+            }
         }
     }
 

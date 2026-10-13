@@ -46,15 +46,7 @@ internal sealed class MatchService : IMatchService
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var (tournament, match) = await GetMatchReadAsync(id, cancellationToken);
-        var publicProjection = TournamentDtoMapper.ToGetMatchDto(match);
-        if (HasExpiredDeadline(match, UtcNow()))
-        {
-            (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-            if (!await ApplyDeadlineAndPersistAsync(tournament, match, cancellationToken))
-                return publicProjection;
-        }
-
+        var (_, match) = await GetMatchReadAsync(id, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
 
@@ -94,12 +86,6 @@ internal sealed class MatchService : IMatchService
     {
         var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
         var (tournament, match) = await GetMatchReadAsync(id, cancellationToken);
-        if (HasExpiredDeadline(match, UtcNow()))
-        {
-            (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-            await ApplyDeadlineAndPersistAsync(tournament, match, cancellationToken);
-        }
-
         var side = await FindParticipantSideAsync(match, userId, cancellationToken);
         var tournamentInProgress = tournament.Status == TournamentStatus.InProgress;
         var canViewPrivateReports = isAdmin &&
@@ -337,6 +323,11 @@ internal sealed class MatchService : IMatchService
         if (match is null)
             throw new NotFoundException("Match not found.");
 
+        // Reads never persist: MatchDeadlineProcessor saves expired deadlines and publishes their events.
+        // Applying the deadline to this untracked copy only shows the outcome before the processor's next poll.
+        if (match.Tournament.Status == TournamentStatus.InProgress)
+            match.ApplyDeadline(UtcNow());
+
         return (match.Tournament, match);
     }
 
@@ -364,33 +355,6 @@ internal sealed class MatchService : IMatchService
             .Include(candidate => candidate.WinnerNextMatch)
             .Include(candidate => candidate.LoserNextMatch)
             .Where(candidate => candidate.Id == id);
-
-    private static bool HasExpiredDeadline(Match match, DateTime nowUtc) =>
-        (match.LifecycleState == MatchLifecycleState.ScoreConfirmation &&
-         match.ScoreConfirmationDeadlineUtc is { } scoreDeadline && nowUtc >= scoreDeadline) ||
-        (match.LifecycleState == MatchLifecycleState.Disputed &&
-         match.CorrectionDeadlineUtc is { } correctionDeadline && nowUtc >= correctionDeadline);
-
-    private async Task<bool> ApplyDeadlineAndPersistAsync(
-        TournamentAggregate tournament,
-        Match match,
-        CancellationToken cancellationToken)
-    {
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        if (!await IsTournamentInProgressAsync(tournament.Id, cancellationToken))
-            return false;
-
-        var beforeState = match.LifecycleState;
-        var beforeResult = match.HasResult;
-        ApplyDeadline(tournament, match, UtcNow());
-        if (beforeState == match.LifecycleState && beforeResult == match.HasResult)
-            return true;
-
-        if (!beforeResult && match.HasResult)
-            PublishCompletion(match);
-        await SaveAndCommitAsync(transaction, tournament, cancellationToken);
-        return true;
-    }
 
     private void ApplyDeadline(
         TournamentAggregate tournament,

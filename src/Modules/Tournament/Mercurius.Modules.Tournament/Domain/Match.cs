@@ -653,17 +653,20 @@ internal sealed class Match
         }
     }
 
+    // A bracket that is still being generated has no ids yet; its bye advancement is part of the original assignment.
+    private Guid? SourceMatchId => Id == Guid.Empty ? null : Id;
+
     private void AssignWinnerToParticipant1(Match targetMatch) =>
-        targetMatch.SetParticipant1(GetWinnerId(), Id);
+        targetMatch.SetParticipant1(GetWinnerId(), SourceMatchId);
 
     private void AssignWinnerToParticipant2(Match targetMatch) =>
-        targetMatch.SetParticipant2(GetWinnerId(), Id);
+        targetMatch.SetParticipant2(GetWinnerId(), SourceMatchId);
 
     private void AssignLoserToParticipant1(Match targetMatch) =>
-        targetMatch.SetParticipant1(GetLoserId(), Id);
+        targetMatch.SetParticipant1(GetLoserId(), SourceMatchId);
 
     private void AssignLoserToParticipant2(Match targetMatch) =>
-        targetMatch.SetParticipant2(GetLoserId(), Id);
+        targetMatch.SetParticipant2(GetLoserId(), SourceMatchId);
 
     private void SetParticipant1(Guid? participantId, Guid? sourceMatchId)
     {
