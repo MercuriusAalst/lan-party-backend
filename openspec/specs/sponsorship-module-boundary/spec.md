@@ -85,9 +85,10 @@ tournament routes and identifiers.
 
 ### Requirement: Sponsorship publishes lifecycle facts
 Sponsorship mutations SHALL publish typed integration-event contracts in the `Contracts.V1`
-namespace without exposing EF entities. Events MUST describe sponsor creation, update, deletion,
-and tournament sponsor placement changes, including the relevant SponsorId and TournamentId or PlacementId
-facts needed by later consumers.
+namespace without exposing EF entities. Events MUST describe sponsor creation, update, and deletion,
+including the relevant SponsorId facts needed by later consumers. Tournament sponsor placement changes
+MUST NOT publish an integration event; consumers read the current placement through the Sponsorship
+module contract.
 
 #### Scenario: Sponsor metadata changes
 - **WHEN** a sponsor is created, updated, or deleted
@@ -97,9 +98,8 @@ facts needed by later consumers.
 
 #### Scenario: Tournament placement changes
 - **WHEN** a tournament's sponsor placement is created, replaced, or removed
-- **THEN** Sponsorship MUST publish a `Contracts.V1.TournamentSponsorPlacementChanged` event that
-  identifies the tournament
-- **AND** the event MUST represent either the current placement facts or the removal state
+- **THEN** Sponsorship MUST persist the placement change
+- **AND** it MUST NOT write a `Contracts.V1.TournamentSponsorPlacementChanged` outbox message
 
 ### Requirement: Sponsorship coordinates Sponsor logo lifecycle
 Sponsorship MUST compensate a newly stored Sponsor logo if the following Sponsor mutation, outbox

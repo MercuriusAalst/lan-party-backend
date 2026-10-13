@@ -26,22 +26,21 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
-        {
-            Status = TournamentStatus.Completed
-        };
-        var match = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            LifecycleState = MatchLifecycleState.ScoreConfirmation,
-            ScoreConfirmationDeadlineUtc = nowUtc.AddMinutes(-1),
-            Participant1ReportedScore1 = 1,
-            Participant1ReportedScore2 = 0
-        };
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Status, TournamentStatus.Completed);
+        var match = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.LifecycleState, MatchLifecycleState.ScoreConfirmation)
+            .Set(x => x.ScoreConfirmationDeadlineUtc, nowUtc.AddMinutes(-1))
+            .Set(x => x.Participant1ReportedScore1, 1)
+            .Set(x => x.Participant1ReportedScore2, 0);
         tournament.Matches.Add(match);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
@@ -76,24 +75,23 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
-        {
-            Status = TournamentStatus.InProgress
-        };
-        var match = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            LifecycleState = MatchLifecycleState.ScoreConfirmation,
-            ScoreConfirmationDeadlineUtc = nowUtc.AddMinutes(-1),
-            UserParticipant1Id = participant1Id,
-            UserParticipant2Id = participant2Id,
-            Participant1ReportedScore1 = 1,
-            Participant1ReportedScore2 = 0
-        };
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Status, TournamentStatus.InProgress);
+        var match = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.LifecycleState, MatchLifecycleState.ScoreConfirmation)
+            .Set(x => x.ScoreConfirmationDeadlineUtc, nowUtc.AddMinutes(-1))
+            .Set(x => x.UserParticipant1Id, participant1Id)
+            .Set(x => x.UserParticipant2Id, participant2Id)
+            .Set(x => x.Participant1ReportedScore1, 1)
+            .Set(x => x.Participant1ReportedScore2, 0);
         tournament.Matches.Add(match);
         dbContext.Users.AddRange(
             new User { Id = participant1Id, Auth0UserId = $"auth0|{participant1Id:N}" },
@@ -128,49 +126,45 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.InProgress
-        };
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.InProgress);
         var participant1Id = Guid.NewGuid();
         var participant2Id = Guid.NewGuid();
-        var source = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            MatchNumber = 1,
-            LifecycleState = MatchLifecycleState.ScoreConfirmation,
-            ScoreConfirmationDeadlineUtc = nowUtc.AddMinutes(-1),
-            UserParticipant1Id = participant1Id,
-            UserParticipant2Id = participant2Id,
-            Participant1ReportedScore1 = 1,
-            Participant1ReportedScore2 = 0
-        };
-        var directNextMatch = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual
-        };
-        source.WinnerNextMatchId = directNextMatch.Id;
-        var unrelatedMatch = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            LifecycleState = MatchLifecycleState.ScoreConfirmation,
-            ScoreConfirmationDeadlineUtc = nowUtc.AddMinutes(5),
-            Participant1ReportedScore1 = 1,
-            Participant1ReportedScore2 = 0
-        };
+        var source = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.MatchNumber, 1)
+            .Set(x => x.LifecycleState, MatchLifecycleState.ScoreConfirmation)
+            .Set(x => x.ScoreConfirmationDeadlineUtc, nowUtc.AddMinutes(-1))
+            .Set(x => x.UserParticipant1Id, participant1Id)
+            .Set(x => x.UserParticipant2Id, participant2Id)
+            .Set(x => x.Participant1ReportedScore1, 1)
+            .Set(x => x.Participant1ReportedScore2, 0);
+        var directNextMatch = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual);
+        source.Set(x => x.WinnerNextMatchId, directNextMatch.Id);
+        var unrelatedMatch = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.LifecycleState, MatchLifecycleState.ScoreConfirmation)
+            .Set(x => x.ScoreConfirmationDeadlineUtc, nowUtc.AddMinutes(5))
+            .Set(x => x.Participant1ReportedScore1, 1)
+            .Set(x => x.Participant1ReportedScore2, 0);
         tournament.Matches.Add(source);
         tournament.Matches.Add(directNextMatch);
         tournament.Matches.Add(unrelatedMatch);
@@ -266,23 +260,23 @@ public class MatchServiceDeadlineTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.InProgress
-        };
-        var match = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            LifecycleState = MatchLifecycleState.ScoreConfirmation,
-            ScoreConfirmationDeadlineUtc = deadlineUtc,
-            Participant1ReportedScore1 = 1,
-            Participant1ReportedScore2 = 0
-        };
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.InProgress);
+        var match = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.LifecycleState, MatchLifecycleState.ScoreConfirmation)
+            .Set(x => x.ScoreConfirmationDeadlineUtc, deadlineUtc)
+            .Set(x => x.Participant1ReportedScore1, 1)
+            .Set(x => x.Participant1ReportedScore2, 0);
         tournament.Matches.Add(match);
         return (tournament, match);
     }

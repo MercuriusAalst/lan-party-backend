@@ -173,8 +173,8 @@ internal sealed class MatchDeadlineProcessor : BackgroundService
             .ToListAsync(cancellationToken);
         var nextMatchesById = nextMatches.ToDictionary(candidate => candidate.Id);
         if (match.WinnerNextMatchId is { } winnerNextMatchId)
-            match.WinnerNextMatch = nextMatchesById.GetValueOrDefault(winnerNextMatchId);
+            match.SetWinnerNextMatch(nextMatchesById.GetValueOrDefault(winnerNextMatchId));
         if (match.LoserNextMatchId is { } loserNextMatchId)
-            match.LoserNextMatch = nextMatchesById.GetValueOrDefault(loserNextMatchId);
+            match.SetLoserNextMatch(nextMatchesById.GetValueOrDefault(loserNextMatchId));
     }
 }

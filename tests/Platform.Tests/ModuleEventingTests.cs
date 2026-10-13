@@ -1,14 +1,15 @@
+using Mercurius.Modules.Identity.Infrastructure;
 using System.Text.Json;
 using Mercurius.LAN.API.Data;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.LAN.API.Migrations;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Teams.Infrastructure;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Identity.DTOs;
-using Mercurius.Modules.Identity.Services;
-using Mercurius.Modules.Identity.Services.Auth0;
+using Mercurius.Modules.Identity.Application.DTOs;
+using Mercurius.Modules.Identity.Application.Services;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Tournament.Contracts;
 using Mercurius.Modules.Teams.Contracts;
@@ -228,6 +229,8 @@ public class ModuleEventingTests
     [Theory]
     [InlineData("Mercurius.Modules.Teams.Contracts.TeamMemberAddedIntegrationEvent, Mercurius.Modules.Teams.Contracts")]
     [InlineData("Mercurius.Modules.Competition.Contracts.MatchCompletedIntegrationEvent, Mercurius.Modules.Competition.Contracts")]
+    [InlineData("Mercurius.Modules.Identity.Contracts.UserAnonymizedIntegrationEvent, Mercurius.Modules.Identity.Contracts")]
+    [InlineData("Mercurius.Modules.Sponsorship.Contracts.V1.GameSponsorPlacementChanged, Mercurius.Modules.Sponsorship.Contracts")]
     public async Task Dispatcher_AcknowledgesStoredRetiredEventTypesWithoutDeadLettering(string eventType)
     {
         await using var provider = CreateEventingProvider(new object(), _ => { });
@@ -390,7 +393,7 @@ public class ModuleEventingTests
             .Select(message => message.EventType)
             .ToListAsync();
 
-        Assert.Contains(typeof(UserAnonymizedIntegrationEvent).FullName!, eventTypes);
+        Assert.DoesNotContain("Mercurius.Modules.Identity.Contracts.UserAnonymizedIntegrationEvent", eventTypes);
         Assert.Contains(typeof(UserDeletedIntegrationEvent).FullName!, eventTypes);
         Assert.Contains(typeof(UserProfileChangedIntegrationEvent).FullName!, eventTypes);
     }
@@ -521,14 +524,7 @@ public class ModuleEventingTests
         return provider;
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static TeamEventPublishingDecorator CreateTeamService(MercuriusDBContext dbContext)
     {
@@ -542,7 +538,7 @@ public class ModuleEventingTests
             })
             .Build();
         var moduleEventPublisher = new ModuleEventPublisher(dbContext);
-        var identityModule = new IdentityModuleFacade(dbContext, new NoopAuth0ManagementService());
+        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService());
         var teamsDbContext = new TeamsDbContextAdapter<MercuriusDBContext>(dbContext);
 
         return new TeamEventPublishingDecorator(
@@ -552,12 +548,14 @@ public class ModuleEventingTests
                 identityModule,
                 new NoopMediaModule(),
                 new NoopTeamTournamentReadService(),
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<TeamService>.Instance,
+                TimeProvider.System),
             teamsDbContext,
             identityModule,
             new NoopTeamEventPublisher(),
             moduleEventPublisher,
-            new NoopRealtimeConnectionManager());
+            new NoopRealtimeConnectionManager(),
+            TimeProvider.System);
     }
 
     private static IUserService CreateUserService(
@@ -566,8 +564,8 @@ public class ModuleEventingTests
         IRealtimeConnectionManager? realtimeConnectionManager = null)
     {
         return new UserIntegrationEventPublishingService(
-            new UserService(dbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(dbContext, new NoopAuth0ManagementService())),
-            dbContext,
+            new UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService()), TimeProvider.System),
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
             moduleEventPublisher ?? new ModuleEventPublisher(dbContext),
             realtimeConnectionManager ?? new NoopRealtimeConnectionManager());
     }

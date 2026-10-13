@@ -188,7 +188,7 @@ internal sealed class MatchService : IMatchService
         match.SubmitScore((int)side, request.Participant1Score, request.Participant2Score, now);
         if (!wasResult && match.HasResult)
         {
-            match.ResultRecordedByUserId = userId;
+            match.RecordResultBy(userId);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -230,7 +230,7 @@ internal sealed class MatchService : IMatchService
         match.Forfeit((int)targetSide.Value, now);
         if (!wasResult)
         {
-            match.ResultRecordedByUserId = userId;
+            match.RecordResultBy(userId);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -250,7 +250,7 @@ internal sealed class MatchService : IMatchService
         var now = UtcNow();
         ApplyDeadline(tournament, match, now);
         match.ResolveScore(request.Participant1Score, request.Participant2Score, now);
-        match.ResultRecordedByUserId = userId;
+        match.RecordResultBy(userId);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -280,25 +280,7 @@ internal sealed class MatchService : IMatchService
 
         _bracketImpactAnalyzer.ClearDownstreamAssignments(match, reversalAnalysis);
         match.ReverseResult(UtcNow());
-        match.ResultRecordedByUserId = userId;
-        await SaveAndCommitAsync(transaction, tournament, cancellationToken);
-        return TournamentDtoMapper.ToGetMatchDto(match);
-    }
-
-    public async Task<GetMatchDTO> UpdateMatchAsync(
-        Guid id,
-        string auth0UserId,
-        UpdateMatchDTO updateMatchDTO,
-        CancellationToken cancellationToken = default)
-    {
-        var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        var (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-        EnsureInProgress(tournament);
-        var now = UtcNow();
-        ApplyDeadline(tournament, match, now);
-        match.ResolveScore(updateMatchDTO.Participant1Score, updateMatchDTO.Participant2Score, now);
-        match.ResultRecordedByUserId = userId;
+        match.RecordResultBy(userId);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -362,15 +344,8 @@ internal sealed class MatchService : IMatchService
         }
     }
 
-    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(auth0UserId))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-        var user = await _identityModule.GetUserProfileByAuth0IdAsync(auth0UserId.Trim(), cancellationToken);
-        if (user is null || user.IsDeleted)
-            throw new NotFoundException("Current user profile was not found.");
-        return user.Id.Value;
-    }
+    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken) =>
+        (await _identityModule.GetRequiredCurrentUserAsync(auth0UserId, cancellationToken)).Id.Value;
 
     private async Task<MatchParticipantSide?> FindParticipantSideAsync(
         Match match,

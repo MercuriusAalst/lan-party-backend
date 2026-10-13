@@ -8,10 +8,10 @@ using Mercurius.Modules.Discovery;
 using Mercurius.Modules.Discovery.Contracts;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Platform.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -53,6 +53,13 @@ public class ApiEndpointContractTests
         Assert.DoesNotContain(endpoint.Metadata, metadata => metadata is IAllowAnonymous);
         Assert.Contains(endpoint.Metadata.OfType<AuthorizeAttribute>(), metadata => metadata.Roles == "admin");
         Assert.DoesNotContain(GetEndpoints(), candidate => candidate.RoutePattern.RawText == "v{version:apiVersion}/lan/public/users/{username}/match-summaries");
+    }
+
+    [Fact]
+    public void FormerMatchUpdateRoute_IsAbsent()
+    {
+        Assert.DoesNotContain(GetEndpoints("PUT"), endpoint => endpoint.RoutePattern.RawText == "v{version:apiVersion}/lan/matches/{id:guid}");
+        GetEndpoint("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve");
     }
 
     [Fact]
@@ -141,7 +148,6 @@ public class ApiEndpointContractTests
     [InlineData("DELETE", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}")]
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/sponsors")]
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/lifecycle-state")]
-    [InlineData("PUT", "v{version:apiVersion}/lan/matches/{id:guid}")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/reverse")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/admin/forfeit")]

@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Application.DTOs.Matches;
@@ -58,7 +59,7 @@ public class TournamentScheduleTests
     public void Update_BlocksScheduleChangesAfterMatchesExist()
     {
         var tournament = CreateScheduledTournament();
-        tournament.Matches.Add(new Match { RoundNumber = 1 });
+        tournament.Matches.Add(new Match().Set(x => x.RoundNumber, 1));
 
         var exception = Assert.Throws<ValidationException>(() => tournament.Update(
             "Schedule Change",
@@ -117,10 +118,8 @@ public class TournamentScheduleTests
             10,
             5,
             LeaderboardRankingMetric.HighestScore)
-        {
-            Id = Guid.NewGuid(),
-            LeaderboardRevision = 19
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.LeaderboardRevision, 19);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -167,7 +166,7 @@ public class TournamentScheduleTests
     public async Task StartTournamentAsync_RejectsEstimatedScheduleDateOverflow()
     {
         await using var dbContext = CreateDbContext();
-        var tournament = CreateScheduledTournament(plannedStartTime: DateTime.MaxValue.AddMinutes(-5));
+        var tournament = CreateScheduledTournament(plannedStartTime: DateTime.SpecifyKind(DateTime.MaxValue.AddMinutes(-5), DateTimeKind.Utc));
         dbContext.Set<TournamentAggregate>().Add(tournament);
         AddIndividualRegistration(dbContext, tournament, CreateUser(1));
         AddIndividualRegistration(dbContext, tournament, CreateUser(2));
@@ -193,7 +192,8 @@ public class TournamentScheduleTests
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
         using var cancellationSource = new CancellationTokenSource();
         var imageBytes = new byte[] { 1, 2, 3 };
         var image = new FormFile(new MemoryStream(imageBytes), 0, imageBytes.Length, "image", "tournament.png")
@@ -250,12 +250,10 @@ public class TournamentScheduleTests
     public void ResponseDtos_ExposeScheduleFields()
     {
         var tournament = CreateScheduledTournament();
-        tournament.EstimatedEndTime = PlannedStart.AddHours(2);
-        var match = new Match
-        {
-            EstimatedStartTime = PlannedStart,
-            EstimatedEndTime = PlannedStart.AddMinutes(10)
-        };
+        tournament.Set(x => x.EstimatedEndTime, PlannedStart.AddHours(2));
+        var match = new Match()
+            .Set(x => x.EstimatedStartTime, PlannedStart)
+            .Set(x => x.EstimatedEndTime, PlannedStart.AddMinutes(10));
 
         var tournamentDto = tournament.ToGetTournamentDTO();
         var matchDto = match.ToGetMatchDTO();
@@ -285,10 +283,7 @@ public class TournamentScheduleTests
             null,
             plannedStartTime ?? PlannedStart,
             averageMinutes,
-            breakMinutes)
-        {
-            Id = Guid.NewGuid()
-        };
+            breakMinutes).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static User CreateUser(int id)
@@ -296,6 +291,7 @@ public class TournamentScheduleTests
         return new User
         {
             Id = Guid.NewGuid(),
+            Auth0UserId = $"auth0|user{id}",
             Username = $"user{id}",
             Firstname = $"First{id}",
             Lastname = $"Last{id}",
@@ -303,14 +299,7 @@ public class TournamentScheduleTests
         };
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static void AddIndividualRegistration(MercuriusDBContext dbContext, TournamentAggregate tournament, User user)
     {
@@ -339,7 +328,8 @@ public class TournamentScheduleTests
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
     }
 
     private sealed class FixedScheduleMatchModerator : IMatchModerator
@@ -348,30 +338,24 @@ public class TournamentScheduleTests
         {
             return
             [
-                new Match
-                {
-                    TournamentId = tournament.Id,
-                    RoundNumber = 1,
-                    MatchNumber = 1,
-                    Format = GameFormat.BestOf1,
-                    ParticipationMode = tournament.ParticipationMode
-                },
-                new Match
-                {
-                    TournamentId = tournament.Id,
-                    RoundNumber = 1,
-                    MatchNumber = 2,
-                    Format = GameFormat.BestOf3,
-                    ParticipationMode = tournament.ParticipationMode
-                },
-                new Match
-                {
-                    TournamentId = tournament.Id,
-                    RoundNumber = 2,
-                    MatchNumber = 1,
-                    Format = tournament.FinalsFormat,
-                    ParticipationMode = tournament.ParticipationMode
-                }
+                new Match()
+                    .Set(x => x.TournamentId, tournament.Id)
+                    .Set(x => x.RoundNumber, 1)
+                    .Set(x => x.MatchNumber, 1)
+                    .Set(x => x.Format, GameFormat.BestOf1)
+                    .Set(x => x.ParticipationMode, tournament.ParticipationMode),
+                new Match()
+                    .Set(x => x.TournamentId, tournament.Id)
+                    .Set(x => x.RoundNumber, 1)
+                    .Set(x => x.MatchNumber, 2)
+                    .Set(x => x.Format, GameFormat.BestOf3)
+                    .Set(x => x.ParticipationMode, tournament.ParticipationMode),
+                new Match()
+                    .Set(x => x.TournamentId, tournament.Id)
+                    .Set(x => x.RoundNumber, 2)
+                    .Set(x => x.MatchNumber, 1)
+                    .Set(x => x.Format, tournament.FinalsFormat)
+                    .Set(x => x.ParticipationMode, tournament.ParticipationMode)
             ];
         }
 

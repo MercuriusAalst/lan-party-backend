@@ -103,12 +103,10 @@ internal sealed class TournamentModuleFacade : ITournamentModule
             return new RegistrationEligibility(false, ["tournament_not_found"]);
 
         var reasons = await _eligibilityEvaluator.GetIndividualTournamentFailuresAsync(
-            new TournamentAggregate
-            {
-                Id = tournamentId.Value,
-                ParticipationMode = tournament.ParticipationMode,
-                Status = tournament.Status
-            },
+            TournamentAggregate.ForEligibilityCheck(
+                tournamentId.Value,
+                tournament.ParticipationMode,
+                tournament.Status),
             userId.Value,
             null,
             cancellationToken);
@@ -141,13 +139,11 @@ internal sealed class TournamentModuleFacade : ITournamentModule
             cancellationToken);
         var reasons = teamEligibility.ReasonCodes.ToList();
         reasons.AddRange(await _eligibilityEvaluator.GetTeamTournamentFailuresAsync(
-            new TournamentAggregate
-            {
-                Id = tournamentId.Value,
-                ParticipationMode = tournament.ParticipationMode,
-                Status = tournament.Status,
-                TeamSize = tournament.TeamSize
-            },
+            TournamentAggregate.ForEligibilityCheck(
+                tournamentId.Value,
+                tournament.ParticipationMode,
+                tournament.Status,
+                tournament.TeamSize),
             teamId.Value,
             requestedBy.Value,
             null,

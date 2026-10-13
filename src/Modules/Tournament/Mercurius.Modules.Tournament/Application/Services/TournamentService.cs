@@ -28,6 +28,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
     private readonly TournamentDtoMapper _mapper;
     private readonly IModuleEventPublisher _moduleEventPublisher;
     private readonly ILogger<TournamentService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public TournamentService(
         ITournamentDbContext dbContext,
@@ -37,7 +38,8 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         ISponsorshipModule sponsorshipModule,
         TournamentDtoMapper mapper,
         IModuleEventPublisher moduleEventPublisher,
-        ILogger<TournamentService> logger)
+        ILogger<TournamentService> logger,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _matchModeratorFactory = matchModeratorFactory;
@@ -47,6 +49,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         _mapper = mapper;
         _moduleEventPublisher = moduleEventPublisher;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     public async Task<GetTournamentDTO> CreateTournamentAsync(
@@ -77,10 +80,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
             createTournamentDTO.LeaderboardRankingMetric.HasValue
                 ? (LeaderboardRankingMetric)createTournamentDTO.LeaderboardRankingMetric.Value
                 : null);
-        tournament.AssignedAdminUserId = assignedAdminUserId;
-        tournament.FirstPlacePrize = firstPlacePrize;
-        tournament.SecondPlacePrize = secondPlacePrize;
-        tournament.ThirdPlacePrize = thirdPlacePrize;
+        tournament.SetContactAndPrizes(assignedAdminUserId, firstPlacePrize, secondPlacePrize, thirdPlacePrize);
 
         await using var imageStream = createTournamentDTO.Image.OpenReadStream();
         var asset = await _mediaModule.SaveImageAsync(
@@ -93,7 +93,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         var committed = false;
         try
         {
-            tournament.ImageUrl = asset.Url;
+            tournament.SetImageUrl(asset.Url);
             _dbContext.Tournaments.Add(tournament);
             _moduleEventPublisher.Publish(new TournamentCreatedIntegrationEvent(new TournamentId(tournament.Id), tournament.Name));
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -184,11 +184,8 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
             tournamentDTO.LeaderboardRankingMetric.HasValue
                 ? (LeaderboardRankingMetric)tournamentDTO.LeaderboardRankingMetric.Value
                 : null);
-        tournament.AssignedAdminUserId = assignedAdminUserId;
-        tournament.FirstPlacePrize = firstPlacePrize;
-        tournament.SecondPlacePrize = secondPlacePrize;
-        tournament.ThirdPlacePrize = thirdPlacePrize;
-        tournament.LeaderboardRevision++;
+        tournament.SetContactAndPrizes(assignedAdminUserId, firstPlacePrize, secondPlacePrize, thirdPlacePrize);
+        tournament.IncrementRevision();
 
         var previousImageUrl = tournament.ImageUrl;
         string? newImageUrl = null;
@@ -209,7 +206,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         try
         {
             if (newImageUrl is not null)
-                tournament.ImageUrl = newImageUrl;
+                tournament.SetImageUrl(newImageUrl);
 
             _moduleEventPublisher.Publish(new TournamentUpdatedIntegrationEvent(new TournamentId(tournament.Id), tournament.Name));
             await SaveLifecycleAsync(
@@ -237,16 +234,13 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
             throw new ValidationException("Tournament cannot be deleted when already in progress.");
 
         var imageUrl = tournament.ImageUrl;
-        await using var transaction = _dbContext.Database.IsRelational()
-            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
-            : null;
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         // The sponsorship FK restricts tournament deletes, so the owning module removes its placement first.
         await _sponsorshipModule.ReplaceSponsorPlacementAsync(new TournamentId(tournament.Id), null, cancellationToken);
         _dbContext.Tournaments.Remove(tournament);
         _moduleEventPublisher.Publish(new TournamentDeletedIntegrationEvent(new TournamentId(tournament.Id)));
         await _dbContext.SaveChangesAsync(cancellationToken);
-        if (transaction is not null)
-            await transaction.CommitAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         await DeleteImageBestEffortAsync(imageUrl, "retire a deleted tournament image");
     }
 
@@ -254,7 +248,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
     {
         var tournament = await GetTournamentForSimpleMutationAsync(id, cancellationToken);
         tournament.Cancel();
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         _moduleEventPublisher.Publish(new TournamentCanceledIntegrationEvent(new TournamentId(tournament.Id), tournament.Name));
         await SaveLifecycleAsync(tournament.BracketType == BracketType.Leaderboard, cancellationToken);
     }
@@ -262,10 +256,10 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
     public async Task StartTournamentAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var tournament = await GetTournamentForMutationAsync(id, cancellationToken);
-        tournament.Start();
-        tournament.LeaderboardRevision++;
+        tournament.Start(UtcNow());
+        tournament.IncrementRevision();
         var matchModerator = _matchModeratorFactory.GetMatchModerator(tournament.BracketType);
-        tournament.Matches = matchModerator.GenerateMatchesForTournament(tournament).ToList();
+        tournament.ReplaceMatches(matchModerator.GenerateMatchesForTournament(tournament).ToList());
         AssignEstimatedSchedule(tournament);
         await SaveLifecycleAsync(tournament.BracketType == BracketType.Leaderboard, cancellationToken);
     }
@@ -277,8 +271,8 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         var tournament = await GetTournamentForMutationAsync(id, cancellationToken);
         var matchModerator = _matchModeratorFactory.GetMatchModerator(tournament.BracketType);
         matchModerator.EnsureCanComplete(tournament);
-        tournament.Complete();
-        tournament.LeaderboardRevision++;
+        tournament.Complete(UtcNow());
+        tournament.IncrementRevision();
         matchModerator.DeterminePlacements(tournament);
         await SaveLifecycleAsync(tournament.BracketType == BracketType.Leaderboard, cancellationToken);
 
@@ -368,7 +362,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
     {
         if (tournament.Matches.Count == 0)
         {
-            tournament.EstimatedEndTime = null;
+            tournament.SetEstimatedEndTime(null);
             return;
         }
 
@@ -396,7 +390,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
                 TimeSpan.FromMinutes(tournament.RoundBreakDurationMinutes));
         }
 
-        tournament.EstimatedEndTime = latestEnd;
+        tournament.SetEstimatedEndTime(latestEnd);
     }
 
     private static int GetDurationMultiplier(GameFormat format)
@@ -478,4 +472,6 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
             throw new ConflictException("tournament_changed", "The tournament changed. Refresh and try again.");
         }
     }
+
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 }

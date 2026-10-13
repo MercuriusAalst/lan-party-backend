@@ -156,15 +156,13 @@ internal sealed class SingleEliminationMatchModerator : IMatchModerator
             else
                 matchNumber++;
 
-            var match = new Match
-            {
-                TournamentId = tournament.Id,
-                RoundNumber = round,
-                MatchNumber = matchNumber,
-                BracketType = BracketType.SingleElimination,
-                Format = round == totalRounds ? tournament.FinalsFormat : tournament.Format,
-                ParticipationMode = tournament.ParticipationMode
-            };
+            var match = new Match(
+                tournament.Id,
+                round,
+                matchNumber,
+                BracketType.SingleElimination,
+                round == totalRounds ? tournament.FinalsFormat : tournament.Format,
+                tournament.ParticipationMode);
 
             if (i >= totalMatches - firstRoundMatchCount)
             {
@@ -189,9 +187,9 @@ internal sealed class SingleEliminationMatchModerator : IMatchModerator
             int childMatchIndex2 = (i * 2) + 2;
 
             if (childMatchIndex1 < matches.Count)
-                matches[childMatchIndex1].WinnerNextMatch = current;
+                matches[childMatchIndex1].SetWinnerNextMatch(current);
             if (childMatchIndex2 < matches.Count)
-                matches[childMatchIndex2].WinnerNextMatch = current;
+                matches[childMatchIndex2].SetWinnerNextMatch(current);
         }
 
         matches.AssignByeWinnersNextMatch();

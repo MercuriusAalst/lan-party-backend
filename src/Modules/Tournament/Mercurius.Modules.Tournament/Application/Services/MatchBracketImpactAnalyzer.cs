@@ -68,9 +68,9 @@ internal sealed class MatchBracketImpactAnalyzer
                     return false;
 
                 if (link.IsWinnerLink)
-                    link.Parent.WinnerNextMatch = child;
+                    link.Parent.SetWinnerNextMatch(child);
                 else
-                    link.Parent.LoserNextMatch = child;
+                    link.Parent.SetLoserNextMatch(child);
 
                 if (!EnqueueDownstreamLinks(child, pending, discovered))
                     return false;

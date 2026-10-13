@@ -6,6 +6,7 @@ using Mercurius.Modules.Shared.Search;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using Platform.Extensions;
 
 namespace Mercurius.Modules.Tournament.Endpoints;
 
@@ -35,7 +36,7 @@ internal static class TournamentRegistrationEndpoints
                 return validationProblem;
 
             return Results.Ok(await registrationService.GetPendingRosterConfirmationsAsync(
-                GetAuth0UserId(user),
+                user.GetAuth0UserId(),
                 page ?? 1,
                 SearchRequest.BoundPageSize(pageSize),
                 cancellationToken));
@@ -46,19 +47,19 @@ internal static class TournamentRegistrationEndpoints
 
         group.MapGet("/me", async (Guid tournamentId, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            return await registrationService.GetCurrentUserStateAsync(GetAuth0UserId(user), tournamentId, cancellationToken);
+            return await registrationService.GetCurrentUserStateAsync(user.GetAuth0UserId(), tournamentId, cancellationToken);
         })
         .RequireAuthorization();
 
         group.MapGet("/individual/eligibility", async (Guid tournamentId, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            return await registrationService.CheckIndividualEligibilityAsync(GetAuth0UserId(user), tournamentId, cancellationToken);
+            return await registrationService.CheckIndividualEligibilityAsync(user.GetAuth0UserId(), tournamentId, cancellationToken);
         })
         .RequireAuthorization();
 
         group.MapGet("/teams/{teamId:guid}/eligibility", async (Guid tournamentId, Guid teamId, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            return await registrationService.CheckTeamEligibilityAsync(GetAuth0UserId(user), tournamentId, teamId, cancellationToken);
+            return await registrationService.CheckTeamEligibilityAsync(user.GetAuth0UserId(), tournamentId, teamId, cancellationToken);
         })
         .RequireAuthorization();
 
@@ -68,7 +69,7 @@ internal static class TournamentRegistrationEndpoints
             if (validationProblem is not null)
                 return validationProblem;
 
-            return Results.Ok(await registrationService.CheckRosterEligibilityAsync(GetAuth0UserId(user), tournamentId, teamId, request.UserIds, cancellationToken));
+            return Results.Ok(await registrationService.CheckRosterEligibilityAsync(user.GetAuth0UserId(), tournamentId, teamId, request.UserIds, cancellationToken));
         })
         .RequireAuthorization()
         .Produces<RosterCandidateEligibilityResponseDTO>()
@@ -76,13 +77,13 @@ internal static class TournamentRegistrationEndpoints
 
         group.MapPut("/individual/me", async (Guid tournamentId, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            return await registrationService.RegisterIndividualAsync(GetAuth0UserId(user), tournamentId, cancellationToken);
+            return await registrationService.RegisterIndividualAsync(user.GetAuth0UserId(), tournamentId, cancellationToken);
         })
         .RequireAuthorization();
 
         group.MapDelete("/individual/me", async (Guid tournamentId, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            await registrationService.UnregisterIndividualAsync(GetAuth0UserId(user), tournamentId, cancellationToken);
+            await registrationService.UnregisterIndividualAsync(user.GetAuth0UserId(), tournamentId, cancellationToken);
             return Results.NoContent();
         })
         .RequireAuthorization();
@@ -94,7 +95,7 @@ internal static class TournamentRegistrationEndpoints
                 return validationProblem;
 
             var requestWithRouteTeam = request with { TeamId = teamId };
-            return Results.Ok(await registrationService.SubmitTeamRosterAsync(GetAuth0UserId(user), tournamentId, requestWithRouteTeam, cancellationToken));
+            return Results.Ok(await registrationService.SubmitTeamRosterAsync(user.GetAuth0UserId(), tournamentId, requestWithRouteTeam, cancellationToken));
         })
         .RequireAuthorization()
         .Produces<TournamentRegistrationDTO>()
@@ -102,7 +103,7 @@ internal static class TournamentRegistrationEndpoints
 
         group.MapDelete("/teams/{teamId:guid}", async (Guid tournamentId, Guid teamId, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            await registrationService.UnregisterTeamAsync(GetAuth0UserId(user), tournamentId, teamId, cancellationToken);
+            await registrationService.UnregisterTeamAsync(user.GetAuth0UserId(), tournamentId, teamId, cancellationToken);
             return Results.NoContent();
         })
         .RequireAuthorization();
@@ -112,13 +113,13 @@ internal static class TournamentRegistrationEndpoints
             if (request.ConfirmationStatus is not RosterMemberConfirmationStatus.Confirmed)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["confirmationStatus"] = ["Only the Confirmed status is supported."] });
 
-            return Results.Ok(await registrationService.ConfirmRosterAsync(GetAuth0UserId(user), tournamentId, rosterMemberId, cancellationToken));
+            return Results.Ok(await registrationService.ConfirmRosterAsync(user.GetAuth0UserId(), tournamentId, rosterMemberId, cancellationToken));
         })
         .RequireAuthorization();
 
         group.MapDelete("/roster-members/{rosterMemberId:guid}", async (Guid tournamentId, Guid rosterMemberId, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            await registrationService.DeclineRosterAsync(GetAuth0UserId(user), tournamentId, rosterMemberId, cancellationToken);
+            await registrationService.DeclineRosterAsync(user.GetAuth0UserId(), tournamentId, rosterMemberId, cancellationToken);
             return Results.NoContent();
         })
         .RequireAuthorization();
@@ -143,31 +144,17 @@ internal static class TournamentRegistrationEndpoints
 
         adminGroup.MapDelete("/users/{userId:guid}", async (Guid tournamentId, Guid userId, [FromBody] RemoveRegistrationDTO request, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            await registrationService.RemoveIndividualAsAdminAsync(tournamentId, userId, request.Reason, GetOptionalAuth0UserId(user), cancellationToken);
+            await registrationService.RemoveIndividualAsAdminAsync(tournamentId, userId, request.Reason, user.FindAuth0UserId(), cancellationToken);
             return Results.NoContent();
         });
 
         adminGroup.MapDelete("/teams/{teamId:guid}", async (Guid tournamentId, Guid teamId, [FromBody] RemoveRegistrationDTO request, ClaimsPrincipal user, ITournamentRegistrationService registrationService, CancellationToken cancellationToken) =>
         {
-            await registrationService.RemoveTeamAsAdminAsync(tournamentId, teamId, request.Reason, GetOptionalAuth0UserId(user), cancellationToken);
+            await registrationService.RemoveTeamAsAdminAsync(tournamentId, teamId, request.Reason, user.FindAuth0UserId(), cancellationToken);
             return Results.NoContent();
         });
 
         return group;
-    }
-
-    private static string GetAuth0UserId(ClaimsPrincipal user)
-    {
-        var subject = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(subject))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-
-        return subject;
-    }
-
-    private static string? GetOptionalAuth0UserId(ClaimsPrincipal user)
-    {
-        return user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
     }
 
     private static IResult? ValidateRosterUserIds(IReadOnlyList<Guid>? userIds)

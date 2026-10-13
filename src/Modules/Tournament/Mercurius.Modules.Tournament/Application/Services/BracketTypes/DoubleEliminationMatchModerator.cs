@@ -136,15 +136,13 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
     /// <returns>A new match object.</returns>
     private Match CreateMatch(TournamentAggregate tournament, int round, int matchNumber)
     {
-        return new Match
-        {
-            TournamentId = tournament.Id,
-            RoundNumber = round,
-            BracketType = tournament.BracketType,
-            Format = tournament.Format,
-            MatchNumber = matchNumber,
-            ParticipationMode = tournament.ParticipationMode
-        };
+        return new Match(
+            tournament.Id,
+            round,
+            matchNumber,
+            tournament.BracketType,
+            tournament.Format,
+            tournament.ParticipationMode);
     }
 
     /// <summary>
@@ -188,16 +186,14 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
         {
             for (int i = 0; i < matchesThisRound; i++)
             {
-                var match = new Match
-                {
-                    TournamentId = tournament.Id,
-                    RoundNumber = round,
-                    MatchNumber = i + 1,
-                    Format = tournament.Format,
-                    BracketType = tournament.BracketType,
-                    ParticipationMode = tournament.ParticipationMode,
-                    IsLowerBracketMatch = true
-                };
+                var match = new Match(
+                    tournament.Id,
+                    round,
+                    i + 1,
+                    tournament.BracketType,
+                    tournament.Format,
+                    tournament.ParticipationMode,
+                    isLowerBracketMatch: true);
 
                 matches.Add(match);
             }
@@ -220,16 +216,13 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
     {
         // Intentionally a single grand final without a bracket reset: if the lower bracket winner wins,
         // it takes the title even though the upper bracket winner has then lost only once.
-        var grandFinalMatch = new Match
-        {
-            TournamentId = tournament.Id,
-            RoundNumber = matches.Max(m => m.RoundNumber) + 1,
-            MatchNumber = 1,
-            Format = tournament.FinalsFormat,
-            BracketType = tournament.BracketType,
-            ParticipationMode = tournament.ParticipationMode,
-            IsLowerBracketMatch = false
-        };
+        var grandFinalMatch = new Match(
+            tournament.Id,
+            matches.Max(m => m.RoundNumber) + 1,
+            1,
+            tournament.BracketType,
+            tournament.FinalsFormat,
+            tournament.ParticipationMode);
         matches.Add(grandFinalMatch);
     }
 
@@ -251,7 +244,7 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
                 m.RoundNumber == currentUBMatch.RoundNumber + 1 &&
                 m.MatchNumber == (int)Math.Ceiling((double)currentUBMatch.MatchNumber / 2));
 
-            currentUBMatch.WinnerNextMatch = nextUBMatch;
+            currentUBMatch.SetWinnerNextMatch(nextUBMatch);
 
             // Link UB losers to the correct LB match
             int targetLBRoundNumber = (currentUBMatch.RoundNumber <= 2)
@@ -266,7 +259,7 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
                 m.RoundNumber == targetLBRoundNumber &&
                 m.MatchNumber == nextLBMatchNumber);
 
-            currentUBMatch.LoserNextMatch = nextLBMatch;
+            currentUBMatch.SetLoserNextMatch(nextLBMatch);
         }
 
         foreach (var currentLBMatch in lBMatches)
@@ -279,7 +272,7 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
                 m.RoundNumber == currentLBMatch.RoundNumber + 1 &&
                 m.MatchNumber == nextLBMatchNumber);
 
-            currentLBMatch.WinnerNextMatch = nextLBMatch;
+            currentLBMatch.SetWinnerNextMatch(nextLBMatch);
         }
 
         LinkFinalMatches(uBMatches, lBMatches, grandFinal);
@@ -325,8 +318,7 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
 
             if (liveFeeds.Count == 0)
             {
-                match.Participant1IsBYE = true;
-                match.Participant2IsBYE = true;
+                match.MarkBothParticipantsAsBYE();
             }
             else if (liveFeeds.Count == 1)
             {
@@ -352,16 +344,16 @@ internal sealed class DoubleEliminationMatchModerator : IMatchModerator
 
         if (ubFinal != null)
         {
-            ubFinal.WinnerNextMatch = grandFinal;
-            ubFinal.LoserNextMatch = lbFinal;
+            ubFinal.SetWinnerNextMatch(grandFinal);
+            ubFinal.SetLoserNextMatch(lbFinal);
         }
         if (lbFinal != null)
         {
-            lbFinal.WinnerNextMatch = grandFinal;
+            lbFinal.SetWinnerNextMatch(grandFinal);
         }
 
-        grandFinal.WinnerNextMatch = null;
-        grandFinal.LoserNextMatch = null;
+        grandFinal.SetWinnerNextMatch(null);
+        grandFinal.SetLoserNextMatch(null);
     }
 
     /// <summary>

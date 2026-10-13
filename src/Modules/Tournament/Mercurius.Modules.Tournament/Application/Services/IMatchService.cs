@@ -19,9 +19,4 @@ internal interface IMatchService
     Task<GetMatchDTO> ForfeitAsync(Guid id, string auth0UserId, ForfeitMatchDTO request, bool isAdmin, CancellationToken cancellationToken = default);
     Task<GetMatchDTO> ResolveAsync(Guid id, string auth0UserId, ResolveMatchDTO request, CancellationToken cancellationToken = default);
     Task<GetMatchDTO> ReverseAsync(Guid id, string auth0UserId, CancellationToken cancellationToken = default);
-    Task<GetMatchDTO> UpdateMatchAsync(
-        Guid id,
-        string auth0UserId,
-        UpdateMatchDTO updateMatchDTO,
-        CancellationToken cancellationToken = default);
 }

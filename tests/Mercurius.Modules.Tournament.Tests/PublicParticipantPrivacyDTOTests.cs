@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 
 namespace Mercurius.Modules.Tournament.Tests;
 
@@ -278,7 +278,10 @@ public class PublicParticipantPrivacyDTOTests
             GameFormat.BestOf1,
             GameFormat.BestOf1,
             participationMode,
-            participationMode == ParticipationMode.Team ? 2 : null);
+            participationMode == ParticipationMode.Team ? 2 : null,
+            DateTime.UtcNow,
+            30,
+            10);
     }
 
     private static User CreateUser(int id)

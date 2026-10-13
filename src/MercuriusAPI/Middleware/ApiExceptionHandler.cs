@@ -17,8 +17,6 @@ public sealed class ApiExceptionHandler : IExceptionHandler
             ValidationException => StatusCodes.Status400BadRequest,
             ServiceUnavailableException => StatusCodes.Status503ServiceUnavailable,
             DeletedAccountException => StatusCodes.Status410Gone,
-            InvalidCredentialsException => StatusCodes.Status401Unauthorized,
-            LockoutException => StatusCodes.Status423Locked,
             UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
             _ => (int?)null
         };

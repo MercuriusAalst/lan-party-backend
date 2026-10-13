@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Tournament.Application;
@@ -79,12 +80,5 @@ public class MatchResolutionNotificationTests
             notification.RecipientKind);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 }

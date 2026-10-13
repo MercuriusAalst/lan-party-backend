@@ -1,8 +1,6 @@
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Shared.Exceptions;
-using Mercurius.Modules.Sponsorship.Application;
 using Mercurius.Modules.Sponsorship.Contracts;
-using Mercurius.Modules.Sponsorship.Contracts.V1;
 using Mercurius.Modules.Sponsorship.Domain;
 using Mercurius.Modules.Sponsorship.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -12,14 +10,10 @@ namespace Mercurius.Modules.Sponsorship;
 internal sealed class SponsorshipModuleFacade : ISponsorshipModule
 {
     private readonly ISponsorshipDbContext _dbContext;
-    private readonly SponsorshipOutboxWriter _outboxWriter;
 
-    public SponsorshipModuleFacade(
-        ISponsorshipDbContext dbContext,
-        SponsorshipOutboxWriter outboxWriter)
+    public SponsorshipModuleFacade(ISponsorshipDbContext dbContext)
     {
         _dbContext = dbContext;
-        _outboxWriter = outboxWriter;
     }
 
     public Task<SponsorSummary?> GetSponsorSummaryAsync(
@@ -100,9 +94,7 @@ internal sealed class SponsorshipModuleFacade : ISponsorshipModule
                 return;
 
             _dbContext.TournamentSponsorPlacements.Remove(current);
-            await _outboxWriter.SaveAndPublishAsync(
-                () => new TournamentSponsorPlacementChanged(tournamentId, null, null, null, null, null, null),
-                cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -124,17 +116,7 @@ internal sealed class SponsorshipModuleFacade : ISponsorshipModule
         current.Headline = placement.Headline;
         current.SupportLine = placement.SupportLine;
         current.DisplayOrder = placement.DisplayOrder;
-        var changedPlacement = current;
-        await _outboxWriter.SaveAndPublishAsync(
-            () => new TournamentSponsorPlacementChanged(
-                tournamentId,
-                new SponsorPlacementId(changedPlacement.Id),
-                new SponsorId(changedPlacement.SponsorId),
-                changedPlacement.Context,
-                changedPlacement.Headline,
-                changedPlacement.SupportLine,
-                changedPlacement.DisplayOrder),
-            cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static System.Linq.Expressions.Expression<Func<TournamentSponsorPlacement, SponsorPlacementSummary>> ToPlacementSummary()

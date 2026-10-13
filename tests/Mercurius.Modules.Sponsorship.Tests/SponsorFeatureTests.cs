@@ -137,14 +137,7 @@ public class SponsorFeatureTests
         await sponsorshipModule.ReplaceSponsorPlacementAsync(new TournamentId(tournament.Id), null);
 
         Assert.Null(await sponsorshipModule.GetSponsorPlacementAsync(new TournamentId(tournament.Id)));
-        var placementEvents = await dbContext.OutboxMessages
-            .Where(message => message.EventType == typeof(TournamentSponsorPlacementChanged).FullName)
-            .ToListAsync();
-        Assert.Equal(2, placementEvents.Count);
-        Assert.Contains(placementEvents, message => JsonDocument.Parse(message.Payload).RootElement
-            .GetProperty("sponsorId").GetProperty("value").GetInt32() == sponsor.Id);
-        Assert.Contains(placementEvents, message => JsonDocument.Parse(message.Payload).RootElement
-            .GetProperty("placementId").ValueKind == JsonValueKind.Null);
+        Assert.Empty(await dbContext.OutboxMessages.ToListAsync());
     }
 
     [Fact]
@@ -177,7 +170,8 @@ public class SponsorFeatureTests
                 new RegistrationMappingContextBuilder(identityModule, teamsModule),
                 sponsorshipModule),
             new ModuleEventPublisher(dbContext),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
 
         await service.DeleteTournamentAsync(tournament.Id);
 
@@ -185,8 +179,8 @@ public class SponsorFeatureTests
         Assert.False(await dbContext.Set<TournamentAggregate>().AnyAsync(candidate => candidate.Id == tournament.Id));
         Assert.False(await dbContext.Set<TournamentSponsorPlacement>().AnyAsync());
         Assert.True(await dbContext.Set<Sponsor>().AnyAsync(candidate => candidate.Id == sponsor.Id));
-        Assert.True(await dbContext.OutboxMessages.AnyAsync(message =>
-            message.EventType == typeof(TournamentSponsorPlacementChanged).FullName));
+        Assert.False(await dbContext.OutboxMessages.AnyAsync(message =>
+            message.EventType.Contains("SponsorPlacementChanged")));
     }
 
     [Fact]
@@ -246,7 +240,8 @@ public class SponsorFeatureTests
                 new RegistrationMappingContextBuilder(identityModule, teamsModule),
                 sponsorshipModule),
             SponsorshipTournamentTestDoubles.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
         var updatedTournament = await service.ReplaceSponsorPlacementsAsync(tournament.Id, new ReplaceTournamentSponsorsDTO
         {
             SponsorPlacements =
@@ -294,7 +289,8 @@ public class SponsorFeatureTests
                     SponsorshipTournamentTestDoubles.CreateTeamsModule()),
                 new RecordingSponsorshipModule([presentingSponsor.Id, prizeSponsor.Id])),
             SponsorshipTournamentTestDoubles.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
 
         var exception = await Assert.ThrowsAsync<ValidationException>(() => service.ReplaceSponsorPlacementsAsync(tournament.Id, new ReplaceTournamentSponsorsDTO
         {
@@ -337,7 +333,8 @@ public class SponsorFeatureTests
                     SponsorshipTournamentTestDoubles.CreateTeamsModule()),
                 new RecordingSponsorshipModule([])),
             SponsorshipTournamentTestDoubles.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
         var tournamentId = await dbContext.Set<TournamentAggregate>().Select(tournament => tournament.Id).SingleAsync();
 
         var exception = await Assert.ThrowsAsync<NotFoundException>(() => service.ReplaceSponsorPlacementsAsync(tournamentId, new ReplaceTournamentSponsorsDTO
@@ -380,17 +377,12 @@ public class SponsorFeatureTests
     private static SponsorshipModuleFacade CreateSponsorshipModule(MercuriusDBContext dbContext)
     {
         var sponsorshipDbContext = new SponsorshipDbContextAdapter<MercuriusDBContext>(dbContext);
-        return new SponsorshipModuleFacade(
-            sponsorshipDbContext,
-            new SponsorshipOutboxWriter(sponsorshipDbContext, new ModuleEventPublisher(dbContext)));
+        return new SponsorshipModuleFacade(sponsorshipDbContext);
     }
 
     private static TournamentAggregate CreateTournament()
     {
-        return new TournamentAggregate("Counter-Strike 2", BracketType.SingleElimination, GameFormat.BestOf3, GameFormat.BestOf5, ParticipationMode.Team, 5)
-        {
-            Id = Guid.NewGuid()
-        };
+        return new TournamentAggregate("Counter-Strike 2", BracketType.SingleElimination, GameFormat.BestOf3, GameFormat.BestOf5, ParticipationMode.Team, 5, DateTime.UtcNow, 30, 10).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static Sponsor CreateSponsor(int id, string name, SponsorTier tier)

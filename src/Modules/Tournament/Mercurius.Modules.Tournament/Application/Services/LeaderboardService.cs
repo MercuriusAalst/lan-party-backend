@@ -10,7 +10,10 @@ using RankingMetric = Mercurius.Modules.Tournament.Domain.LeaderboardRankingMetr
 
 namespace Mercurius.Modules.Tournament.Application.Services;
 
-internal sealed class LeaderboardService(ITournamentDbContext dbContext, IIdentityModule identityModule) : ILeaderboardService
+internal sealed class LeaderboardService(
+    ITournamentDbContext dbContext,
+    IIdentityModule identityModule,
+    TimeProvider timeProvider) : ILeaderboardService
 {
     public async Task<LeaderboardResponseDTO> GetPublicLeaderboardAsync(Guid tournamentId, CancellationToken cancellationToken = default)
     {
@@ -120,11 +123,11 @@ internal sealed class LeaderboardService(ITournamentDbContext dbContext, IIdenti
             linkedUserDisplayName,
             request.Score,
             request.DurationMilliseconds,
-            DateTime.UtcNow);
+            timeProvider.GetUtcNow().UtcDateTime);
         if (existingParticipant is null)
             dbContext.LeaderboardParticipants.Add(participant);
         dbContext.LeaderboardAttempts.Add(attempt);
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         await SaveMutationAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ToAdminParticipantDto(participant);
@@ -145,8 +148,8 @@ internal sealed class LeaderboardService(ITournamentDbContext dbContext, IIdenti
             request.RowVersion.Value,
             request.Score,
             request.DurationMilliseconds,
-            DateTime.UtcNow);
-        tournament.LeaderboardRevision++;
+            timeProvider.GetUtcNow().UtcDateTime);
+        tournament.IncrementRevision();
         await SaveMutationAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ToAttemptDto(attempt);
@@ -157,7 +160,7 @@ internal sealed class LeaderboardService(ITournamentDbContext dbContext, IIdenti
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var tournament = await GetLeaderboardForMutationAsync(tournamentId, cancellationToken);
         tournament.RemoveLeaderboardAttempt(attemptId, rowVersion);
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         await SaveMutationAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }

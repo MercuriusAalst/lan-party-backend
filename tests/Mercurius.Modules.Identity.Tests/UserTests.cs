@@ -1,4 +1,6 @@
-using Mercurius.Modules.Identity.DTOs;
+using Mercurius.TestInfrastructure;
+using Mercurius.Modules.Identity.Infrastructure;
+using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.LAN.API.Data;
@@ -6,8 +8,8 @@ using Mercurius.Modules.Shared;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Shared.Search;
-using Mercurius.Modules.Identity.Services.Auth0;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Identity.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -25,7 +27,9 @@ public class UserTests
         var entityType = dbContext.Model.FindEntityType(typeof(User));
 
         Assert.NotNull(entityType);
-        Assert.Equal([nameof(User.Id)], entityType.FindPrimaryKey()?.Properties.Select(property => property.Name).ToArray());
+        var primaryKey = entityType.FindPrimaryKey();
+        Assert.NotNull(primaryKey);
+        Assert.Equal([nameof(User.Id)], primaryKey.Properties.Select(property => property.Name).ToArray());
 
         var indexes = entityType.GetIndexes().ToList();
         AssertUniqueIndex(indexes, nameof(User.Auth0UserId), filter: null);
@@ -66,7 +70,7 @@ public class UserTests
         dbContext.Users.AddRange(publicUser, deletedUser, incompleteUser);
         await dbContext.SaveChangesAsync();
 
-        var module = new IdentityModuleFacade(dbContext, new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)));
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)));
         var usernames = await module.GetPublicUsernamesByIdsAsync(
             [new UserId(publicUser.Id), new UserId(deletedUser.Id), new UserId(incompleteUser.Id)]);
 
@@ -89,7 +93,7 @@ public class UserTests
         {
             HasAdminRole = true
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         Assert.True(await module.IsAdminUserAsync(new UserId(activeUser.Id)));
         Assert.False(await module.IsAdminUserAsync(new UserId(deletedUser.Id)));
@@ -112,7 +116,7 @@ public class UserTests
         {
             AdminAuth0UserIds = [matchingAdmin.Auth0UserId, otherAdmin.Auth0UserId, deletedAdmin.Auth0UserId]
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         var admins = await module.GetAdminUsersAsync("adminone", 100);
 
@@ -135,7 +139,7 @@ public class UserTests
         {
             AdminAuth0UserIds = users.Select(user => user.Auth0UserId).ToArray()
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         var firstPage = await module.GetAdminUsersAsync(string.Empty, 50, CancellationToken.None, 1);
         var secondPage = await module.GetAdminUsersAsync(string.Empty, 50, CancellationToken.None, 2);
@@ -177,7 +181,7 @@ public class UserTests
                 deletedAdmin.Auth0UserId
             ]
         };
-        var module = new IdentityModuleFacade(dbContext, auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
 
         var unfiltered = await module.GetAdminUsersAsync(string.Empty, 50);
         var filtered = await module.GetAdminUsersAsync("complete", 50);
@@ -1018,6 +1022,8 @@ public class UserTests
         var bravoSecond = CreateStoredUser("auth0|bravo-second", "bravo-second@example.com", "Bravo");
         bravoFirst.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
         bravoSecond.Id = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        // Usernames are unique among active accounts only, so a deleted account exercises the id tie-break.
+        bravoSecond.IsDeleted = true;
         dbContext.Users.AddRange(bravoSecond, alpha, bravoFirst);
         await dbContext.SaveChangesAsync();
 
@@ -1170,20 +1176,13 @@ public class UserTests
         Assert.DoesNotContain("::text", sql, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static UserService CreateUserService(
         MercuriusDBContext dbContext,
         IAuth0ManagementService auth0ManagementService,
         IIdentityModule? identityModule = null) =>
-        new(dbContext, auth0ManagementService, identityModule ?? new RecordingIdentityModule());
+        new(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0ManagementService, identityModule ?? new RecordingIdentityModule(), TimeProvider.System);
 
     private static void AssertUniqueIndex(IEnumerable<IIndex> indexes, string propertyName, string? filter)
     {

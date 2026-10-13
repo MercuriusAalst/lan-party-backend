@@ -1,5 +1,5 @@
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Domain;
 using Mercurius.Modules.Shared;
@@ -14,7 +14,7 @@ using TeamCreatedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamCreate
 using TeamDeletedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamDeletedIntegrationEvent;
 using TeamRenamedIntegrationEvent = Mercurius.Modules.Teams.Contracts.TeamRenamedIntegrationEvent;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, ITeamInviteWorkflows
 {
@@ -24,6 +24,7 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
     private readonly ITeamEventPublisher _teamEventPublisher;
     private readonly IModuleEventPublisher _moduleEventPublisher;
     private readonly IRealtimeConnectionManager _realtimeConnectionManager;
+    private readonly TimeProvider _timeProvider;
     private DbSet<TeamInvite> TeamInvites => _dbContext.Set<TeamInvite>();
 
     public TeamEventPublishingDecorator(
@@ -32,7 +33,8 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
         IIdentityModule identityModule,
         ITeamEventPublisher teamEventPublisher,
         IModuleEventPublisher moduleEventPublisher,
-        IRealtimeConnectionManager realtimeConnectionManager)
+        IRealtimeConnectionManager realtimeConnectionManager,
+        TimeProvider timeProvider)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -40,6 +42,7 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
         _teamEventPublisher = teamEventPublisher ?? throw new ArgumentNullException(nameof(teamEventPublisher));
         _moduleEventPublisher = moduleEventPublisher ?? throw new ArgumentNullException(nameof(moduleEventPublisher));
         _realtimeConnectionManager = realtimeConnectionManager ?? throw new ArgumentNullException(nameof(realtimeConnectionManager));
+        _timeProvider = timeProvider;
     }
 
     public async Task<GetTeamDTO> CreateTeamAsync(CreateTeamDTO teamDTO, CancellationToken cancellationToken = default)
@@ -355,27 +358,20 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
             var result = await operation();
             await publishDurableEvents(result);
 
-            if (transaction is not null)
-                await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return result;
         }
         catch
         {
-            if (transaction is not null)
-                await transaction.RollbackAsync(cancellationToken);
+            await transaction.RollbackAsync(cancellationToken);
 
             throw;
         }
     }
 
-    private async Task<IDbContextTransaction?> BeginDurableEventTransactionAsync(CancellationToken cancellationToken)
-    {
-        if (!_dbContext.Database.IsRelational())
-            return null;
-
-        return await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-    }
+    private Task<IDbContextTransaction> BeginDurableEventTransactionAsync(CancellationToken cancellationToken) =>
+        _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
     private async Task<TResult> PublishExpiredInviteEventsAroundAsync<TResult>(
         Func<Task<TResult>> operation,
@@ -403,13 +399,11 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
                 operationException = ExceptionDispatchInfo.Capture(exception);
             }
 
-            if (transaction is not null)
-                await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
-            if (transaction is not null)
-                await transaction.RollbackAsync(CancellationToken.None);
+            await transaction.RollbackAsync(CancellationToken.None);
 
             throw;
         }
@@ -428,7 +422,7 @@ internal sealed class TeamEventPublishingDecorator : ITeamManagementCommands, IT
 
     private async Task<List<ExpiredTeamInviteChangedCandidate>> GetExpiredInviteEventCandidatesAsync(Guid teamId, Guid userId, CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         return await TeamInvites
             .AsNoTracking()
             .Where(invite =>

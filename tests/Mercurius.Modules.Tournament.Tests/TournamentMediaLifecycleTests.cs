@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Infrastructure;
@@ -249,17 +250,11 @@ public sealed class TournamentMediaLifecycleTests
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             moduleEventPublisher ?? TournamentTestSupport.CreateModuleEventPublisher(),
-            logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static TournamentAggregate CreateStoredTournament()
     {
@@ -268,11 +263,13 @@ public sealed class TournamentMediaLifecycleTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf3,
-            ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid(),
-            ImageUrl = PreviousImageUrl
-        };
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.ImageUrl, PreviousImageUrl);
     }
 
     private static CreateTournamentDTO CreateTournamentDto()

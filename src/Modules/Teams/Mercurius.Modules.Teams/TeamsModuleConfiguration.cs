@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Endpoints;
 using Mercurius.Modules.Teams.Infrastructure;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -18,6 +18,7 @@ public static class TeamsModuleConfiguration
         where TDbContext : DbContext
     {
         services.TryAddScoped<ITeamsDbContext, TeamsDbContextAdapter<TDbContext>>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddTransient<ITeamsModule, TeamsModuleFacade>();
         services.AddScoped<TeamService>();
         services.AddScoped<ITeamQueries>(serviceProvider => serviceProvider.GetRequiredService<TeamService>());

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using Mercurius.Modules.Identity.Options;
-using Mercurius.Modules.Identity.Services.Auth0;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -132,7 +132,8 @@ public class Auth0ManagementServiceAdminRoleTests
         return new Auth0ManagementService(
             new HttpClient(handler),
             Microsoft.Extensions.Options.Options.Create(options),
-            NullLogger<Auth0ManagementService>.Instance);
+            NullLogger<Auth0ManagementService>.Instance,
+            TimeProvider.System);
     }
 
     private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK)
