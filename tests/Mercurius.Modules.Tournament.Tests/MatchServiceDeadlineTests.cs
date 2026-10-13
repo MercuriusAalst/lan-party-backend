@@ -1,5 +1,6 @@
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Shared;
+using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Tournament.Domain;
 using Mercurius.Modules.Tournament.Infrastructure;
@@ -167,6 +168,78 @@ public class MatchServiceDeadlineTests
 
         Assert.True(tournamentStatus!.IsConcurrencyToken);
         Assert.True(matchResultVersion!.IsConcurrencyToken);
+    }
+
+    [Fact]
+    public async Task SubmitScoreAsync_AcceptsDirectAndLegacyReports_AndAdvertisesCapability()
+    {
+        var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var tournament = new TournamentAggregate(
+            "Direct score tournament",
+            BracketType.SingleElimination,
+            GameFormat.BestOf1,
+            GameFormat.BestOf1,
+            ParticipationMode.Individual)
+        {
+            Id = Guid.NewGuid(),
+            Status = TournamentStatus.InProgress
+        };
+        var participant1Id = Guid.NewGuid();
+        var participant2Id = Guid.NewGuid();
+        Match CreateMatch() => new()
+        {
+            Id = Guid.NewGuid(),
+            TournamentId = tournament.Id,
+            Tournament = tournament,
+            Format = GameFormat.BestOf1,
+            ParticipationMode = ParticipationMode.Individual,
+            UserParticipant1Id = participant1Id,
+            UserParticipant2Id = participant2Id
+        };
+        var directMatch = CreateMatch();
+        var legacyMatch = CreateMatch();
+        legacyMatch.LifecycleState = MatchLifecycleState.AwaitingScore;
+        legacyMatch.Participant1EndedConfirmedAtUtc = nowUtc;
+        legacyMatch.Participant2EndedConfirmedAtUtc = nowUtc;
+        tournament.Matches.Add(directMatch);
+        tournament.Matches.Add(legacyMatch);
+
+        await using var dbContext = CreateDbContext();
+        var users = new[]
+        {
+            new User { Id = participant1Id, Auth0UserId = $"auth0|{participant1Id:N}" },
+            new User { Id = participant2Id, Auth0UserId = $"auth0|{participant2Id:N}" }
+        };
+        dbContext.Users.AddRange(users);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var service = new MatchService(
+            new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
+            TournamentTestSupport.CreateIdentityModule(users),
+            TournamentTestSupport.CreateTeamsModule(),
+            TournamentTestSupport.CreateModuleEventPublisher(),
+            new FixedTimeProvider(nowUtc),
+            new MatchBracketImpactAnalyzer(new TournamentDbContextAdapter<MercuriusDBContext>(dbContext)));
+
+        var actionState = await service.GetMatchActionStateAsync(directMatch.Id, users[0].Auth0UserId, isAdmin: false);
+        Assert.True(actionState.CanSubmitScore);
+
+        var directReport = await service.SubmitScoreAsync(
+            directMatch.Id,
+            users[0].Auth0UserId,
+            new SubmitMatchScoreDTO { Participant1Score = 1, Participant2Score = 0 });
+
+        Assert.Equal(ContractLifecycleState.ScoreConfirmation, directReport.LifecycleState);
+        Assert.True(directReport.Participant1Ended);
+
+        var legacyReport = await service.SubmitScoreAsync(
+            legacyMatch.Id,
+            users[0].Auth0UserId,
+            new SubmitMatchScoreDTO { Participant1Score = 1, Participant2Score = 0 });
+
+        Assert.Equal(ContractLifecycleState.ScoreConfirmation, legacyReport.LifecycleState);
     }
 
     private static MercuriusDBContext CreateDbContext()

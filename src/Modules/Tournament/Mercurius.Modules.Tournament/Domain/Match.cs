@@ -59,38 +59,6 @@ internal sealed class Match
     public bool HasBothParticipants => HasParticipant1() && HasParticipant2();
     public bool HasResult => LifecycleState is MatchLifecycleState.Completed or MatchLifecycleState.Forfeited;
 
-    public bool ConfirmEnded(int participantNumber, DateTime nowUtc)
-    {
-        EnsureParticipantNumber(participantNumber);
-        EnsureOpenForParticipantAction();
-
-        if (Participant1IsBYE || Participant2IsBYE)
-            throw new ValidationException("A BYE match cannot accept participant actions.");
-
-        if (participantNumber == 1)
-        {
-            if (Participant1Ended)
-                throw new ValidationException("Participant 1 has already confirmed that the match ended.");
-            if (!HasParticipant1())
-                throw new ValidationException("Participant 1 is not assigned to this match.");
-            Participant1EndedConfirmedAtUtc = nowUtc;
-        }
-        else
-        {
-            if (Participant2Ended)
-                throw new ValidationException("Participant 2 has already confirmed that the match ended.");
-            if (!HasParticipant2())
-                throw new ValidationException("Participant 2 is not assigned to this match.");
-            Participant2EndedConfirmedAtUtc = nowUtc;
-        }
-
-        if (Participant1Ended && Participant2Ended)
-            LifecycleState = MatchLifecycleState.AwaitingScore;
-
-        ResultVersion++;
-        return Participant1Ended && Participant2Ended;
-    }
-
     public bool SubmitScore(
         int participantNumber,
         int participant1Score,
@@ -103,8 +71,6 @@ internal sealed class Match
 
         if (!HasBothParticipants || Participant1IsBYE || Participant2IsBYE)
             throw new ValidationException("Both non-BYE participants must be assigned before submitting a score.");
-        if (!Participant1Ended || !Participant2Ended)
-            throw new ValidationException("Both participants must confirm the match ended before submitting a score.");
         if (LifecycleState is MatchLifecycleState.Completed or MatchLifecycleState.Forfeited)
             throw new ValidationException("The match already has a final result.");
         if (LifecycleState == MatchLifecycleState.AdminResolutionRequired)
@@ -128,6 +94,8 @@ internal sealed class Match
                 throw new ValidationException("Participant 1 has already used their correction.");
             Participant1ReportedScore1 = participant1Score;
             Participant1ReportedScore2 = participant2Score;
+            // Reporting a score is also this side's confirmation that the match ended.
+            Participant1EndedConfirmedAtUtc ??= nowUtc;
             if (isCorrection)
                 Participant1CorrectionCount++;
         }
@@ -137,13 +105,16 @@ internal sealed class Match
                 throw new ValidationException("Participant 2 has already used their correction.");
             Participant2ReportedScore1 = participant1Score;
             Participant2ReportedScore2 = participant2Score;
+            Participant2EndedConfirmedAtUtc ??= nowUtc;
             if (isCorrection)
                 Participant2CorrectionCount++;
         }
 
         ResultVersion++;
 
-        if (LifecycleState == MatchLifecycleState.AwaitingScore)
+        if (LifecycleState is MatchLifecycleState.AwaitingEndedConfirmation
+            or MatchLifecycleState.AwaitingScore
+            or MatchLifecycleState.Reversed)
         {
             ScoreConfirmationDeadlineUtc = nowUtc.AddMinutes(5);
             LifecycleState = MatchLifecycleState.ScoreConfirmation;
@@ -622,14 +593,6 @@ internal sealed class Match
     private bool ReportedScoresMatch() =>
         Participant1ReportedScore1 == Participant2ReportedScore1 &&
         Participant1ReportedScore2 == Participant2ReportedScore2;
-
-    private void EnsureOpenForParticipantAction()
-    {
-        if (LifecycleState is MatchLifecycleState.Completed or
-            MatchLifecycleState.Forfeited or
-            MatchLifecycleState.AdminResolutionRequired)
-            throw new ValidationException("This match is not accepting participant actions.");
-    }
 
     private static void EnsureParticipantNumber(int participantNumber)
     {

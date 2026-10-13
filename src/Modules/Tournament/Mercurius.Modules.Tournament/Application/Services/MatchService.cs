@@ -104,7 +104,6 @@ internal sealed class MatchService : IMatchService
         var tournamentInProgress = tournament.Status == TournamentStatus.InProgress;
         var canViewPrivateReports = isAdmin &&
             (!tournament.AssignedAdminUserId.HasValue || tournament.AssignedAdminUserId.Value == userId);
-        var canConfirmEnded = tournamentInProgress && CanConfirmEnded(match, side);
         var canSubmitScore = tournamentInProgress && CanSubmitScore(match, side);
         var canForfeit = tournamentInProgress && CanForfeit(match, side);
         var canResolve = isAdmin &&
@@ -159,7 +158,6 @@ internal sealed class MatchService : IMatchService
             match,
             side,
             canViewPrivateReports || side.HasValue,
-            canConfirmEnded,
             canSubmitScore,
             canForfeit,
             canResolve,
@@ -168,23 +166,6 @@ internal sealed class MatchService : IMatchService
             canForceForfeit ? null : forceForfeitBlockedReason,
             canReverse,
             canReverse ? null : reverseBlockedReason);
-    }
-
-    public async Task<GetMatchDTO> ConfirmEndedAsync(
-        Guid id,
-        string auth0UserId,
-        CancellationToken cancellationToken = default)
-    {
-        var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        var (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-        EnsureInProgress(tournament);
-        var side = await RequireParticipantSideAsync(match, userId, cancellationToken);
-        var now = UtcNow();
-        ApplyDeadline(tournament, match, now);
-        match.ConfirmEnded((int)side, now);
-        await SaveAndCommitAsync(transaction, tournament, cancellationToken);
-        return TournamentDtoMapper.ToGetMatchDto(match);
     }
 
     public async Task<GetMatchDTO> SubmitScoreAsync(
@@ -502,16 +483,6 @@ internal sealed class MatchService : IMatchService
             throw new ValidationException("Match actions are available only while the tournament is in progress.");
     }
 
-    private static bool CanConfirmEnded(Match match, MatchParticipantSide? side) =>
-        side.HasValue &&
-        match.HasBothParticipants &&
-        !match.Participant1IsBYE &&
-        !match.Participant2IsBYE &&
-        !match.HasResult &&
-        match.LifecycleState is not MatchLifecycleState.AdminResolutionRequired &&
-        ((side == MatchParticipantSide.Participant1 && !match.Participant1Ended) ||
-         (side == MatchParticipantSide.Participant2 && !match.Participant2Ended));
-
     private static bool CanSubmitScore(Match match, MatchParticipantSide? side)
     {
         if (!side.HasValue ||
@@ -524,7 +495,9 @@ internal sealed class MatchService : IMatchService
 
         return match.LifecycleState switch
         {
+            MatchLifecycleState.AwaitingEndedConfirmation => true,
             MatchLifecycleState.AwaitingScore => true,
+            MatchLifecycleState.Reversed => true,
             MatchLifecycleState.ScoreConfirmation => side == MatchParticipantSide.Participant1
                 ? !match.Participant1ReportedScore1.HasValue
                 : !match.Participant2ReportedScore1.HasValue,

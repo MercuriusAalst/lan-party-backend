@@ -49,16 +49,6 @@ internal static class MatchEndpoints
         })
         .RequireAuthorization();
 
-        group.MapPost("/{id}/confirm-ended", async (
-            Guid id,
-            ClaimsPrincipal user,
-            IMatchService matchService,
-            CancellationToken cancellationToken) =>
-        {
-            return await matchService.ConfirmEndedAsync(id, GetAuth0UserId(user), cancellationToken);
-        })
-        .RequireAuthorization();
-
         group.MapPut("/{id}/score", async (
             Guid id,
             SubmitMatchScoreDTO request,

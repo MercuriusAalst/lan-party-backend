@@ -125,7 +125,6 @@ public class ApiEndpointContractTests
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/teams/{teamId:guid}/roster")]
     [InlineData("DELETE", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/teams/{teamId:guid}")]
     [InlineData("PATCH", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/roster-members/{rosterMemberId:guid}")]
-    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/confirm-ended")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/forfeit")]
     [InlineData("PUT", "v{version:apiVersion}/lan/matches/{id}/score")]
     public void AuthenticatedUserRoutes_RequireAuthorization(string method, string routePattern)
@@ -205,6 +204,7 @@ public class ApiEndpointContractTests
     [InlineData("DELETE", "v{version:apiVersion}/lan/games/{id}")]
     [InlineData("PUT", "v{version:apiVersion}/lan/games/{id}/sponsors")]
     [InlineData("PUT", "v{version:apiVersion}/lan/games/{id}/lifecycle-state")]
+    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/confirm-ended")]
     [InlineData("GET", "v{version:apiVersion}/lan/games/{gameId:guid}/registrations/me")]
     [InlineData("GET", "v{version:apiVersion}/lan/games/{gameId:guid}/registrations/admin/")]
     [InlineData("PATCH", "v{version:apiVersion}/lan/games/{gameId:guid}/registrations/roster-members/{rosterMemberId:guid}")]

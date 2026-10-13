@@ -161,35 +161,43 @@ public class MatchTests
     }
 
     [Fact]
-    public void ConfirmEnded_EntersAwaitingScoreOnlyAfterBothSidesConfirm()
+    public void SubmitScore_DirectReport_RecordsEndingAndStartsWindowWithoutOpponentConfirmation()
     {
         var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
         var match = CreateIndividualMatch();
-
-        match.ConfirmEnded(1, now);
-
-        Assert.Equal(MatchLifecycleState.AwaitingEndedConfirmation, match.LifecycleState);
-        Assert.True(match.Participant1Ended);
-        Assert.False(match.Participant2Ended);
-
-        match.ConfirmEnded(2, now);
-
-        Assert.Equal(MatchLifecycleState.AwaitingScore, match.LifecycleState);
-    }
-
-    [Fact]
-    public void SubmitScore_RequiresConsensus_AndAutoAcceptsFirstReportAtDeadline()
-    {
-        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
-        var match = CreateIndividualMatch();
-        match.ConfirmEnded(1, now);
-        match.ConfirmEnded(2, now);
 
         match.SubmitScore(1, 1, 0, now);
 
         Assert.Equal(MatchLifecycleState.ScoreConfirmation, match.LifecycleState);
         Assert.Equal(now.AddMinutes(5), match.ScoreConfirmationDeadlineUtc);
+        Assert.Equal(now, match.Participant1EndedConfirmedAtUtc);
+        Assert.Null(match.Participant2EndedConfirmedAtUtc);
+    }
 
+    [Fact]
+    public void SubmitScore_MatchingDirectReports_CompleteTheMatch()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var match = CreateIndividualMatch();
+
+        match.SubmitScore(1, 1, 0, now);
+        var completed = match.SubmitScore(2, 1, 0, now.AddMinutes(1));
+
+        Assert.True(completed);
+        Assert.Equal(MatchLifecycleState.Completed, match.LifecycleState);
+        Assert.Equal(1, match.Participant1Score);
+        Assert.Equal(0, match.Participant2Score);
+        Assert.Equal(match.UserParticipant1Id, match.UserWinnerId);
+        Assert.Equal(now.AddMinutes(1), match.Participant2EndedConfirmedAtUtc);
+    }
+
+    [Fact]
+    public void SubmitScore_AutoAcceptsFirstReportAtDeadline()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var match = CreateIndividualMatch();
+
+        match.SubmitScore(1, 1, 0, now);
         match.ApplyDeadline(now.AddMinutes(5));
 
         Assert.Equal(MatchLifecycleState.Completed, match.LifecycleState);
@@ -198,12 +206,47 @@ public class MatchTests
     }
 
     [Fact]
+    public void SubmitScore_FromReversedMatch_RecordsEndingAndStartsWindow()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var match = CreateIndividualMatch();
+        match.SubmitScore(1, 1, 0, now);
+        match.SubmitScore(2, 1, 0, now.AddMinutes(1));
+        match.ReverseResult(now.AddMinutes(2));
+
+        match.SubmitScore(1, 0, 1, now.AddMinutes(3));
+
+        Assert.Equal(MatchLifecycleState.ScoreConfirmation, match.LifecycleState);
+        Assert.Equal(now.AddMinutes(3), match.Participant1EndedConfirmedAtUtc);
+    }
+
+    [Fact]
+    public void SubmitScore_RejectsByeCompletedAndAdminResolutionRequiredMatches()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+
+        var byeMatch = CreateIndividualMatch();
+        byeMatch.SetParticipantBYEs(true, false);
+        var byeException = Assert.Throws<ValidationException>(() => byeMatch.SubmitScore(1, 1, 0, now));
+        Assert.Contains("non-BYE", byeException.Message, StringComparison.OrdinalIgnoreCase);
+
+        var completedMatch = CreateIndividualMatch();
+        completedMatch.SubmitScore(1, 1, 0, now);
+        completedMatch.SubmitScore(2, 1, 0, now.AddMinutes(1));
+        var completedException = Assert.Throws<ValidationException>(() => completedMatch.SubmitScore(1, 1, 0, now.AddMinutes(2)));
+        Assert.Contains("final result", completedException.Message, StringComparison.OrdinalIgnoreCase);
+
+        var adminMatch = CreateIndividualMatch();
+        adminMatch.LifecycleState = MatchLifecycleState.AdminResolutionRequired;
+        var adminException = Assert.Throws<ValidationException>(() => adminMatch.SubmitScore(1, 1, 0, now));
+        Assert.Contains("administrator", adminException.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void SubmitScore_RejectsDuplicateInitialReportBeforeOpponentResponds()
     {
         var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
         var match = CreateIndividualMatch();
-        match.ConfirmEnded(1, now);
-        match.ConfirmEnded(2, now);
         match.SubmitScore(1, 1, 0, now);
 
         var exception = Assert.Throws<ValidationException>(() => match.SubmitScore(1, 1, 0, now.AddMinutes(1)));
@@ -216,8 +259,6 @@ public class MatchTests
     {
         var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
         var match = CreateIndividualMatch(GameFormat.BestOf3);
-        match.ConfirmEnded(1, now);
-        match.ConfirmEnded(2, now);
         match.SubmitScore(1, 2, 0, now);
         match.SubmitScore(2, 0, 2, now.AddMinutes(1));
 
@@ -236,8 +277,6 @@ public class MatchTests
     {
         var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
         var match = CreateIndividualMatch(GameFormat.BestOf3);
-        match.ConfirmEnded(1, now);
-        match.ConfirmEnded(2, now);
         match.SubmitScore(1, 2, 0, now);
         var versionBeforeMismatch = match.ResultVersion;
 
@@ -254,8 +293,6 @@ public class MatchTests
     {
         var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
         var match = CreateIndividualMatch(GameFormat.BestOf3);
-        match.ConfirmEnded(1, now);
-        match.ConfirmEnded(2, now);
         match.SubmitScore(1, 2, 0, now);
         match.SubmitScore(2, 0, 2, now.AddMinutes(1));
         var deadline = match.CorrectionDeadlineUtc!.Value;
@@ -334,8 +371,6 @@ public class MatchTests
     {
         var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
         var match = CreateIndividualMatch(GameFormat.BestOf3);
-        match.ConfirmEnded(1, now);
-        match.ConfirmEnded(2, now);
         match.SubmitScore(1, 2, 0, now);
         match.SubmitScore(2, 0, 2, now.AddMinutes(1));
         match.ApplyDeadline(match.CorrectionDeadlineUtc!.Value);
