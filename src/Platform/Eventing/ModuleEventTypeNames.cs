@@ -23,6 +23,26 @@ internal static class ModuleEventTypeNames
             ["Mercurius.Modules.Sponsorship.Contracts.V1.GameSponsorPlacementChanged"] = "Mercurius.Modules.Sponsorship.Contracts.V1.TournamentSponsorPlacementChanged"
         };
 
+    // Events removed because nothing consumed them. Rows that were already stored are
+    // acknowledged without dispatch instead of failing until they are dead-lettered.
+    private static readonly HashSet<string> RetiredTypeNames = new(StringComparer.Ordinal)
+    {
+        "Mercurius.Modules.Identity.Contracts.UserAnonymizedIntegrationEvent",
+        "Mercurius.Modules.Sponsorship.Contracts.V1.TournamentSponsorPlacementChanged",
+        "Mercurius.Modules.Teams.Contracts.TeamCaptainTransferredIntegrationEvent",
+        "Mercurius.Modules.Teams.Contracts.TeamMemberAddedIntegrationEvent",
+        "Mercurius.Modules.Teams.Contracts.TeamMemberRemovedIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.MatchCompletedIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.MatchResultReversedIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.PlacementAssignedIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.RosterMemberConfirmedIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.TournamentCompletedIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.TournamentRegistrationCanceledIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.TournamentRegistrationCreatedIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.TournamentResetIntegrationEvent",
+        "Mercurius.Modules.Tournament.Contracts.TournamentStartedIntegrationEvent"
+    };
+
     public static string GetName(Type eventType)
     {
         // Internal module events use their CLR full name as the durable type key,
@@ -45,6 +65,12 @@ internal static class ModuleEventTypeNames
         }
 
         throw new InvalidOperationException($"Module event type '{eventTypeName}' could not be resolved.");
+    }
+
+    public static bool IsRetired(string eventTypeName)
+    {
+        var typeName = StripAssemblyQualification(eventTypeName);
+        return RetiredTypeNames.Contains(LegacyTypeAliases.GetValueOrDefault(typeName, typeName));
     }
 
     public static bool IsLegacy(string eventTypeName) =>

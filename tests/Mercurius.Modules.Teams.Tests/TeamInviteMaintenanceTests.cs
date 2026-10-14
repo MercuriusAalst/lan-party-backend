@@ -1,9 +1,10 @@
+using Mercurius.TestInfrastructure;
 using System.Collections.Concurrent;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Options;
@@ -213,17 +214,11 @@ public class TeamInviteMaintenanceTests
                 MaintenanceBatchSize = batchSize,
                 MaintenanceIntervalSeconds = 60,
                 MaintenanceEventConcurrency = eventConcurrency
-            }));
+            }),
+            TimeProvider.System);
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static User CreateUser(string username)
     {

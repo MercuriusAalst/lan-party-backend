@@ -580,12 +580,9 @@ public sealed class LeaderboardPersistenceTests
             DateTime.UtcNow,
             0,
             0,
-            LeaderboardRankingMetric.HighestScore)
-        {
-            Id = Guid.NewGuid()
-        };
+            LeaderboardRankingMetric.HighestScore).Set(x => x.Id, Guid.NewGuid());
         addParticipants?.Invoke(tournament);
-        tournament.Start();
+        tournament.Start(DateTime.UtcNow);
         await using var seedDb = new MercuriusDBContext(options);
         await seedDb.Database.MigrateAsync();
         seedDb.Set<TournamentAggregate>().Add(tournament);
@@ -636,7 +633,8 @@ public sealed class LeaderboardPersistenceTests
         IReadOnlyCollection<User>? users = null,
         bool throwOnPublicUsernameLookup = false) => new(
         new TournamentDbContextAdapter<MercuriusDBContext>(db),
-        TournamentTestSupport.CreateIdentityModule(users, throwOnPublicUsernameLookup));
+        TournamentTestSupport.CreateIdentityModule(users, throwOnPublicUsernameLookup),
+        TimeProvider.System);
 
     private static TournamentService CreateTournamentService(MercuriusDBContext db) => new(
         new TournamentDbContextAdapter<MercuriusDBContext>(db),
@@ -646,7 +644,8 @@ public sealed class LeaderboardPersistenceTests
         TournamentTestSupport.CreateSponsorshipModule(),
         TournamentTestSupport.CreateMapper(),
         TournamentTestSupport.CreateModuleEventPublisher(),
-        NullLogger<TournamentService>.Instance);
+        NullLogger<TournamentService>.Instance,
+        TimeProvider.System);
 
     private static async Task<long> CountAsync(string connectionString, string table)
     {

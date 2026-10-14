@@ -9,7 +9,7 @@ SPEC_PROFILE: mercurius-lan
 PR_TEMPLATE: none confirmed
 PR_FORMAT: default
 PROTECTED: main
-RUNTIME: containers, assume 2+ replicas, rolling deployment, managed PostgreSQL
+RUNTIME: containers, exactly one replica per docs/architecture/single-instance-deployment.md, rolling deployment, managed PostgreSQL; match deadlines and lifecycle versions remain persisted/database-coordinated
 HOT_SPOTS: Tournament Domain/Match.cs; MatchService; deadlines; rowversion; migrations; authentication
 RELATED_REPOS: frontend=D:/Github Repositories/lan-party; helm=D:/Github Repositories/lan-party-helmchart
 CONVENTIONS:
@@ -27,7 +27,7 @@ MODULE-WIDE: module Infrastructure/; host Migrations/ remains existing location
 CROSS-CUTTING: src/Platform/; src/Modules.Shared/
 SHARED: src/Modules.Shared/; reuse existing types; additions need architect review
 NAMESPACE: matches project/folder conventions
-TESTS: tests/Mercurius.Modules.<Module>.Tests/; tests/Mercurius.Api.Tests/; existing flat files
+TESTS: tests/Mercurius.Modules.<Module>.Tests/; tests/Mercurius.Api.Tests/; shared persisted-state test helper in tests/TestInfrastructure/EntityStateExtensions.cs; existing flat files
 NEW PROJECT OR MODULE: STOP IF; architect decides
 EXAMPLES:
 - src/Modules/Tournament/Mercurius.Modules.Tournament/Domain/Match.cs

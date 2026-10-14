@@ -24,9 +24,6 @@ internal sealed class DiscoveryRebuildOwnership
 
     public async Task<Lease?> TryAcquireAsync(CancellationToken cancellationToken)
     {
-        if (!_dbContext.IsRelational)
-            return new Lease(this, false);
-
         if (_dbContext.RetriesOnFailure)
             throw new InvalidOperationException("Discovery rebuild ownership cannot use a retrying database execution strategy.");
 
@@ -34,8 +31,7 @@ internal sealed class DiscoveryRebuildOwnership
         try
         {
             await _dbContext.OpenConnectionAsync(cancellationToken);
-            connection = _dbContext.Connection
-                ?? throw new InvalidOperationException("The Discovery database connection is unavailable.");
+            connection = _dbContext.Connection;
 
             if (connection.State != ConnectionState.Open)
                 throw new InvalidOperationException("The Discovery database connection did not remain open.");
@@ -51,7 +47,7 @@ internal sealed class DiscoveryRebuildOwnership
             _ownedConnection = connection;
             _ownershipLost = false;
             connection.StateChange += OnConnectionStateChange;
-            return new Lease(this, true);
+            return new Lease(this);
         }
         catch
         {
@@ -64,9 +60,6 @@ internal sealed class DiscoveryRebuildOwnership
 
     public async Task EnsureOwnedAsync(CancellationToken cancellationToken)
     {
-        if (!_dbContext.IsRelational)
-            return;
-
         var connection = _ownedConnection;
         if (_ownershipLost || connection is null ||
             !ReferenceEquals(connection, _dbContext.Connection) ||
@@ -98,11 +91,8 @@ internal sealed class DiscoveryRebuildOwnership
         }
     }
 
-    private async ValueTask ReleaseAsync(bool owned)
+    private async ValueTask ReleaseAsync()
     {
-        if (!owned)
-            return;
-
         var connection = _ownedConnection;
         var safelyUnlocked = false;
         try
@@ -191,12 +181,12 @@ internal sealed class DiscoveryRebuildOwnership
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    internal sealed class Lease(DiscoveryRebuildOwnership owner, bool ownsLock) : IAsyncDisposable
+    internal sealed class Lease(DiscoveryRebuildOwnership owner) : IAsyncDisposable
     {
         private int _disposed;
 
         public ValueTask DisposeAsync() =>
-            Interlocked.Exchange(ref _disposed, 1) == 0 ? owner.ReleaseAsync(ownsLock) : ValueTask.CompletedTask;
+            Interlocked.Exchange(ref _disposed, 1) == 0 ? owner.ReleaseAsync() : ValueTask.CompletedTask;
     }
 }
 

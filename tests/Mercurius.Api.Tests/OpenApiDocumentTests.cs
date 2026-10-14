@@ -7,10 +7,10 @@ using Mercurius.Modules.Discovery;
 using Mercurius.Modules.Discovery.Contracts;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Platform.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -75,7 +75,8 @@ public class OpenApiDocumentTests
             AssertPagedRawArrayOperation(document, "/v1/lan/tournaments/{tournamentId}/registrations/admin");
             AssertPathHasOperation(document, "/v1/lan/search", OperationType.Get);
             AssertPathHasOperation(document, "/v1/lan/sponsors", OperationType.Post);
-            AssertPathHasOperation(document, "/v1/lan/matches/{id}", OperationType.Put);
+            AssertPathHasOperation(document, "/v1/lan/matches/{id}", OperationType.Get);
+            AssertPathLacksOperation(document, "/v1/lan/matches/{id}", OperationType.Put);
             AssertPathIsAbsent(document, "/v1/lan/games");
             AssertPathIsAbsent(document, "/v1/lan/games/{id}");
             AssertPathIsAbsent(document, "/v1/lan/games/{id}/sponsors");
@@ -94,6 +95,14 @@ public class OpenApiDocumentTests
     private static void AssertPathIsAbsent(OpenApiDocument document, string path)
     {
         Assert.DoesNotContain(document.Paths.Keys, candidate => string.Equals(candidate.TrimEnd('/'), path, StringComparison.Ordinal));
+    }
+
+    private static void AssertPathLacksOperation(OpenApiDocument document, string path, OperationType operation)
+    {
+        var matchingPath = document.Paths.Keys.SingleOrDefault(candidate =>
+            string.Equals(candidate.TrimEnd('/'), path, StringComparison.Ordinal));
+
+        Assert.False(matchingPath is not null && document.Paths[matchingPath].Operations.ContainsKey(operation), $"{path} should not expose {operation}.");
     }
 
     private static void AssertPathHasOperation(OpenApiDocument document, string path, OperationType operation)

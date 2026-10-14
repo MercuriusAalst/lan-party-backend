@@ -51,8 +51,9 @@ before persisting it and MUST preserve the existing not-found validation outcome
 ### Requirement: Sponsorship read models are bounded and persistence-compatible
 Sponsorship read operations SHALL use no-tracking projections and SHALL provide a bounded batched
 placement lookup for a supplied set of tournament identifiers. It MUST retain the existing
-`Sponsors` and `TournamentSponsorPlacements` tables, scalar mapping, unique tournament placement
-constraint, and cascade relationships after the schema rename.
+`Sponsors` and `TournamentSponsorPlacements` tables, scalar mapping, and unique tournament placement
+constraint after the schema rename. The sponsor-to-placement relationship MUST cascade and the
+tournament-to-placement relationship MUST restrict deletes.
 
 #### Scenario: Tournament enriches multiple tournaments
 - **WHEN** Tournament requests placements for multiple tournament identifiers
@@ -61,7 +62,11 @@ constraint, and cascade relationships after the schema rename.
 
 #### Scenario: Existing database is composed
 - **WHEN** the shared EF model is built after the rename migration
-- **THEN** Sponsorship MUST map the renamed Sponsor and TournamentSponsorPlacement schema and preserve the tournament-to-placement and sponsor-to-placement cascade behavior
+- **THEN** Sponsorship MUST map the renamed Sponsor and TournamentSponsorPlacement schema with a cascading sponsor-to-placement and a restricting tournament-to-placement relationship
+
+#### Scenario: Sponsorship joins an ambient transaction
+- **WHEN** a Sponsorship mutation runs inside a transaction opened by its caller
+- **THEN** Sponsorship MUST save its state and outbox message in that transaction without committing it
 
 ### Requirement: Existing Sponsorship HTTP contracts remain stable
 The rename MUST preserve sponsor route templates, route names and tags, API version metadata,
@@ -80,9 +85,10 @@ tournament routes and identifiers.
 
 ### Requirement: Sponsorship publishes lifecycle facts
 Sponsorship mutations SHALL publish typed integration-event contracts in the `Contracts.V1`
-namespace without exposing EF entities. Events MUST describe sponsor creation, update, deletion,
-and tournament sponsor placement changes, including the relevant SponsorId and TournamentId or PlacementId
-facts needed by later consumers.
+namespace without exposing EF entities. Events MUST describe sponsor creation, update, and deletion,
+including the relevant SponsorId facts needed by later consumers. Tournament sponsor placement changes
+MUST NOT publish an integration event; consumers read the current placement through the Sponsorship
+module contract.
 
 #### Scenario: Sponsor metadata changes
 - **WHEN** a sponsor is created, updated, or deleted
@@ -92,9 +98,8 @@ facts needed by later consumers.
 
 #### Scenario: Tournament placement changes
 - **WHEN** a tournament's sponsor placement is created, replaced, or removed
-- **THEN** Sponsorship MUST publish a `Contracts.V1.TournamentSponsorPlacementChanged` event that
-  identifies the tournament
-- **AND** the event MUST represent either the current placement facts or the removal state
+- **THEN** Sponsorship MUST persist the placement change
+- **AND** it MUST NOT write a `Contracts.V1.TournamentSponsorPlacementChanged` outbox message
 
 ### Requirement: Sponsorship coordinates Sponsor logo lifecycle
 Sponsorship MUST compensate a newly stored Sponsor logo if the following Sponsor mutation, outbox

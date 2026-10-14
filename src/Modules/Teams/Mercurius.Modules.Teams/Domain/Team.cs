@@ -98,13 +98,13 @@ public class Team
         DeletedAtUtc = deletedAtUtc;
     }
 
-    internal TeamInvite InviteUser(Guid userId, int inviteResendCooldownDays, int inviteExpirationDays = 14, int declinedInviteResendLimit = 3)
+    internal TeamInvite InviteUser(Guid userId, DateTime nowUtc, int inviteResendCooldownDays, int inviteExpirationDays = 14, int declinedInviteResendLimit = 3)
     {
         if (Members.Any(member => member.UserId == userId))
             throw new ValidationException("User is already in the team");
         if (TeamInvites.Any(i => i.UserId == userId && i.Status == TeamInviteStatus.Pending))
             throw new ValidationException("User already has a pending invite to this team");
-        var cooldownStart = DateTime.UtcNow.AddDays(-inviteResendCooldownDays);
+        var cooldownStart = nowUtc.AddDays(-inviteResendCooldownDays);
         var declinedInvitesInCooldown = TeamInvites
             .Where(i =>
                 i.UserId == userId &&
@@ -117,19 +117,18 @@ public class Team
         if (declinedInvitesInCooldown.Count >= declinedInviteResendLimit)
         {
             var lastDeclinedInvite = declinedInvitesInCooldown[0];
-            var daysSinceDeclined = (DateTime.UtcNow - lastDeclinedInvite.RespondedAt!.Value).TotalDays;
+            var daysSinceDeclined = (nowUtc - lastDeclinedInvite.RespondedAt!.Value).TotalDays;
             if (daysSinceDeclined < inviteResendCooldownDays)
             {
                 throw new ValidationException($"User declined {declinedInviteResendLimit} invites in the cooldown window. Please wait {inviteResendCooldownDays - (int)daysSinceDeclined} more day(s).");
             }
         }
-        var now = DateTime.UtcNow;
         var invite = new TeamInvite
         {
             TeamId = Id,
             UserId = userId,
-            CreatedAt = now,
-            ExpiresAt = now.AddDays(inviteExpirationDays)
+            CreatedAt = nowUtc,
+            ExpiresAt = nowUtc.AddDays(inviteExpirationDays)
         };
         TeamInvites.Add(invite);
         return invite;

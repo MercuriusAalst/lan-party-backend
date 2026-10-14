@@ -16,37 +16,37 @@ internal class TeamInvite
     public DateTime? CancelledAt { get; set; }
     public DateTime? ExpiredAt { get; set; }
 
-    public void Respond(bool accept)
+    public void Respond(bool accept, DateTime nowUtc)
     {
         if (Status != TeamInviteStatus.Pending)
             throw new ValidationException("Cannot respond to an invite that is not pending.");
-        if (ExpiresAt <= DateTime.UtcNow)
+        if (ExpiresAt <= nowUtc)
         {
-            Expire();
+            Expire(nowUtc);
             throw new ValidationException("Cannot respond to an expired invite.");
         }
 
         Status = accept ? TeamInviteStatus.Accepted : TeamInviteStatus.Declined;
         if (accept)
             Team.AddMember(UserId);
-        RespondedAt = DateTime.UtcNow;
+        RespondedAt = nowUtc;
     }
 
-    public void Cancel()
+    public void Cancel(DateTime nowUtc)
     {
         if (Status != TeamInviteStatus.Pending)
             throw new ValidationException("Cannot cancel an invite that is not pending.");
 
         Status = TeamInviteStatus.Cancelled;
-        CancelledAt = DateTime.UtcNow;
+        CancelledAt = nowUtc;
     }
 
-    public void Expire()
+    public void Expire(DateTime nowUtc)
     {
         if (Status != TeamInviteStatus.Pending)
             return;
 
         Status = TeamInviteStatus.Expired;
-        ExpiredAt = DateTime.UtcNow;
+        ExpiredAt = nowUtc;
     }
 }

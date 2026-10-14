@@ -8,9 +8,7 @@ using Mercurius.Modules.Teams.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Platform.Eventing;
-using MatchCompletedIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchCompletedIntegrationEvent;
 using MatchResolutionRequiredIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchResolutionRequiredIntegrationEvent;
-using MatchResultReversedIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchResultReversedIntegrationEvent;
 using MatchParticipantSide = Mercurius.Modules.Tournament.Contracts.MatchParticipantSide;
 
 namespace Mercurius.Modules.Tournament.Application.Services;
@@ -46,15 +44,7 @@ internal sealed class MatchService : IMatchService
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var (tournament, match) = await GetMatchReadAsync(id, cancellationToken);
-        var publicProjection = TournamentDtoMapper.ToGetMatchDto(match);
-        if (HasExpiredDeadline(match, UtcNow()))
-        {
-            (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-            if (!await ApplyDeadlineAndPersistAsync(tournament, match, cancellationToken))
-                return publicProjection;
-        }
-
+        var (_, match) = await GetMatchReadAsync(id, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
 
@@ -94,12 +84,6 @@ internal sealed class MatchService : IMatchService
     {
         var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
         var (tournament, match) = await GetMatchReadAsync(id, cancellationToken);
-        if (HasExpiredDeadline(match, UtcNow()))
-        {
-            (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-            await ApplyDeadlineAndPersistAsync(tournament, match, cancellationToken);
-        }
-
         var side = await FindParticipantSideAsync(match, userId, cancellationToken);
         var tournamentInProgress = tournament.Status == TournamentStatus.InProgress;
         var canViewPrivateReports = isAdmin &&
@@ -185,8 +169,7 @@ internal sealed class MatchService : IMatchService
         match.SubmitScore((int)side, request.Participant1Score, request.Participant2Score, now);
         if (!wasResult && match.HasResult)
         {
-            match.ResultRecordedByUserId = userId;
-            PublishCompletion(match);
+            match.RecordResultBy(userId);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -210,9 +193,9 @@ internal sealed class MatchService : IMatchService
         if (!isAdmin)
         {
             if (!actorSide.HasValue)
-                throw new UnauthorizedAccessException("Only a participant or team captain can forfeit this match.");
+                throw new ForbiddenException("match_participant_required", "Only a participant or team captain can forfeit this match.");
             if (targetSide.HasValue && targetSide != actorSide)
-                throw new UnauthorizedAccessException("Participants may only forfeit their own side.");
+                throw new ForbiddenException("match_own_side_required", "Participants may only forfeit their own side.");
             targetSide = actorSide;
         }
         else if (!targetSide.HasValue)
@@ -228,8 +211,7 @@ internal sealed class MatchService : IMatchService
         match.Forfeit((int)targetSide.Value, now);
         if (!wasResult)
         {
-            match.ResultRecordedByUserId = userId;
-            PublishCompletion(match);
+            match.RecordResultBy(userId);
         }
 
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
@@ -246,13 +228,10 @@ internal sealed class MatchService : IMatchService
         await using var transaction = await BeginTransactionAsync(cancellationToken);
         var (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
         EnsureInProgress(tournament);
-        var wasResult = match.HasResult;
         var now = UtcNow();
         ApplyDeadline(tournament, match, now);
         match.ResolveScore(request.Participant1Score, request.Participant2Score, now);
-        match.ResultRecordedByUserId = userId;
-        if (!wasResult)
-            PublishCompletion(match);
+        match.RecordResultBy(userId);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -282,29 +261,7 @@ internal sealed class MatchService : IMatchService
 
         _bracketImpactAnalyzer.ClearDownstreamAssignments(match, reversalAnalysis);
         match.ReverseResult(UtcNow());
-        match.ResultRecordedByUserId = userId;
-        _moduleEventPublisher.Publish(new MatchResultReversedIntegrationEvent(
-            new MatchId(match.Id),
-            new TournamentId(match.TournamentId)));
-        await SaveAndCommitAsync(transaction, tournament, cancellationToken);
-        return TournamentDtoMapper.ToGetMatchDto(match);
-    }
-
-    public async Task<GetMatchDTO> UpdateMatchAsync(
-        Guid id,
-        string auth0UserId,
-        UpdateMatchDTO updateMatchDTO,
-        CancellationToken cancellationToken = default)
-    {
-        var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        var (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
-        EnsureInProgress(tournament);
-        var now = UtcNow();
-        ApplyDeadline(tournament, match, now);
-        match.ResolveScore(updateMatchDTO.Participant1Score, updateMatchDTO.Participant2Score, now);
-        match.ResultRecordedByUserId = userId;
-        PublishCompletion(match);
+        match.RecordResultBy(userId);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -317,6 +274,11 @@ internal sealed class MatchService : IMatchService
             .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
         if (match is null)
             throw new NotFoundException("Match not found.");
+
+        // Reads never persist: MatchDeadlineProcessor saves expired deadlines and publishes their events.
+        // Applying the deadline to this untracked copy only shows the outcome before the processor's next poll.
+        if (match.Tournament.Status == TournamentStatus.InProgress)
+            match.ApplyDeadline(UtcNow());
 
         return (match.Tournament, match);
     }
@@ -346,33 +308,6 @@ internal sealed class MatchService : IMatchService
             .Include(candidate => candidate.LoserNextMatch)
             .Where(candidate => candidate.Id == id);
 
-    private static bool HasExpiredDeadline(Match match, DateTime nowUtc) =>
-        (match.LifecycleState == MatchLifecycleState.ScoreConfirmation &&
-         match.ScoreConfirmationDeadlineUtc is { } scoreDeadline && nowUtc >= scoreDeadline) ||
-        (match.LifecycleState == MatchLifecycleState.Disputed &&
-         match.CorrectionDeadlineUtc is { } correctionDeadline && nowUtc >= correctionDeadline);
-
-    private async Task<bool> ApplyDeadlineAndPersistAsync(
-        TournamentAggregate tournament,
-        Match match,
-        CancellationToken cancellationToken)
-    {
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        if (!await IsTournamentInProgressAsync(tournament.Id, cancellationToken))
-            return false;
-
-        var beforeState = match.LifecycleState;
-        var beforeResult = match.HasResult;
-        ApplyDeadline(tournament, match, UtcNow());
-        if (beforeState == match.LifecycleState && beforeResult == match.HasResult)
-            return true;
-
-        if (!beforeResult && match.HasResult)
-            PublishCompletion(match);
-        await SaveAndCommitAsync(transaction, tournament, cancellationToken);
-        return true;
-    }
-
     private void ApplyDeadline(
         TournamentAggregate tournament,
         Match match,
@@ -390,26 +325,8 @@ internal sealed class MatchService : IMatchService
         }
     }
 
-    private void PublishCompletion(Match match)
-    {
-        var winnerId = match.GetWinnerId();
-        if (!winnerId.HasValue)
-            return;
-        _moduleEventPublisher.Publish(new MatchCompletedIntegrationEvent(
-            new MatchId(match.Id),
-            new TournamentId(match.TournamentId),
-            winnerId.Value));
-    }
-
-    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(auth0UserId))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-        var user = await _identityModule.GetUserProfileByAuth0IdAsync(auth0UserId.Trim(), cancellationToken);
-        if (user is null || user.IsDeleted)
-            throw new NotFoundException("Current user profile was not found.");
-        return user.Id.Value;
-    }
+    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken) =>
+        (await _identityModule.GetRequiredCurrentUserAsync(auth0UserId, cancellationToken)).Id.Value;
 
     private async Task<MatchParticipantSide?> FindParticipantSideAsync(
         Match match,
@@ -473,7 +390,7 @@ internal sealed class MatchService : IMatchService
     {
         var side = await FindParticipantSideAsync(match, userId, cancellationToken);
         if (!side.HasValue)
-            throw new UnauthorizedAccessException("Only a participant or team captain can perform this action.");
+            throw new ForbiddenException("match_participant_required", "Only a participant or team captain can perform this action.");
         return side.Value;
     }
 

@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Shared.Exceptions;
@@ -58,9 +59,9 @@ public class TournamentPrizeContactTests
         await using var dbContext = CreateDbContext();
         var contact = CreateUser("contact-admin");
         var tournament = CreateTournament(contact.Id);
-        tournament.FirstPlacePrize = "Original first";
-        tournament.SecondPlacePrize = "Original second";
-        tournament.ThirdPlacePrize = "Original third";
+        tournament.Set(x => x.FirstPlacePrize, "Original first");
+        tournament.Set(x => x.SecondPlacePrize, "Original second");
+        tournament.Set(x => x.ThirdPlacePrize, "Original third");
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         var service = CreateService(dbContext, [contact], [contact.Id]);
@@ -85,7 +86,7 @@ public class TournamentPrizeContactTests
         await using var dbContext = CreateDbContext();
         var existingContact = CreateUser("existing-admin");
         var tournament = CreateTournament(existingContact.Id);
-        tournament.FirstPlacePrize = "Existing prize";
+        tournament.Set(x => x.FirstPlacePrize, "Existing prize");
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
 
@@ -111,7 +112,7 @@ public class TournamentPrizeContactTests
         await using var dbContext = CreateDbContext();
         var contact = CreateUser("old-admin");
         var tournament = CreateTournament(contact.Id);
-        tournament.FirstPlacePrize = "Existing prize";
+        tournament.Set(x => x.FirstPlacePrize, "Existing prize");
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         var service = CreateService(dbContext, [contact], [], new ServiceUnavailableException("Auth0 is unavailable."));
@@ -222,7 +223,7 @@ public class TournamentPrizeContactTests
         contact.SteamId = "private-steam";
         contact.RiotId = "private-riot";
         var tournament = CreateTournament(contact.Id);
-        tournament.FirstPlacePrize = "Prize";
+        tournament.Set(x => x.FirstPlacePrize, "Prize");
 
         var response = tournament.ToGetTournamentDTO([contact]);
         var serialized = System.Text.Json.JsonSerializer.Serialize(response);
@@ -305,7 +306,8 @@ public class TournamentPrizeContactTests
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(users),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<TournamentService>.Instance,
+            TimeProvider.System);
     }
 
     private static TournamentAggregate CreateTournament(Guid? contactAdminUserId = null)
@@ -320,10 +322,8 @@ public class TournamentPrizeContactTests
             PlannedStart,
             30,
             10)
-        {
-            Id = Guid.NewGuid(),
-            AssignedAdminUserId = contactAdminUserId
-        };
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.AssignedAdminUserId, contactAdminUserId);
     }
 
     private static UpdateTournamentDTO CreateUpdate(TournamentAggregate tournament)
@@ -366,13 +366,7 @@ public class TournamentPrizeContactTests
         };
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private sealed class NoopMatchModeratorFactory : IMatchModeratorFactory
     {

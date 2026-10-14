@@ -2,32 +2,24 @@ namespace Mercurius.Modules.Tournament.Application.Services.Helpers;
 
 internal static class SeedingHelper
 {
+    /// <summary>
+    /// Returns the bracket slot for each seed using classic seeding (1 vs P, 2 vs P-1, recursively).
+    /// When there are fewer participants than slots, the empty bottom seeds face the top seeds,
+    /// so every bye pairs a real participant with an empty slot and no first-round match is empty.
+    /// </summary>
     public static int[] GenerateBracketSlotOrder(int slotCount)
     {
-        int[] result = new int[slotCount];
-        int half = slotCount / 2;
-
-        int middleLeft = half - 1;
-        int middleRight = half;
-
-        result[0] = 0;
-        result[1] = slotCount - 1;
-
-        for (int i = 2; i < slotCount; i++)
+        int[] seedAtSlot = [0];
+        while (seedAtSlot.Length < slotCount)
         {
-            if (i % 2 == 0)
-            {
-                result[i] = middleLeft;
-                middleLeft--;
-            }
-            else
-            {
-                result[i] = middleRight;
-                middleRight++;
-            }
+            int size = seedAtSlot.Length * 2;
+            seedAtSlot = seedAtSlot.SelectMany(seed => new[] { seed, size - 1 - seed }).ToArray();
         }
 
-        return result;
+        int[] slotOfSeed = new int[slotCount];
+        for (int slot = 0; slot < slotCount; slot++)
+            slotOfSeed[seedAtSlot[slot]] = slot;
+
+        return slotOfSeed;
     }
 }
-

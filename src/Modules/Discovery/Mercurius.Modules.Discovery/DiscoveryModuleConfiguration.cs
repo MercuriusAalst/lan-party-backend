@@ -23,6 +23,7 @@ public static class DiscoveryModuleConfiguration
         where TDbContext : DbContext
     {
         services.TryAddScoped<IDiscoveryDbContext, DiscoveryDbContextAdapter<TDbContext>>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IDiscoveryModule, DiscoveryModuleFacade>();
         services.AddScoped<SearchDocumentProjector>();
         services.AddScoped<DiscoveryRebuildOwnership>();

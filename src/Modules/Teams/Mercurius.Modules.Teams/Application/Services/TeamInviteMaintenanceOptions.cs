@@ -1,4 +1,4 @@
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class TeamInviteMaintenanceOptions
 {

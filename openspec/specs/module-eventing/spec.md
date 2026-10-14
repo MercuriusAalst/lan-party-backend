@@ -24,7 +24,7 @@ The system SHALL save supported business mutations and their durable outbox mess
 - **THEN** the Teams state change MUST NOT be committed
 
 #### Scenario: Sponsorship change and event commit together
-- **WHEN** Sponsorship creates, updates, or deletes a sponsor or changes a tournament sponsor placement
+- **WHEN** Sponsorship creates, updates, or deletes a sponsor
 - **THEN** the Sponsorship state change and its matching durable outbox message MUST both be
   committed
 
@@ -86,8 +86,14 @@ The system SHALL suppress duplicate consumer handling with a shared Platform inb
 The system SHALL use versioned durable event payloads for Teams and Sponsorship lifecycle facts.
 
 #### Scenario: Teams publishes versioned lifecycle events
-- **WHEN** Teams creates, renames, deletes, adds a member, removes a member, or transfers captain ownership
+- **WHEN** Teams creates, renames, or deletes a team
 - **THEN** the corresponding durable integration event payload MUST include the Team id and current monotonic Team version
+- **AND** only these mutations MUST advance the Team version
+
+#### Scenario: Membership and captain changes publish no durable event
+- **WHEN** Teams adds or removes a member or transfers captain ownership
+- **THEN** it MUST NOT publish a durable integration event
+- **AND** its SignalR realtime messages MUST remain unchanged
 
 #### Scenario: Stale version does not overwrite newer projection
 - **WHEN** a consumer receives a Teams integration event whose version is older than the stored projection version
@@ -130,3 +136,16 @@ The system SHALL describe durable in-process module event dispatch as at-least-o
 #### Scenario: Terminal records remain available
 - **WHEN** an outbox message succeeds or becomes dead-lettered
 - **THEN** the system MUST retain its outbox row and associated inbox markers unless a separate manual operation removes them
+
+### Requirement: Retired module events are acknowledged
+The system SHALL NOT publish module events that have no consumer: MatchCompleted, MatchResultReversed, PlacementAssigned, RosterMemberConfirmed, TeamMemberAdded, TeamMemberRemoved, TeamCaptainTransferred, TournamentStarted, TournamentCompleted, TournamentReset, TournamentRegistrationCreated, TournamentRegistrationCanceled, UserAnonymized and Sponsorship `Contracts.V1.TournamentSponsorPlacementChanged`. The dispatcher SHALL mark already-stored outbox rows of these retired types, including their legacy Competition and `GameSponsorPlacementChanged` aliases, processed without resolving a payload type or invoking handlers.
+
+#### Scenario: Stored retired event is dispatched
+- **WHEN** an eligible outbox row has a retired event type
+- **THEN** the dispatcher MUST record it as processed without invoking any handler
+- **AND** it MUST NOT record a failed delivery attempt or dead-letter the row
+
+#### Scenario: Account deletion publishes only consumed events
+- **WHEN** a user account is anonymized
+- **THEN** the system MUST publish the user deleted and profile changed events
+- **AND** it MUST NOT publish a `UserAnonymizedIntegrationEvent`

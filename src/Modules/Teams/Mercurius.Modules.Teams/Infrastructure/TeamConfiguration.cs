@@ -13,7 +13,7 @@ internal sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
         entity.Property(team => team.NormalizedName).IsRequired().HasMaxLength(100);
         entity.Property(team => team.LogoUrl).HasMaxLength(260);
         entity.Property(team => team.IsDeleted).IsRequired();
-        entity.Property(team => team.Version).IsRequired();
+        entity.Property(team => team.Version).IsRequired().IsConcurrencyToken();
         entity.HasIndex(team => team.NormalizedName)
             .IsUnique()
             .HasFilter("\"IsDeleted\" = false");

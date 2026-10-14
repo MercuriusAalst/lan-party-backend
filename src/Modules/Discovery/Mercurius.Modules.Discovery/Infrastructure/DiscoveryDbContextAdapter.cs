@@ -21,11 +21,9 @@ internal sealed class DiscoveryDbContextAdapter<TDbContext> : IDiscoveryDbContex
     public DbSet<SearchIndexRebuildJob> SearchIndexRebuildJobs => _dbContext.Set<SearchIndexRebuildJob>();
     public DbSet<SearchIndexRebuildDocument> SearchIndexRebuildDocuments => _dbContext.Set<SearchIndexRebuildDocument>();
 
-    public bool IsRelational => _dbContext.Database.IsRelational();
-
     public bool RetriesOnFailure => _dbContext.Database.CreateExecutionStrategy().RetriesOnFailure;
 
-    public DbConnection? Connection => IsRelational ? _dbContext.Database.GetDbConnection() : null;
+    public DbConnection Connection => _dbContext.Database.GetDbConnection();
 
     public DbTransaction? CurrentTransaction => _dbContext.Database.CurrentTransaction?.GetDbTransaction();
 

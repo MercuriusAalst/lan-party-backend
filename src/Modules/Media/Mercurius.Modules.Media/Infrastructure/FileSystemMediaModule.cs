@@ -1,3 +1,4 @@
+using Imageflow.Bindings;
 using Imageflow.Fluent;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Shared.Exceptions;
@@ -8,6 +9,12 @@ namespace Mercurius.Modules.Media.Infrastructure;
 internal sealed class FileSystemMediaModule : IMediaModule
 {
     private const string ImagesPathPrefix = "images/";
+    private const float WebPQuality = 82;
+    private static readonly FrameSizeLimit MaxImageSize = new(8000, 8000, 40);
+    private static readonly SecurityOptions SecurityLimits = new SecurityOptions()
+        .SetMaxDecodeSize(MaxImageSize)
+        .SetMaxFrameSize(MaxImageSize)
+        .SetMaxEncodeSize(MaxImageSize);
 
     private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -51,13 +58,19 @@ internal sealed class FileSystemMediaModule : IMediaModule
             {
                 await new ImageJob()
                     .Decode(upload.Content, true)
-                    .Encode(new StreamDestination(outputStream, true), new WebPLosslessEncoder())
+                    .Encode(new StreamDestination(outputStream, true), new WebPLossyEncoder(WebPQuality))
                     .Finish()
+                    .SetSecurityOptions(SecurityLimits)
                     .InProcessAsync();
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             return new StoredMediaAsset($"{ImagesPathPrefix}{fileName}");
+        }
+        catch (ImageflowException)
+        {
+            DeleteFileQuietly(filePath);
+            throw new ValidationException("The image could not be processed or exceeds the maximum dimensions.");
         }
         catch
         {

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
+using Platform.Extensions;
 
 namespace Mercurius.LAN.API.Hubs;
 
@@ -42,7 +43,7 @@ public sealed class TeamManagementHubInvocationRateLimitFilter : IHubFilter, IDi
 
     private static string GetPartitionKey(HubCallerContext context)
     {
-        var subject = context.User?.FindFirstValue("sub") ?? context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        var subject = context.User?.FindAuth0UserId();
         if (!string.IsNullOrWhiteSpace(subject))
             return $"user:{subject.Trim()}";
 

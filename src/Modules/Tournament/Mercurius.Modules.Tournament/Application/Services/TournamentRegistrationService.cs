@@ -10,13 +10,6 @@ using Mercurius.Modules.Teams.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
-using Platform.Eventing;
-using RosterMemberConfirmedIntegrationEvent =
-    Mercurius.Modules.Tournament.Contracts.RosterMemberConfirmedIntegrationEvent;
-using TournamentRegistrationCanceledIntegrationEvent =
-    Mercurius.Modules.Tournament.Contracts.TournamentRegistrationCanceledIntegrationEvent;
-using TournamentRegistrationCreatedIntegrationEvent =
-    Mercurius.Modules.Tournament.Contracts.TournamentRegistrationCreatedIntegrationEvent;
 using TournamentRosterConfirmationChangedEvent =
     Mercurius.Modules.Tournament.Contracts.TournamentRosterConfirmationChangedEvent;
 
@@ -33,8 +26,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
     private readonly TournamentRegistrationReadModelService _readModelService;
     private readonly TournamentDtoMapper _mapper;
     private readonly ITournamentRealtimePublisher _realtimePublisher;
-    private readonly IModuleEventPublisher _moduleEventPublisher;
     private readonly ILogger<TournamentRegistrationService> _logger;
+    private readonly TimeProvider _timeProvider;
 
     public TournamentRegistrationService(
         ITournamentDbContext dbContext,
@@ -46,8 +39,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         TournamentRegistrationReadModelService readModelService,
         TournamentDtoMapper mapper,
         ITournamentRealtimePublisher realtimePublisher,
-        IModuleEventPublisher moduleEventPublisher,
-        ILogger<TournamentRegistrationService> logger)
+        ILogger<TournamentRegistrationService> logger,
+        TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _identityModule = identityModule;
@@ -58,8 +51,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         _readModelService = readModelService;
         _mapper = mapper;
         _realtimePublisher = realtimePublisher;
-        _moduleEventPublisher = moduleEventPublisher;
         _logger = logger;
+        _timeProvider = timeProvider;
     }
 
     public async Task<EligibilityResponseDTO> CheckIndividualEligibilityAsync(
@@ -132,7 +125,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             throw new ValidationException(string.Join(", ", reasons));
         var userProfile = (await GetActiveUserProfilesByIdAsync([userId], cancellationToken))[userId];
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var registration = new TournamentRegistration
         {
             Id = Guid.NewGuid(),
@@ -147,9 +140,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             UpdatedAtUtc = now
         };
 
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         _dbContext.TournamentRegistrations.Add(registration);
-        PublishRegistrationCreated(registration);
         await _persistenceCoordinator.SaveChangesAsync("User already has pending or active participation for this tournament.", cancellationToken);
         var dto = await _mapper.ToRegistrationDtoAsync(
             await GetRegistrationByIdAsync(registration.Id, cancellationToken),
@@ -180,7 +172,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             throw new NotFoundException("Individual registration not found.");
 
         _dbContext.TournamentRegistrations.Remove(registration);
-        PublishRegistrationCanceled(registration);
         await _persistenceCoordinator.SaveChangesAsync("Tournament registration changed concurrently.", cancellationToken);
         if (transaction is not null)
             await transaction.CommitAsync(cancellationToken);
@@ -226,7 +217,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         if (failures.Count != 0)
             throw new ValidationException(string.Join(", ", failures));
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         var registration = existing ?? new TournamentRegistration
         {
             Id = Guid.NewGuid(),
@@ -247,7 +238,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         if (existing is null)
         {
             _dbContext.TournamentRegistrations.Add(registration);
-            PublishRegistrationCreated(registration);
         }
         else
         {
@@ -328,7 +318,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             registration.UpdatedAtUtc = now;
         }
 
-        tournament.LeaderboardRevision++;
+        tournament.IncrementRevision();
         await _persistenceCoordinator.SaveChangesAsync("One or more roster members already has pending or active participation for this tournament.", cancellationToken);
         var dto = await _mapper.ToRegistrationDtoAsync(
             await GetRegistrationByIdAsync(registration.Id, cancellationToken),
@@ -374,7 +364,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         if (candidateFailures.Count != 0)
             throw new ValidationException(string.Join(", ", candidateFailures));
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         member.Confirm(now);
         if (registration.RosterMembers.Count == registration.Tournament.TeamSize &&
             registration.RosterMembers.All(roster => roster.ConfirmationStatus is RosterMemberConfirmationStatus.AutoConfirmed or RosterMemberConfirmationStatus.Confirmed))
@@ -382,10 +372,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         else
             registration.UpdatedAtUtc = now;
 
-        _moduleEventPublisher.Publish(new RosterMemberConfirmedIntegrationEvent(
-            new TournamentRegistrationId(registration.Id),
-            new UserId(member.UserId),
-            new TeamId(registration.TeamId!.Value)));
         await _persistenceCoordinator.SaveChangesAsync("User already has pending or active participation for this tournament.", cancellationToken);
         var dto = await _mapper.ToRegistrationDtoAsync(
             await GetRegistrationByIdAsync(registration.Id, cancellationToken),
@@ -427,7 +413,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         if (!registration.TeamId.HasValue)
             throw new ValidationException("Team registration is invalid.");
 
-        var now = DateTime.UtcNow;
+        var now = UtcNow();
         registration.Status = TournamentRegistrationStatus.PendingConfirmation;
         registration.UpdatedAtUtc = now;
         _dbContext.TournamentRegistrationRosterMembers.Remove(member);
@@ -458,7 +444,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
 
         var registration = await GetTeamRegistrationForMutationAsync(tournamentId, teamId, cancellationToken);
         DeleteTransientTeamRegistration(registration);
-        PublishRegistrationCanceled(registration);
         await _persistenceCoordinator.SaveChangesAsync("Tournament registration changed concurrently.", cancellationToken);
         if (transaction is not null)
             await transaction.CommitAsync(cancellationToken);
@@ -514,7 +499,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             throw new NotFoundException("Individual registration not found.");
 
         _dbContext.TournamentRegistrations.Remove(registration);
-        PublishRegistrationCanceled(registration);
         await _dbContext.SaveChangesAsync(cancellationToken);
         if (transaction is not null)
             await transaction.CommitAsync(cancellationToken);
@@ -533,7 +517,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             : await GetCurrentUserIdAsync(adminAuth0UserId, cancellationToken);
         var registration = await GetTeamRegistrationForMutationAsync(tournamentId, teamId, cancellationToken);
         DeleteTransientTeamRegistration(registration);
-        PublishRegistrationCanceled(registration);
         await _persistenceCoordinator.SaveChangesAsync("Tournament registration changed concurrently.", cancellationToken);
         if (transaction is not null)
             await transaction.CommitAsync(cancellationToken);
@@ -679,23 +662,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         _dbContext.TournamentRegistrations.Remove(registration);
     }
 
-    private void PublishRegistrationCreated(TournamentRegistration registration)
-    {
-        _moduleEventPublisher.Publish(new TournamentRegistrationCreatedIntegrationEvent(
-            new TournamentRegistrationId(registration.Id),
-            new TournamentId(registration.TournamentId),
-            new UserId(registration.RegisteredByUserId),
-            registration.TeamId.HasValue ? new TeamId(registration.TeamId.Value) : null));
-    }
-
-    private void PublishRegistrationCanceled(TournamentRegistration registration)
-    {
-        _moduleEventPublisher.Publish(new TournamentRegistrationCanceledIntegrationEvent(
-            new TournamentRegistrationId(registration.Id),
-            new TournamentId(registration.TournamentId),
-            registration.TeamId.HasValue ? new TeamId(registration.TeamId.Value) : null));
-    }
-
     private async Task<TournamentRegistration> GetTeamRegistrationForMutationAsync(
         Guid tournamentId,
         Guid teamId,
@@ -749,17 +715,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         return team;
     }
 
-    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(auth0UserId))
-            throw new UnauthorizedAccessException("Authenticated user id is missing.");
-
-        var user = await _identityModule.GetUserProfileByAuth0IdAsync(auth0UserId.Trim(), cancellationToken);
-        if (user is null || user.IsDeleted)
-            throw new NotFoundException("Current user profile was not found.");
-
-        return user.Id.Value;
-    }
+    private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken) =>
+        (await _identityModule.GetRequiredCurrentUserAsync(auth0UserId, cancellationToken)).Id.Value;
 
     private async Task<IReadOnlyDictionary<Guid, UserProfileSummary>> GetActiveUserProfilesByIdAsync(
         IReadOnlyCollection<Guid> userIds,
@@ -783,7 +740,8 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
     private static void EnsureCaptain(TeamRosterSnapshot team, Guid userId)
     {
         if (team.CaptainUserId?.Value != userId)
-            throw new UnauthorizedAccessException("Only the team captain can perform this action.");
+            throw new ForbiddenException("team_captain_required", "Only the team captain can perform this action.");
     }
 
+    private DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 }

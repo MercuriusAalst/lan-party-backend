@@ -1,6 +1,6 @@
 using Mercurius.Modules.Identity.Contracts;
 
-namespace Mercurius.Modules.Teams.DTOs;
+namespace Mercurius.Modules.Teams.Application.DTOs;
 
 internal class TeamPublicUserDTO
 {

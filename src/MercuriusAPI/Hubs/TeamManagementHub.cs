@@ -1,11 +1,10 @@
-using Mercurius.LAN.API.Data;
+using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Teams.Contracts;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
+using Platform.Extensions;
 using Platform.Realtime;
-using System.Security.Claims;
 
 namespace Mercurius.LAN.API.Hubs;
 
@@ -14,16 +13,16 @@ public class TeamManagementHub : Hub
 {
     public const string Route = "/v1/lan/team-events";
 
-    private readonly MercuriusDBContext _dbContext;
+    private readonly IIdentityModule _identityModule;
     private readonly IRealtimeConnectionManager _connectionManager;
     private readonly ITeamRealtimeAuthorizer _teamRealtimeAuthorizer;
 
     public TeamManagementHub(
-        MercuriusDBContext dbContext,
+        IIdentityModule identityModule,
         ITeamRealtimeAuthorizer teamRealtimeAuthorizer,
         IRealtimeConnectionManager connectionManager)
     {
-        _dbContext = dbContext;
+        _identityModule = identityModule;
         _teamRealtimeAuthorizer = teamRealtimeAuthorizer;
         _connectionManager = connectionManager;
     }
@@ -131,14 +130,11 @@ public class TeamManagementHub : Hub
 
     private async Task<Guid?> GetCurrentUserIdAsync(CancellationToken cancellationToken)
     {
-        var auth0UserId = Context.User?.FindFirstValue("sub") ?? Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        var auth0UserId = Context.User?.FindAuth0UserId();
         if (string.IsNullOrWhiteSpace(auth0UserId))
             return null;
 
-        return await _dbContext.Users
-            .AsNoTracking()
-            .Where(user => user.Auth0UserId == auth0UserId.Trim() && !user.IsDeleted)
-            .Select(user => (Guid?)user.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var user = await _identityModule.GetUserProfileByAuth0IdAsync(auth0UserId.Trim(), cancellationToken);
+        return user is { IsDeleted: false } ? user.Id.Value : null;
     }
 }
