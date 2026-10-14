@@ -4,8 +4,8 @@ using Mercurius.Modules.Tournament;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Teams;
-using Mercurius.Modules.Teams.DTOs;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.DTOs;
+using Mercurius.Modules.Teams.Application.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -75,7 +75,7 @@ public class PublicCollectionPagingEndpointTests
     }
 
     [Fact]
-    public async Task TournamentItem_WithMalformedId_ReachesGuidBindingAndReturnsBadRequest()
+    public async Task TournamentItem_WithMalformedId_FailsRouteConstraintAndReturnsNotFound()
     {
         var tournamentQueries = new RecordingTournamentQueries();
         await using var app = CreateApp(tournamentQueries, new RecordingTeamEndpointService());
@@ -84,7 +84,7 @@ public class PublicCollectionPagingEndpointTests
 
         using var response = await client.GetAsync("v1/lan/tournaments/not-a-guid");
 
-        Assert.Equal(StatusCodes.Status400BadRequest, (int)response.StatusCode);
+        Assert.Equal(StatusCodes.Status404NotFound, (int)response.StatusCode);
         Assert.Equal(0, tournamentQueries.CallCount);
     }
 
@@ -228,7 +228,10 @@ public class PublicCollectionPagingEndpointTests
     {
         var addresses = app.Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>()!;
-        return new HttpClient { BaseAddress = new Uri(Assert.Single(addresses.Addresses)) };
+        // Wait for Kestrel's early 413 instead of streaming the oversized body after the default 1s,
+        // which races the server closing the connection on slow CI runners.
+        var handler = new SocketsHttpHandler { Expect100ContinueTimeout = TimeSpan.FromSeconds(30) };
+        return new HttpClient(handler) { BaseAddress = new Uri(Assert.Single(addresses.Addresses)) };
     }
 
     private static MultipartFormDataContent CreateLogoUploadContent(long fileLength)

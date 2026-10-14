@@ -12,9 +12,8 @@ internal interface IDiscoveryDbContext
     DbSet<SearchIndexRebuildJob> SearchIndexRebuildJobs { get; }
     DbSet<SearchIndexRebuildDocument> SearchIndexRebuildDocuments { get; }
 
-    bool IsRelational { get; }
     bool RetriesOnFailure { get; }
-    DbConnection? Connection { get; }
+    DbConnection Connection { get; }
     DbTransaction? CurrentTransaction { get; }
 
     Task OpenConnectionAsync(CancellationToken cancellationToken = default);

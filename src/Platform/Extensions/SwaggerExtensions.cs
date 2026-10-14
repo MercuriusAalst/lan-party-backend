@@ -82,7 +82,8 @@ public static class SwaggerExtensions
     {
         var apiVersionProvider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();
 
-        app.UseSwagger();
+        // Endpoint (not middleware) so the document is generated after authentication, keeping SecurityTrimming user-aware.
+        app.MapSwagger().AllowAnonymous();
         app.UseSwaggerUI(options =>
         {
             foreach (var description in apiVersionProvider.ApiVersionDescriptions)

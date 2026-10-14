@@ -1,7 +1,10 @@
+using Mercurius.TestInfrastructure;
 using System.Security.Claims;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Hubs;
+using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Domain;
+using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Teams.Contracts;
 using Microsoft.AspNetCore.Http.Features;
@@ -114,7 +117,10 @@ public class TeamManagementHubTests
         ITeamRealtimeAuthorizer authorizer,
         User user)
     {
-        return new TeamManagementHub(dbContext, authorizer, manager)
+        return new TeamManagementHub(
+            new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!),
+            authorizer,
+            manager)
         {
             Context = new TestHubCallerContext(
                 "connection",
@@ -132,19 +138,13 @@ public class TeamManagementHubTests
         return services.BuildServiceProvider();
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static User CreateUser() => new()
     {
         Id = Guid.NewGuid(),
         Auth0UserId = $"auth0|{Guid.NewGuid():N}",
-        Username = $"user-{Guid.NewGuid():N}",
+        Username = $"user-{Guid.NewGuid().ToString("N")[..12]}",
         Firstname = "Realtime",
         Lastname = "User",
         Email = "realtime@example.test"

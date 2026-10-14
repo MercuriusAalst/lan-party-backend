@@ -174,7 +174,7 @@ public sealed class FeaturedHomepageTournamentTests
         var service = CreateService(dbContext);
         Assert.Null(await service.ReplaceFeaturedTournamentsAsync(selection));
 
-        tournaments[3].Status = TournamentDomain.TournamentStatus.Canceled;
+        tournaments[3].Cancel();
         await dbContext.SaveChangesAsync();
 
         var response = await service.GetFeaturedTournamentsAsync();
@@ -198,7 +198,7 @@ public sealed class FeaturedHomepageTournamentTests
         var service = CreateService(dbContext);
         Assert.Null(await service.ReplaceFeaturedTournamentsAsync(selection));
         dbContext.Set<TournamentAggregate>().Remove(tournaments[5]);
-        tournaments[4].Status = TournamentDomain.TournamentStatus.Canceled;
+        tournaments[4].Cancel();
         await dbContext.SaveChangesAsync();
 
         var response = await service.GetFeaturedTournamentsAsync();
@@ -206,9 +206,9 @@ public sealed class FeaturedHomepageTournamentTests
         Assert.Equal(new[] { tournaments[3].Id, tournaments[2].Id, tournaments[0].Id, tournaments[1].Id }, response.TournamentIds);
         Assert.Equal(4, response.TournamentIds.Distinct().Count());
 
-        tournaments[3].Status = TournamentDomain.TournamentStatus.Canceled;
-        tournaments[0].Status = TournamentDomain.TournamentStatus.Canceled;
-        tournaments[1].Status = TournamentDomain.TournamentStatus.Canceled;
+        tournaments[3].Cancel();
+        tournaments[0].Cancel();
+        tournaments[1].Cancel();
         await dbContext.SaveChangesAsync();
         response = await service.GetFeaturedTournamentsAsync();
 
@@ -477,13 +477,17 @@ public sealed class FeaturedHomepageTournamentTests
 
     private static TournamentAggregate CreateTournament(int order) => CreateTournament(order, TournamentDomain.TournamentStatus.Scheduled);
 
-    private static TournamentAggregate CreateTournament(int order, TournamentDomain.TournamentStatus status) =>
-        new($"Featured {order}", TournamentDomain.BracketType.SingleElimination, TournamentDomain.GameFormat.BestOf1,
-            TournamentDomain.GameFormat.BestOf3, TournamentDomain.ParticipationMode.Individual, null,
-            PlannedStart.AddDays(order), 30, 10)
-        {
-            Id = Guid.NewGuid(),
-            ImageUrl = $"images/{order}.webp",
-            Status = status
-        };
+    private static TournamentAggregate CreateTournament(int order, TournamentDomain.TournamentStatus status)
+    {
+        var tournament = new TournamentAggregate($"Featured {order}", TournamentDomain.BracketType.SingleElimination,
+            TournamentDomain.GameFormat.BestOf1, TournamentDomain.GameFormat.BestOf3,
+            TournamentDomain.ParticipationMode.Individual, null, PlannedStart.AddDays(order), 30, 10);
+        tournament.SetImageUrl($"images/{order}.webp");
+        if (status == TournamentDomain.TournamentStatus.Canceled)
+            tournament.Cancel();
+        else if (status != TournamentDomain.TournamentStatus.Scheduled)
+            throw new ArgumentOutOfRangeException(nameof(status), status, "Only Scheduled and Canceled are supported by this helper.");
+
+        return tournament;
+    }
 }

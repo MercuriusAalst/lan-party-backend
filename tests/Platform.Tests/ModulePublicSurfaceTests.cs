@@ -24,8 +24,7 @@ public sealed class ModulePublicSurfaceTests
             ["Identity"] =
             [
                 "Mercurius.Modules.Identity.IdentityModuleConfiguration",
-                "Mercurius.Modules.Identity.Domain.User",
-                "Mercurius.Modules.Identity.Infrastructure.IIdentityDbContext"
+                "Mercurius.Modules.Identity.Domain.User"
             ],
             ["Media"] = ["Mercurius.Modules.Media.MediaModuleConfiguration"],
             ["Sponsorship"] = ["Mercurius.Modules.Sponsorship.SponsorshipModuleConfiguration"],

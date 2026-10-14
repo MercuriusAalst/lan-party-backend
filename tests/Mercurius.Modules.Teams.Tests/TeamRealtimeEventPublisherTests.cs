@@ -1,5 +1,5 @@
 using Mercurius.Modules.Teams.Contracts;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Platform.Realtime;
 
 namespace Mercurius.Modules.Teams.Tests;

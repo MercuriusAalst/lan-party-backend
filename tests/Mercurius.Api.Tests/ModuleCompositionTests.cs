@@ -17,7 +17,7 @@ public sealed class ModuleCompositionTests
         var configuration = new ConfigurationBuilder().Build();
         var services = new ServiceCollection();
         services.AddDbContext<MercuriusDBContext>(options =>
-            options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+            options.UseNpgsql());
         services.AddIdentityModule<MercuriusDBContext>(configuration);
         services.AddTeamsModule<MercuriusDBContext>(configuration);
         services.AddTournamentModule<MercuriusDBContext>(configuration);

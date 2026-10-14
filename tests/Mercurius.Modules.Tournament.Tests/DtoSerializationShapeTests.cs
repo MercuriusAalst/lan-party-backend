@@ -1,13 +1,14 @@
+using Mercurius.TestInfrastructure;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Mercurius.Modules.Identity.DTOs;
+using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Tournament.Application.DTOs.Registrations;
 using Mercurius.Modules.Discovery.Contracts;
 using Mercurius.Modules.Sponsorship.Application.DTOs;
 using Mercurius.Modules.Sponsorship.Domain;
-using Mercurius.Modules.Teams.DTOs;
+using Mercurius.Modules.Teams.Application.DTOs;
 
 namespace Mercurius.Modules.Tournament.Tests;
 
@@ -123,20 +124,18 @@ public class DtoSerializationShapeTests
     {
         var user = CreateUser(5);
         var tournament = CreateTournament(ParticipationMode.Individual);
-        var match = new Match
-        {
-            Id = Guid.NewGuid(),
-            Tournament = tournament,
-            TournamentId = tournament.Id,
-            BracketType = BracketType.SingleElimination,
-            Format = GameFormat.BestOf3,
-            ParticipationMode = ParticipationMode.Individual,
-            RoundNumber = 1,
-            MatchNumber = 1,
-            UserParticipant1Id = user.Id,
-            Participant1Score = 1,
-            Participant2Score = 0
-        };
+        var match = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.BracketType, BracketType.SingleElimination)
+            .Set(x => x.Format, GameFormat.BestOf3)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.RoundNumber, 1)
+            .Set(x => x.MatchNumber, 1)
+            .Set(x => x.UserParticipant1Id, user.Id)
+            .Set(x => x.Participant1Score, 1)
+            .Set(x => x.Participant2Score, 0);
         var sponsor = new Sponsor
         {
             Id = 7,
@@ -202,8 +201,8 @@ public class DtoSerializationShapeTests
         var json = Serialize(GetSponsorDTO.From(sponsor));
         Assert.Contains("\"sponsorTier\":\"Gold\"", json, StringComparison.Ordinal);
 
-        match.Participant1ReportedScore1 = 2;
-        match.Participant1ReportedScore2 = 1;
+        match.Set(x => x.Participant1ReportedScore1, 2);
+        match.Set(x => x.Participant1ReportedScore2, 1);
         var publicMatchJson = Serialize(match.ToGetMatchDTO());
         Assert.DoesNotContain("reportedScore", publicMatchJson, StringComparison.OrdinalIgnoreCase);
         Assert.Null(match.ToGetMatchDTO().Participant1ReportedScore1);
@@ -213,13 +212,11 @@ public class DtoSerializationShapeTests
     [Fact]
     public void MatchActionState_HidesPrivateReportsFromNonParticipants()
     {
-        var match = new Match
-        {
-            Participant1ReportedScore1 = 2,
-            Participant1ReportedScore2 = 0,
-            Participant2ReportedScore1 = 1,
-            Participant2ReportedScore2 = 2
-        };
+        var match = new Match()
+            .Set(x => x.Participant1ReportedScore1, 2)
+            .Set(x => x.Participant1ReportedScore2, 0)
+            .Set(x => x.Participant2ReportedScore1, 1)
+            .Set(x => x.Participant2ReportedScore2, 2);
 
         var publicState = TournamentDtoMapper.ToGetMatchActionStateDto(
             match,
@@ -252,7 +249,7 @@ public class DtoSerializationShapeTests
         Assert.Equal(1, participantTwoState.Participant2ReportedScore1);
         Assert.Equal(2, participantTwoState.Participant1ReportedScore1);
 
-        match.LifecycleState = Mercurius.Modules.Tournament.Domain.MatchLifecycleState.AdminResolutionRequired;
+        match.Set(x => x.LifecycleState, Mercurius.Modules.Tournament.Domain.MatchLifecycleState.AdminResolutionRequired);
         var unresolvedState = TournamentDtoMapper.ToGetMatchActionStateDto(
             match,
             Mercurius.Modules.Tournament.Contracts.MatchParticipantSide.Participant1,
@@ -289,14 +286,15 @@ public class DtoSerializationShapeTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             participationMode,
-            teamSize)
-        {
-            Id = Guid.NewGuid(),
-            ImageUrl = "/images/contract-cup.png",
-            PlannedStartTime = new DateTime(2026, 7, 1, 18, 0, 0, DateTimeKind.Utc),
-            AverageGameDurationMinutes = 30,
-            RoundBreakDurationMinutes = 10
-        };
+            teamSize,
+            DateTime.UtcNow,
+            30,
+            10)
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.ImageUrl, "/images/contract-cup.png")
+            .Set(x => x.PlannedStartTime, new DateTime(2026, 7, 1, 18, 0, 0, DateTimeKind.Utc))
+            .Set(x => x.AverageGameDurationMinutes, 30)
+            .Set(x => x.RoundBreakDurationMinutes, 10);
     }
 
     private static TournamentRegistration CreateTeamRegistration(

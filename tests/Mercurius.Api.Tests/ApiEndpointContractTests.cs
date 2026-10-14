@@ -8,10 +8,10 @@ using Mercurius.Modules.Discovery;
 using Mercurius.Modules.Discovery.Contracts;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Platform.Extensions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -28,8 +28,8 @@ public class ApiEndpointContractTests
     [Theory]
     [InlineData("GET", "v{version:apiVersion}/lan/tournaments/", "Tournaments")]
     [InlineData("GET", "v{version:apiVersion}/lan/featured-tournaments/", "Featured Tournaments")]
-    [InlineData("GET", "v{version:apiVersion}/lan/tournaments/{tournamentId}", "Tournaments")]
-    [InlineData("GET", "v{version:apiVersion}/lan/matches/{id}", "Matches")]
+    [InlineData("GET", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}", "Tournaments")]
+    [InlineData("GET", "v{version:apiVersion}/lan/matches/{id:guid}", "Matches")]
     [InlineData("GET", "v{version:apiVersion}/lan/sponsors/", "Sponsors")]
     [InlineData("GET", "v{version:apiVersion}/lan/sponsors/{id}", "Sponsors")]
     [InlineData("GET", "v{version:apiVersion}/lan/teams/", "Teams")]
@@ -54,6 +54,13 @@ public class ApiEndpointContractTests
         Assert.DoesNotContain(endpoint.Metadata, metadata => metadata is IAllowAnonymous);
         Assert.Contains(endpoint.Metadata.OfType<AuthorizeAttribute>(), metadata => metadata.Roles == "admin");
         Assert.DoesNotContain(GetEndpoints(), candidate => candidate.RoutePattern.RawText == "v{version:apiVersion}/lan/public/users/{username}/match-summaries");
+    }
+
+    [Fact]
+    public void FormerMatchUpdateRoute_IsAbsent()
+    {
+        Assert.DoesNotContain(GetEndpoints("PUT"), endpoint => endpoint.RoutePattern.RawText == "v{version:apiVersion}/lan/matches/{id:guid}");
+        GetEndpoint("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve");
     }
 
     [Fact]
@@ -117,7 +124,7 @@ public class ApiEndpointContractTests
     [InlineData("PUT", "v{version:apiVersion}/lan/teams/{id}/logo")]
     [InlineData("DELETE", "v{version:apiVersion}/lan/teams/{id}/logo")]
     [InlineData("GET", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/me")]
-    [InlineData("GET", "v{version:apiVersion}/lan/matches/{id}/me")]
+    [InlineData("GET", "v{version:apiVersion}/lan/matches/{id:guid}/me")]
     [InlineData("GET", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/individual/eligibility")]
     [InlineData("GET", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/teams/{teamId:guid}/eligibility")]
     [InlineData("POST", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/teams/{teamId:guid}/roster/eligibility")]
@@ -126,9 +133,9 @@ public class ApiEndpointContractTests
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/teams/{teamId:guid}/roster")]
     [InlineData("DELETE", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/teams/{teamId:guid}")]
     [InlineData("PATCH", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/registrations/roster-members/{rosterMemberId:guid}")]
-    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/confirm-ended")]
-    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/forfeit")]
-    [InlineData("PUT", "v{version:apiVersion}/lan/matches/{id}/score")]
+    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/confirm-ended")]
+    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/forfeit")]
+    [InlineData("PUT", "v{version:apiVersion}/lan/matches/{id:guid}/score")]
     public void AuthenticatedUserRoutes_RequireAuthorization(string method, string routePattern)
     {
         var endpoint = GetEndpoint(method, routePattern);
@@ -138,15 +145,14 @@ public class ApiEndpointContractTests
 
     [Theory]
     [InlineData("POST", "v{version:apiVersion}/lan/tournaments/")]
-    [InlineData("PATCH", "v{version:apiVersion}/lan/tournaments/{tournamentId}")]
-    [InlineData("DELETE", "v{version:apiVersion}/lan/tournaments/{tournamentId}")]
-    [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId}/sponsors")]
-    [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId}/lifecycle-state")]
+    [InlineData("PATCH", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}")]
+    [InlineData("DELETE", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}")]
+    [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/sponsors")]
+    [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/lifecycle-state")]
     [InlineData("PUT", "v{version:apiVersion}/lan/featured-tournaments/")]
-    [InlineData("PUT", "v{version:apiVersion}/lan/matches/{id}")]
-    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/resolve")]
-    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/reverse")]
-    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id}/admin/forfeit")]
+    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve")]
+    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/reverse")]
+    [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/admin/forfeit")]
     [InlineData("POST", "v{version:apiVersion}/lan/sponsors/")]
     [InlineData("PATCH", "v{version:apiVersion}/lan/sponsors/{id}")]
     [InlineData("DELETE", "v{version:apiVersion}/lan/sponsors/{id}")]
@@ -303,4 +309,3 @@ public class ApiEndpointContractTests
         services.AddScoped<IDiscoveryModule>(_ => throw new NotSupportedException());
     }
 }
-

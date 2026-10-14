@@ -34,6 +34,17 @@ maximum size.
   configured maximum size
 - **THEN** Media accepts the upload for encoding and storage
 
+### Requirement: Media stores bounded lossy WebP images
+Media MUST encode stored uploads as lossy WebP at quality 82 and MUST limit decode, frame and encode sizes to 8000x8000 pixels and 40 megapixels. An upload that exceeds these limits or cannot be decoded MUST be rejected with a validation error (HTTP 400) and MUST NOT leave a stored file.
+
+#### Scenario: Valid image is uploaded
+- **WHEN** a supported image within the size limits is uploaded
+- **THEN** Media stores it as lossy WebP and returns its `images/<generated>.webp` reference
+
+#### Scenario: Oversized or undecodable image is uploaded
+- **WHEN** an upload exceeds the dimension limits or is not a decodable image
+- **THEN** the API returns HTTP 400 and no image file remains in storage
+
 ### Requirement: Media returns and deletes safe image references
 Media MUST return the existing `images/<generated>.webp` relative-reference format and MUST NOT
 derive a storage key from untrusted client file names. Image deletion MUST be idempotent, MUST
@@ -50,11 +61,17 @@ default/static, traversal, non-image, and arbitrary references as non-owned no-o
 
 ### Requirement: HTTP image serving remains host infrastructure
 The API host MUST retain Imageflow middleware configuration for `/images` using the configured
-storage location. The Media module MUST NOT own HTTP middleware registration.
+storage location, served anonymously ahead of the security pipeline with the same 8000x8000 /
+40 megapixel decode, frame and encode limits as Media. The Media module MUST NOT own HTTP
+middleware registration.
 
 #### Scenario: Stored image is requested over HTTP
 - **WHEN** a client requests an image under `/images`
 - **THEN** the host Imageflow middleware serves it using the configured image storage location
+
+#### Scenario: Anonymous image request
+- **WHEN** an anonymous client requests an image under `/images`
+- **THEN** the host serves it without requiring authentication
 
 ### Requirement: Host bounds multipart image uploads before binding
 The API host MUST derive its multipart image request limits from `FileStorage:MaxFileSizeInMB`. It MUST configure Kestrel to reject a total request body larger than the configured file size plus a 65,536-byte multipart envelope, and it MUST configure the multipart section-body limit to the configured file size. The Kestrel total-body limit applies to every request body received by the host, not only multipart requests; the section limit MUST NOT be treated as a total request limit. The host MUST apply the total request limit before Tournament, Sponsor, and Team upload handlers or their services execute, returning HTTP 413 for an over-limit request. Media MUST retain its existing file-size validation after binding.

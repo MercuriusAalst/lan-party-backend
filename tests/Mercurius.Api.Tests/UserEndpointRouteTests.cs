@@ -1,7 +1,7 @@
 using Mercurius.LAN.API.Configuration;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Identity.Services;
+using Mercurius.Modules.Identity.Application.Services;
 using Platform;
 using Platform.Extensions;
 using Microsoft.AspNetCore.Authorization;
@@ -96,8 +96,8 @@ public class UserEndpointRouteTests
     {
         var endpoint = GetUserRouteEndpoint("GET", "v{version:apiVersion}/lan/users/");
 
-        var rateLimitMetadata = Assert.Single(endpoint.Metadata.Where(metadata =>
-            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null));
+        var rateLimitMetadata = Assert.Single(endpoint.Metadata, metadata =>
+            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null);
         var policyName = rateLimitMetadata.GetType().GetProperty("PolicyName")!.GetValue(rateLimitMetadata);
 
         Assert.Equal(RateLimitPolicies.AuthenticatedSearch, policyName);
@@ -110,8 +110,8 @@ public class UserEndpointRouteTests
 
         Assert.DoesNotContain(endpoint.Metadata, metadata => metadata is IAllowAnonymous);
         Assert.Contains(endpoint.Metadata.OfType<AuthorizeAttribute>(), metadata => metadata.Roles == "admin");
-        var rateLimitMetadata = Assert.Single(endpoint.Metadata.Where(metadata =>
-            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null));
+        var rateLimitMetadata = Assert.Single(endpoint.Metadata, metadata =>
+            metadata.GetType().GetProperty("PolicyName")?.GetValue(metadata) is not null);
         Assert.Equal(
             RateLimitPolicies.AnonymousSearch,
             rateLimitMetadata.GetType().GetProperty("PolicyName")!.GetValue(rateLimitMetadata));

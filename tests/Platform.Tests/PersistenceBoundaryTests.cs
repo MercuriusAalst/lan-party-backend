@@ -83,12 +83,12 @@ public class PersistenceBoundaryTests
         var registration = GetEntityType(dbContext, "Mercurius.Modules.Tournament.Domain.TournamentRegistration");
         var placementUser = GetEntityType(dbContext, "Mercurius.Modules.Tournament.Domain.PlacementUser");
 
-        AssertForeignKey(teamMember, typeof(User), "UserId", DeleteBehavior.Cascade);
+        AssertForeignKey(teamMember, typeof(User), "UserId", DeleteBehavior.Restrict);
         AssertForeignKey(teamMember, typeof(Team), "TeamId", DeleteBehavior.Cascade);
-        AssertForeignKey(teamInvite, typeof(User), "UserId", DeleteBehavior.Cascade);
+        AssertForeignKey(teamInvite, typeof(User), "UserId", DeleteBehavior.Restrict);
         AssertForeignKey(registration, typeof(User), "RegisteredByUserId", DeleteBehavior.Restrict);
         AssertForeignKey(registration, typeof(Team), "TeamId", DeleteBehavior.Restrict);
-        AssertForeignKey(placementUser, typeof(User), "UserId", DeleteBehavior.Cascade);
+        AssertForeignKey(placementUser, typeof(User), "UserId", DeleteBehavior.Restrict);
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class PersistenceBoundaryTests
 
         var memberUserForeignKey = GetForeignKey(teamMember, typeof(User), "UserId");
         Assert.Equal("FK_team_members_users_UserId", memberUserForeignKey.GetConstraintName());
-        Assert.Equal(DeleteBehavior.Cascade, memberUserForeignKey.DeleteBehavior);
+        Assert.Equal(DeleteBehavior.Restrict, memberUserForeignKey.DeleteBehavior);
         Assert.Null(memberUserForeignKey.DependentToPrincipal);
         Assert.Null(memberUserForeignKey.PrincipalToDependent);
 
@@ -131,7 +131,7 @@ public class PersistenceBoundaryTests
 
         var inviteUserForeignKey = GetForeignKey(teamInvite, typeof(User), "UserId");
         Assert.Equal("FK_team_invites_users_UserId", inviteUserForeignKey.GetConstraintName());
-        Assert.Equal(DeleteBehavior.Cascade, inviteUserForeignKey.DeleteBehavior);
+        Assert.Equal(DeleteBehavior.Restrict, inviteUserForeignKey.DeleteBehavior);
         Assert.Null(inviteUserForeignKey.DependentToPrincipal);
         Assert.Null(inviteUserForeignKey.PrincipalToDependent);
     }

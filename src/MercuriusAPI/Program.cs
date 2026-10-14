@@ -10,6 +10,7 @@ using Mercurius.Modules.Sponsorship;
 using Mercurius.Modules.Teams;
 using Platform;
 using Platform.Extensions;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -21,11 +22,22 @@ public class Program
 {
     private const string CorsPolicyName = "AllowMercuriusAalst";
 
-    public static void Main(string[] args)
+    public static void Main(string[] args) => CreateApp(args).Run();
+
+    public static WebApplication CreateApp(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
-        builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddEnvironmentVariables("Mercurius.LAN.API_");
+        builder.Configuration.AddEnvironmentVariables("Mercurius.LAN.API_");
+        if (!builder.Environment.IsDevelopment())
+        {
+            foreach (var requiredKey in new[] { "FileStorage:Location", "Auth0:Audience" })
+            {
+                if (string.IsNullOrWhiteSpace(builder.Configuration[requiredKey]))
+                    throw new InvalidOperationException($"{requiredKey} must be configured outside Development.");
+            }
+        }
+
+        builder.AddObservability();
         var mediaUploadRequestLimits = MediaUploadRequestLimits.FromConfiguration(builder.Configuration);
 
         builder.WebHost.ConfigureKestrel(options =>
@@ -38,6 +50,7 @@ public class Program
         builder.Services.AddModuleEventing<MercuriusDBContext>();
         builder.Services.AddMediaModule(builder.Configuration);
 
+        builder.Services.AddHealthChecks().AddDbContextCheck<MercuriusDBContext>();
         builder.Services.AddValidation();
         builder.Services.AddVersionedSwagger(
             builder.Environment,
@@ -69,14 +82,16 @@ public class Program
         });
         builder.Services.AddWildcardSubdomainCors(
             CorsPolicyName,
-            allowedOrigin: "https://*.mercurius-aalst.be");
+            builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? []);
 
         var app = builder.Build();
         app.UseTransportSecurity(app.Environment);
         app.UseCors(CorsPolicyName);
-        app.ApplyMigrations<MercuriusDBContext>();
+        if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
+            app.ApplyMigrations<MercuriusDBContext>();
         app.UseApiExceptionHandling();
-        app.UseSecurityPipeline();
+        // Public media, static assets and the Swagger UI are served ahead of the security pipeline:
+        // anonymous (the fallback policy only covers what runs after UseAuthorization) and not rate limited.
         app.UseImageflowWithCaching(
             requestPath: "/images",
             storagePath: app.Configuration["FileStorage:Location"],
@@ -87,6 +102,7 @@ public class Program
             RequestPath = "/staticfiles"
         });
         app.UseVersionedSwaggerUI(customJavascriptPath: "/staticfiles/swagger-custom.js");
+        app.UseSecurityPipeline();
 
         app.MapTournamentModule();
         app.MapIdentityModule();
@@ -97,7 +113,13 @@ public class Program
                 TeamManagementHub.Route,
                 options => options.CloseOnAuthenticationExpiration = true)
             .RequireAuthorization();
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false })
+            .AllowAnonymous()
+            .DisableRateLimiting();
+        app.MapHealthChecks("/health/ready")
+            .AllowAnonymous()
+            .DisableRateLimiting();
 
-        app.Run();
+        return app;
     }
 }

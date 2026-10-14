@@ -23,19 +23,21 @@ public class MatchServiceReversalGuardTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.InProgress,
-            AssignedAdminUserId = assignedAdmin.Id
-        };
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.InProgress)
+            .Set(x => x.AssignedAdminUserId, assignedAdmin.Id);
         var assignedMatch = CreateDisputedMatch(tournament);
         var unassignedMatch = CreateDisputedMatch(tournament);
         tournament.Matches.Add(assignedMatch);
         tournament.Matches.Add(unassignedMatch);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -106,42 +108,40 @@ public class MatchServiceReversalGuardTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.InProgress,
-            AssignedAdminUserId = assignedAdmin.Id
-        };
-        var readyMatch = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            UserParticipant1Id = Guid.NewGuid(),
-            UserParticipant2Id = Guid.NewGuid()
-        };
-        var completedMatch = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            LifecycleState = MatchLifecycleState.Completed,
-            UserParticipant1Id = Guid.NewGuid(),
-            UserParticipant2Id = Guid.NewGuid(),
-            UserWinnerId = Guid.NewGuid(),
-            UserLoserId = Guid.NewGuid(),
-            Participant1Score = 1,
-            Participant2Score = 0
-        };
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.InProgress)
+            .Set(x => x.AssignedAdminUserId, assignedAdmin.Id);
+        var readyMatch = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.UserParticipant1Id, Guid.NewGuid())
+            .Set(x => x.UserParticipant2Id, Guid.NewGuid());
+        var completedMatch = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.LifecycleState, MatchLifecycleState.Completed)
+            .Set(x => x.UserParticipant1Id, Guid.NewGuid())
+            .Set(x => x.UserParticipant2Id, Guid.NewGuid())
+            .Set(x => x.UserWinnerId, Guid.NewGuid())
+            .Set(x => x.UserLoserId, Guid.NewGuid())
+            .Set(x => x.Participant1Score, 1)
+            .Set(x => x.Participant2Score, 0);
         tournament.Matches.Add(readyMatch);
         tournament.Matches.Add(completedMatch);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -184,44 +184,42 @@ public class MatchServiceReversalGuardTests
             BracketType.SingleElimination,
             GameFormat.BestOf1,
             GameFormat.BestOf1,
-            ParticipationMode.Individual)
-        {
-            Id = Guid.NewGuid(),
-            Status = TournamentStatus.InProgress,
-            AssignedAdminUserId = admin.Id
-        };
-        var source = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            LifecycleState = MatchLifecycleState.Completed,
-            UserParticipant1Id = Guid.NewGuid(),
-            UserParticipant2Id = Guid.NewGuid(),
-            UserWinnerId = Guid.NewGuid(),
-            UserLoserId = Guid.NewGuid(),
-            Participant1Score = 1,
-            Participant2Score = 0
-        };
-        var downstream = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            EstimatedStartTime = nowUtc,
-            StartTime = nowUtc
-        };
-        source.WinnerNextMatchId = downstream.Id;
-        source.WinnerNextMatch = downstream;
+            ParticipationMode.Individual,
+            null,
+            DateTime.UtcNow,
+            30,
+            10)
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.Status, TournamentStatus.InProgress)
+            .Set(x => x.AssignedAdminUserId, admin.Id);
+        var source = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.LifecycleState, MatchLifecycleState.Completed)
+            .Set(x => x.UserParticipant1Id, Guid.NewGuid())
+            .Set(x => x.UserParticipant2Id, Guid.NewGuid())
+            .Set(x => x.UserWinnerId, Guid.NewGuid())
+            .Set(x => x.UserLoserId, Guid.NewGuid())
+            .Set(x => x.Participant1Score, 1)
+            .Set(x => x.Participant2Score, 0);
+        var downstream = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.EstimatedStartTime, nowUtc)
+            .Set(x => x.StartTime, nowUtc);
+        source.Set(x => x.WinnerNextMatchId, downstream.Id);
+        source.Set(x => x.WinnerNextMatch, downstream);
         tournament.Matches.Add(source);
         tournament.Matches.Add(downstream);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -249,23 +247,21 @@ public class MatchServiceReversalGuardTests
         var winner = Guid.NewGuid();
         var loser = Guid.NewGuid();
         var source = CreateCompletedMatch(tournament, winner, loser);
-        var downstream = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            UserParticipant1Id = winner,
-            UserParticipant2Id = Guid.NewGuid()
-        };
-        source.WinnerNextMatchId = downstream.Id;
-        source.WinnerNextMatch = downstream;
+        var downstream = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.UserParticipant1Id, winner)
+            .Set(x => x.UserParticipant2Id, Guid.NewGuid());
+        source.Set(x => x.WinnerNextMatchId, downstream.Id);
+        source.Set(x => x.WinnerNextMatch, downstream);
         tournament.Matches.Add(source);
         tournament.Matches.Add(downstream);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -296,24 +292,22 @@ public class MatchServiceReversalGuardTests
         var loser = Guid.NewGuid();
         var unrelated = Guid.NewGuid();
         var source = CreateCompletedMatch(tournament, winner, loser);
-        var downstream = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            UserParticipant1Id = winner,
-            Participant1SourceMatchId = source.Id,
-            UserParticipant2Id = unrelated
-        };
-        source.WinnerNextMatchId = downstream.Id;
-        source.WinnerNextMatch = downstream;
+        var downstream = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.UserParticipant1Id, winner)
+            .Set(x => x.Participant1SourceMatchId, source.Id)
+            .Set(x => x.UserParticipant2Id, unrelated);
+        source.Set(x => x.WinnerNextMatchId, downstream.Id);
+        source.Set(x => x.WinnerNextMatch, downstream);
         tournament.Matches.Add(source);
         tournament.Matches.Add(downstream);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -340,54 +334,48 @@ public class MatchServiceReversalGuardTests
         var unrelatedLoserSlot = Guid.NewGuid();
         var unrelatedNestedSlot = Guid.NewGuid();
         var source = CreateCompletedMatch(tournament, winner, loser);
-        var winnerTarget = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            BracketType = BracketType.DoubleElimination,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            UserParticipant1Id = winner,
-            Participant1SourceMatchId = source.Id,
-            UserParticipant2Id = unrelatedWinnerSlot
-        };
-        var loserTarget = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            BracketType = BracketType.DoubleElimination,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            UserParticipant1Id = unrelatedLoserSlot,
-            UserParticipant2Id = loser,
-            Participant2SourceMatchId = source.Id,
-            IsLowerBracketMatch = true
-        };
-        var nestedTarget = new Match
-        {
-            Id = Guid.NewGuid(),
-            TournamentId = tournament.Id,
-            Tournament = tournament,
-            BracketType = BracketType.DoubleElimination,
-            Format = GameFormat.BestOf1,
-            ParticipationMode = ParticipationMode.Individual,
-            UserParticipant1Id = unrelatedNestedSlot
-        };
-        source.WinnerNextMatchId = winnerTarget.Id;
-        source.WinnerNextMatch = winnerTarget;
-        source.LoserNextMatchId = loserTarget.Id;
-        source.LoserNextMatch = loserTarget;
-        winnerTarget.WinnerNextMatchId = nestedTarget.Id;
-        winnerTarget.WinnerNextMatch = nestedTarget;
+        var winnerTarget = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.BracketType, BracketType.DoubleElimination)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.UserParticipant1Id, winner)
+            .Set(x => x.Participant1SourceMatchId, source.Id)
+            .Set(x => x.UserParticipant2Id, unrelatedWinnerSlot);
+        var loserTarget = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.BracketType, BracketType.DoubleElimination)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.UserParticipant1Id, unrelatedLoserSlot)
+            .Set(x => x.UserParticipant2Id, loser)
+            .Set(x => x.Participant2SourceMatchId, source.Id)
+            .Set(x => x.IsLowerBracketMatch, true);
+        var nestedTarget = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.BracketType, BracketType.DoubleElimination)
+            .Set(x => x.Format, GameFormat.BestOf1)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.UserParticipant1Id, unrelatedNestedSlot);
+        source.Set(x => x.WinnerNextMatchId, winnerTarget.Id);
+        source.Set(x => x.WinnerNextMatch, winnerTarget);
+        source.Set(x => x.LoserNextMatchId, loserTarget.Id);
+        source.Set(x => x.LoserNextMatch, loserTarget);
+        winnerTarget.Set(x => x.WinnerNextMatchId, nestedTarget.Id);
+        winnerTarget.Set(x => x.WinnerNextMatch, nestedTarget);
         tournament.Matches.Add(source);
         tournament.Matches.Add(winnerTarget);
         tournament.Matches.Add(loserTarget);
         tournament.Matches.Add(nestedTarget);
 
         await using var dbContext = CreateDbContext();
-        dbContext.AddReferencedUsers(tournament);
+        dbContext.AddReferencedParticipants(tournament);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
@@ -421,50 +409,48 @@ public class MatchServiceReversalGuardTests
             new FixedTimeProvider(new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc)),
             new MatchBracketImpactAnalyzer(new TournamentDbContextAdapter<MercuriusDBContext>(dbContext)));
 
-    private static TournamentAggregate CreateTournament(string name, BracketType bracketType, User admin) => new(
+    private static TournamentAggregate CreateTournament(string name, BracketType bracketType, User admin) => new TournamentAggregate(
         name,
         bracketType,
         GameFormat.BestOf1,
         GameFormat.BestOf1,
-        ParticipationMode.Individual)
-    {
-        Id = Guid.NewGuid(),
-        Status = TournamentStatus.InProgress,
-        AssignedAdminUserId = admin.Id
-    };
+        ParticipationMode.Individual,
+        null,
+        DateTime.UtcNow,
+        30,
+        10)
+        .Set(x => x.Id, Guid.NewGuid())
+        .Set(x => x.Status, TournamentStatus.InProgress)
+        .Set(x => x.AssignedAdminUserId, admin.Id);
 
-    private static Match CreateCompletedMatch(TournamentAggregate tournament, Guid winner, Guid loser) => new()
-    {
-        Id = Guid.NewGuid(),
-        TournamentId = tournament.Id,
-        Tournament = tournament,
-        BracketType = tournament.BracketType,
-        Format = GameFormat.BestOf1,
-        ParticipationMode = ParticipationMode.Individual,
-        LifecycleState = MatchLifecycleState.Completed,
-        UserParticipant1Id = winner,
-        UserParticipant2Id = loser,
-        UserWinnerId = winner,
-        UserLoserId = loser,
-        Participant1Score = 1,
-        Participant2Score = 0
-    };
+    private static Match CreateCompletedMatch(TournamentAggregate tournament, Guid winner, Guid loser) => new Match()
+        .Set(x => x.Id, Guid.NewGuid())
+        .Set(x => x.TournamentId, tournament.Id)
+        .Set(x => x.Tournament, tournament)
+        .Set(x => x.BracketType, tournament.BracketType)
+        .Set(x => x.Format, GameFormat.BestOf1)
+        .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+        .Set(x => x.LifecycleState, MatchLifecycleState.Completed)
+        .Set(x => x.UserParticipant1Id, winner)
+        .Set(x => x.UserParticipant2Id, loser)
+        .Set(x => x.UserWinnerId, winner)
+        .Set(x => x.UserLoserId, loser)
+        .Set(x => x.Participant1Score, 1)
+        .Set(x => x.Participant2Score, 0);
 
-    private static Match CreateDisputedMatch(TournamentAggregate tournament) => new()
-    {
-        Id = Guid.NewGuid(),
-        TournamentId = tournament.Id,
-        Tournament = tournament,
-        Format = GameFormat.BestOf1,
-        ParticipationMode = ParticipationMode.Individual,
-        LifecycleState = MatchLifecycleState.AdminResolutionRequired,
-        UserParticipant1Id = Guid.NewGuid(),
-        UserParticipant2Id = Guid.NewGuid(),
-        Participant1ReportedScore1 = 1,
-        Participant1ReportedScore2 = 0,
-        Participant2ReportedScore1 = 0,
-        Participant2ReportedScore2 = 1
-    };
+    private static Match CreateDisputedMatch(TournamentAggregate tournament) => new Match()
+        .Set(x => x.Id, Guid.NewGuid())
+        .Set(x => x.TournamentId, tournament.Id)
+        .Set(x => x.Tournament, tournament)
+        .Set(x => x.Format, GameFormat.BestOf1)
+        .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+        .Set(x => x.LifecycleState, MatchLifecycleState.AdminResolutionRequired)
+        .Set(x => x.UserParticipant1Id, Guid.NewGuid())
+        .Set(x => x.UserParticipant2Id, Guid.NewGuid())
+        .Set(x => x.Participant1ReportedScore1, 1)
+        .Set(x => x.Participant1ReportedScore2, 0)
+        .Set(x => x.Participant2ReportedScore1, 0)
+        .Set(x => x.Participant2ReportedScore2, 1);
 
     private static User CreateUser(string name) => new()
     {

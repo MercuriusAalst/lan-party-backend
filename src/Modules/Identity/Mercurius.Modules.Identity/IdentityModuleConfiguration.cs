@@ -5,8 +5,8 @@ using Mercurius.Modules.Identity.Endpoints;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Identity.Options;
-using Mercurius.Modules.Identity.Services;
-using Mercurius.Modules.Identity.Services.Auth0;
+using Mercurius.Modules.Identity.Application.Services;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -17,9 +17,10 @@ public static class IdentityModuleConfiguration
     public static IServiceCollection AddIdentityModule<TDbContext>(
         this IServiceCollection services,
         IConfiguration configuration)
-        where TDbContext : class, IIdentityDbContext
+        where TDbContext : DbContext
     {
-        services.TryAddScoped<IIdentityDbContext>(provider => provider.GetRequiredService<TDbContext>());
+        services.TryAddScoped<IIdentityDbContext, IdentityDbContextAdapter<TDbContext>>();
+        services.TryAddSingleton(TimeProvider.System);
         services.Configure<Auth0ManagementOptions>(configuration.GetSection(Auth0ManagementOptions.SectionName));
         services.AddTransient<IIdentityModule, IdentityModuleFacade>();
         services.AddHttpClient<IAuth0ManagementService, Auth0ManagementService>();

@@ -1,8 +1,8 @@
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Infrastructure;
-using Mercurius.Modules.Identity.Services;
-using Mercurius.Modules.Identity.Services.Auth0;
+using Mercurius.Modules.Identity.Application.Services;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;

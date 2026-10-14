@@ -3,7 +3,7 @@ using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
-namespace Mercurius.Modules.Teams.Services;
+namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class EfTeamRealtimeAuthorizer : ITeamRealtimeAuthorizer
 {

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the resource-oriented v1 route for protected tournament lifecycle transitions.
+Define the resource-oriented v1 route for protected tournament lifecycle transitions and the id constraints on match and tournament routes.
 
 ## Requirements
 
@@ -28,3 +28,14 @@ The API MUST expose an admin-authorized `PUT /v1/lan/tournaments/{tournamentId}/
 #### Scenario: Tournament lifecycle action routes are absent
 - **WHEN** a client calls the former `POST /v1/lan/games/{gameId}/start`, `POST /v1/lan/games/{gameId}/reset`, `POST /v1/lan/games/{gameId}/complete`, or `POST /v1/lan/games/{gameId}/cancel` routes
 - **THEN** the API MUST NOT expose those routes or aliases
+
+### Requirement: Guid-constrained match and tournament id routes
+Match routes under `/v1/lan/matches/{id}` and tournament routes under `/v1/lan/tournaments/{tournamentId}` MUST constrain their id segment to a guid. A malformed id MUST NOT match the route and MUST return 404.
+
+#### Scenario: Malformed match id
+- **WHEN** a client requests `GET /v1/lan/matches/not-a-guid`
+- **THEN** the API MUST return 404
+
+#### Scenario: Malformed tournament id
+- **WHEN** a client requests `GET /v1/lan/tournaments/not-a-guid`
+- **THEN** the API MUST return 404

@@ -1,10 +1,11 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Teams;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
-using Mercurius.Modules.Teams.Services;
+using Mercurius.Modules.Teams.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +19,7 @@ public class TeamsModuleFacadeTests
     {
         var services = new ServiceCollection();
         services.AddDbContext<MercuriusDBContext>(options =>
-            options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+            options.UseNpgsql());
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -300,14 +301,7 @@ public class TeamsModuleFacadeTests
             new StubTeamTournamentReadService(tournaments ?? Array.Empty<PublicTeamTournamentSummary>()));
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static User CreateUser(string? username, string? firstname, string? lastname)
     {
@@ -319,7 +313,7 @@ public class TeamsModuleFacadeTests
             NormalizedUsername = username?.ToLowerInvariant(),
             Firstname = firstname,
             Lastname = lastname,
-            Email = "user@example.com"
+            Email = $"{Guid.NewGuid():N}@example.com"
         };
     }
 

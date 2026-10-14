@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Shared.Exceptions;
 using DataAnnotations = System.ComponentModel.DataAnnotations;
@@ -10,10 +11,7 @@ public class MatchTests
     public void TryAssignByeWin_AssignsUserWinner_WhenOnlyParticipant2Exists()
     {
         var user2 = CreateUser(2);
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Individual
-        };
+        var match = new Match().Set(x => x.ParticipationMode, ParticipationMode.Individual);
         match.SetIndividualParticipants(null, user2.Id);
         match.SetParticipantBYEs(true, false);
 
@@ -27,10 +25,7 @@ public class MatchTests
     public void TryAssignByeWin_AssignsTeamWinner_WhenOnlyParticipant1Exists()
     {
         var team1 = CreateTeam(1);
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Team
-        };
+        var match = new Match().Set(x => x.ParticipationMode, ParticipationMode.Team);
         match.SetTeamParticipants(team1.Id, null);
         match.SetParticipantBYEs(false, true);
 
@@ -44,14 +39,12 @@ public class MatchTests
     public void UpdateParticipantsNextMatch_PropagatesUserWinnerToUpperBracketSlot1_WhenMatchNumberIsOdd()
     {
         var winner = CreateUser(10);
-        var nextMatch = new Match { ParticipationMode = ParticipationMode.Individual };
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Individual,
-            MatchNumber = 1,
-            UserWinnerId = winner.Id,
-            WinnerNextMatch = nextMatch
-        };
+        var nextMatch = new Match().Set(x => x.ParticipationMode, ParticipationMode.Individual);
+        var match = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.MatchNumber, 1)
+            .Set(x => x.UserWinnerId, winner.Id)
+            .Set(x => x.WinnerNextMatch, nextMatch);
 
         match.UpdateParticipantsNextMatch();
 
@@ -62,17 +55,13 @@ public class MatchTests
     public void UpdateParticipantsNextMatch_PropagatesTeamWinnerToLowerBracketSlot2_WhenAvailable()
     {
         var winner = CreateTeam(3);
-        var nextMatch = new Match
-        {
-            ParticipationMode = ParticipationMode.Team,
-            IsLowerBracketMatch = true
-        };
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Team,
-            TeamWinnerId = winner.Id,
-            WinnerNextMatch = nextMatch
-        };
+        var nextMatch = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Team)
+            .Set(x => x.IsLowerBracketMatch, true);
+        var match = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Team)
+            .Set(x => x.TeamWinnerId, winner.Id)
+            .Set(x => x.WinnerNextMatch, nextMatch);
 
         match.UpdateParticipantsNextMatch();
 
@@ -84,16 +73,14 @@ public class MatchTests
     {
         var winner = CreateUser(1);
         var loser = CreateUser(2);
-        var nextMatch = new Match { ParticipationMode = ParticipationMode.Individual };
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Individual,
-            RoundNumber = 2,
-            MatchNumber = 2,
-            UserWinnerId = winner.Id,
-            UserLoserId = loser.Id,
-            LoserNextMatch = nextMatch
-        };
+        var nextMatch = new Match().Set(x => x.ParticipationMode, ParticipationMode.Individual);
+        var match = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.RoundNumber, 2)
+            .Set(x => x.MatchNumber, 2)
+            .Set(x => x.UserWinnerId, winner.Id)
+            .Set(x => x.UserLoserId, loser.Id)
+            .Set(x => x.LoserNextMatch, nextMatch);
 
         match.UpdateParticipantsNextMatch();
 
@@ -108,7 +95,7 @@ public class MatchTests
     {
         var match = CreateIndividualMatch((GameFormat)format);
 
-        match.SetScoresAndWinner(participant1Score, participant2Score);
+        match.SetScoresAndWinner(participant1Score, participant2Score, DateTime.UtcNow);
 
         Assert.Equal(match.UserParticipant1Id, match.UserWinnerId);
         Assert.Equal(match.UserParticipant2Id, match.UserLoserId);
@@ -119,7 +106,7 @@ public class MatchTests
     {
         var match = CreateTeamMatch(GameFormat.BestOf3);
 
-        match.SetScoresAndWinner(1, 2);
+        match.SetScoresAndWinner(1, 2, DateTime.UtcNow);
 
         Assert.Equal(match.TeamParticipant2Id, match.TeamWinnerId);
         Assert.Equal(match.TeamParticipant1Id, match.TeamLoserId);
@@ -132,7 +119,7 @@ public class MatchTests
     {
         var match = CreateIndividualMatch();
 
-        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(participant1Score, participant2Score));
+        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(participant1Score, participant2Score, DateTime.UtcNow));
 
         Assert.Equal("Scores cannot be negative", exception.Message);
     }
@@ -142,7 +129,7 @@ public class MatchTests
     {
         var match = CreateIndividualMatch(GameFormat.BestOf1);
 
-        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(1, 1));
+        var exception = Assert.Throws<ValidationException>(() => match.SetScoresAndWinner(1, 1, DateTime.UtcNow));
 
         Assert.Equal("Scores cannot be equal in Bo1 format", exception.Message);
     }
@@ -150,10 +137,7 @@ public class MatchTests
     [Fact]
     public void SetParticipants_ThrowsValidationException_WhenUsersAreAssignedToTeamMatch()
     {
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Team
-        };
+        var match = new Match().Set(x => x.ParticipationMode, ParticipationMode.Team);
 
         var exception = Assert.Throws<ValidationException>(() => match.SetIndividualParticipants(CreateUser(1).Id, CreateUser(2).Id));
 
@@ -284,11 +268,9 @@ public class MatchTests
     [Fact]
     public void Forfeit_RejectsIncompleteAndByeMatches()
     {
-        var incompleteMatch = new Match
-        {
-            ParticipationMode = ParticipationMode.Individual,
-            Format = GameFormat.BestOf1
-        };
+        var incompleteMatch = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.Format, GameFormat.BestOf1);
         incompleteMatch.SetIndividualParticipants(CreateUser(1).Id, null);
 
         var incompleteException = Assert.Throws<ValidationException>(() => incompleteMatch.Forfeit(1, DateTime.UtcNow));
@@ -306,20 +288,16 @@ public class MatchTests
     {
         var winner = CreateTeam(1);
         var unrelated = CreateTeam(2);
-        var target = new Match
-        {
-            ParticipationMode = ParticipationMode.Team,
-            MatchNumber = 1
-        };
+        var target = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Team)
+            .Set(x => x.MatchNumber, 1);
         target.SetTeamParticipant2(unrelated.Id);
-        var source = new Match
-        {
-            Id = Guid.NewGuid(),
-            ParticipationMode = ParticipationMode.Team,
-            MatchNumber = 1,
-            TeamWinnerId = winner.Id,
-            WinnerNextMatch = target
-        };
+        var source = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.ParticipationMode, ParticipationMode.Team)
+            .Set(x => x.MatchNumber, 1)
+            .Set(x => x.TeamWinnerId, winner.Id)
+            .Set(x => x.WinnerNextMatch, target);
 
         source.UpdateParticipantsNextMatch();
         target.ClearParticipantFromSource(source.Id);
@@ -348,9 +326,9 @@ public class MatchTests
     }
 
     [Fact]
-    public void UpdateMatchDTO_FailsValidation_WhenScoresAreNegative()
+    public void ResolveMatchDTO_FailsValidation_WhenScoresAreNegative()
     {
-        var dto = new UpdateMatchDTO
+        var dto = new ResolveMatchDTO
         {
             Participant1Score = -1,
             Participant2Score = -2
@@ -368,11 +346,9 @@ public class MatchTests
     {
         var user1 = CreateUser(1);
         var user2 = CreateUser(2);
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Individual,
-            Format = format
-        };
+        var match = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.Format, format);
         match.SetIndividualParticipants(user1.Id, user2.Id);
         return match;
     }
@@ -381,11 +357,9 @@ public class MatchTests
     {
         var team1 = CreateTeam(1);
         var team2 = CreateTeam(2);
-        var match = new Match
-        {
-            ParticipationMode = ParticipationMode.Team,
-            Format = format
-        };
+        var match = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Team)
+            .Set(x => x.Format, format);
         match.SetTeamParticipants(team1.Id, team2.Id);
         return match;
     }

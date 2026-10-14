@@ -1,3 +1,4 @@
+using Mercurius.TestInfrastructure;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -11,10 +12,10 @@ public sealed class TournamentTeamReadServiceTests
     {
         await using var dbContext = CreateDbContext();
         var tournament = CreateTournament();
+        tournament.TournamentRegistrations.Add(CreateTeamRegistration(tournament, "images/Team-Logo.webp"));
+        tournament.TournamentRegistrations.Add(CreateTeamRegistration(tournament, "images/another-logo.webp"));
         dbContext.Set<TournamentAggregate>().Add(tournament);
-        dbContext.Set<TournamentRegistration>().AddRange(
-            CreateTeamRegistration(tournament, "images/Team-Logo.webp"),
-            CreateTeamRegistration(tournament, "images/another-logo.webp"));
+        dbContext.AddReferencedParticipants(tournament);
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
         var service = new TournamentTeamReadService(
@@ -43,14 +44,7 @@ public sealed class TournamentTeamReadServiceTests
             service.IsTeamLogoReferencedAsync("images/team-logo.webp", cancellationSource.Token));
     }
 
-    private static MercuriusDBContext CreateDbContext()
-    {
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        return new MercuriusDBContext(options);
-    }
+    private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
     private static TournamentAggregate CreateTournament()
     {
@@ -60,10 +54,10 @@ public sealed class TournamentTeamReadServiceTests
             GameFormat.BestOf1,
             GameFormat.BestOf3,
             ParticipationMode.Team,
-            5)
-        {
-            Id = Guid.NewGuid()
-        };
+            5,
+            DateTime.UtcNow,
+            30,
+            10).Set(x => x.Id, Guid.NewGuid());
     }
 
     private static TournamentRegistration CreateTeamRegistration(TournamentAggregate tournament, string logoUrl)

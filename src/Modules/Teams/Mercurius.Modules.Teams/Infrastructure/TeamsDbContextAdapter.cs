@@ -1,3 +1,4 @@
+using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.Modules.Teams.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -23,8 +24,15 @@ internal sealed class TeamsDbContextAdapter<TDbContext> : ITeamsDbContext
         return _dbContext.Set<TEntity>();
     }
 
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        return _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            return await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictException("team_changed", "The team changed. Refresh and try again.");
+        }
     }
 }

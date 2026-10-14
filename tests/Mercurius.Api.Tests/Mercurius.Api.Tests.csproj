@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <Compile Include="..\TestInfrastructure\PostgresTestDatabase.cs" Link="TestInfrastructure\PostgresTestDatabase.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\MercuriusAPI\Mercurius.LAN.API.csproj" />
   </ItemGroup>
 </Project>
