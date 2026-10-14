@@ -13,7 +13,6 @@ using Mercurius.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
-using Platform.Eventing.Persistence;
 
 namespace Mercurius.Modules.Tournament.Tests;
 
@@ -351,7 +350,6 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
         public DbSet<TournamentRegistrationRosterMember> TournamentRegistrationRosterMembers => inner.Set<TournamentRegistrationRosterMember>();
         public DbSet<LeaderboardParticipant> LeaderboardParticipants => inner.Set<LeaderboardParticipant>();
         public DbSet<LeaderboardAttempt> LeaderboardAttempts => inner.Set<LeaderboardAttempt>();
-        public DbSet<OutboxMessage> OutboxMessages => inner.Set<OutboxMessage>();
         public DatabaseFacade Database => inner.Database;
 
         public void ContinueSave() => _continueSave.TrySetResult();
@@ -369,4 +367,3 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
         public IMatchModerator GetMatchModerator(BracketType bracketType) => throw new NotSupportedException();
     }
 }
-

@@ -81,5 +81,3 @@ public static class TournamentModuleConfiguration
         return endpoints;
     }
 }
-
-
