@@ -15,6 +15,7 @@ internal sealed class TournamentDbContextAdapter<TDbContext> : ITournamentDbCont
     }
 
     public DbSet<TournamentAggregate> Tournaments => _dbContext.Set<TournamentAggregate>();
+    public DbSet<FeaturedHomepageTournamentSelection> FeaturedHomepageTournamentSelections => _dbContext.Set<FeaturedHomepageTournamentSelection>();
     public DbSet<Match> Matches => _dbContext.Set<Match>();
     public DbSet<Placement> Placements => _dbContext.Set<Placement>();
     public DbSet<MatchResolutionNotification> MatchResolutionNotifications =>

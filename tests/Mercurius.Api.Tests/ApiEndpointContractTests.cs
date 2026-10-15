@@ -27,6 +27,7 @@ public class ApiEndpointContractTests
 {
     [Theory]
     [InlineData("GET", "v{version:apiVersion}/lan/tournaments/", "Tournaments")]
+    [InlineData("GET", "v{version:apiVersion}/lan/featured-tournaments/", "Featured Tournaments")]
     [InlineData("GET", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}", "Tournaments")]
     [InlineData("GET", "v{version:apiVersion}/lan/matches/{id:guid}", "Matches")]
     [InlineData("GET", "v{version:apiVersion}/lan/sponsors/", "Sponsors")]
@@ -147,6 +148,7 @@ public class ApiEndpointContractTests
     [InlineData("DELETE", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}")]
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/sponsors")]
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/lifecycle-state")]
+    [InlineData("PUT", "v{version:apiVersion}/lan/featured-tournaments/")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/reverse")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/admin/forfeit")]
