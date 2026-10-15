@@ -5,9 +5,7 @@
 Define the privacy-safe match lifecycle projection, participant confirmations, score consensus,
 forfeits, administrative resolution and reversal, targeted access, and transactional authorized
 transitions.
-
 ## Requirements
-
 ### Requirement: Match lifecycle projection
 
 The API MUST expose a privacy-safe lifecycle state, ended-confirmation flags, server-provided deadlines, and only the score reports permitted by the caller's relationship to the match. The projection MUST retain participant and bracket fields already returned by the match endpoint and MUST NOT expose moderation subjects or private notes. The anonymous projection MUST redact score report values. The authenticated action projection MAY expose the requesting participant's own report and MUST expose both reports to an eligible participant or team captain, the assigned tournament admin, or the global admin fallback when no assignment exists. Assignment MUST NOT be required for an authenticated global admin to perform an otherwise eligible administrative action.
@@ -68,25 +66,16 @@ Ordinary public and authenticated action reads MUST query only the requested mat
 - **WHEN** an anonymous caller requests one match from a tournament with many other matches
 - **THEN** the API MUST return the requested match without loading sibling matches
 
-### Requirement: Participant end confirmation
-
-An authenticated individual participant or team captain MUST be able to confirm that their side has ended the match. The API MUST reject users who are not a participant or captain, reject repeated/expired confirmations, and MUST allow score submission only after both sides have confirmed.
-
-#### Scenario: Both sides confirm
-
-- **WHEN** each eligible side confirms ended
-- **THEN** the lifecycle MUST enter AwaitingScore
-- **AND** the API MUST allow score reports from either eligible side
-
-#### Scenario: Unauthorized confirmation
-
-- **WHEN** a signed-in user who does not own either side confirms ended
-- **THEN** the API MUST reject the command
-- **AND** the match MUST remain unchanged
-
 ### Requirement: Score consensus and correction
 
-The API MUST accept non-negative, match-format-valid score reports only after both ended confirmations. The first report MUST start a five-minute server deadline for the other side. A matching report MUST complete the result and advance the bracket transactionally. A differing report MUST enter a correction window of five minutes; if the window expires without agreement, the lifecycle MUST enter AdminResolutionRequired.
+The API MUST accept non-negative, match-format-valid score reports from an eligible side of a match that is awaiting ended confirmation, awaiting a score, or reversed. Submitting a score MUST record that side's ended confirmation and MUST NOT require either side to confirm the match ended first. The first report MUST start a five-minute server deadline for the other side. A matching report MUST complete the result and advance the bracket transactionally. A differing report MUST enter a correction window of five minutes; if the window expires without agreement, the lifecycle MUST enter AdminResolutionRequired.
+
+#### Scenario: First report records the ending and starts the window
+
+- **WHEN** an eligible side submits a valid score before the match has both ended confirmations
+- **THEN** the API MUST record that side's ended confirmation together with the report
+- **AND** the lifecycle MUST enter ScoreConfirmation with the five-minute server deadline
+- **AND** the opponent MUST NOT have to confirm the match ended first
 
 #### Scenario: Matching reports complete
 

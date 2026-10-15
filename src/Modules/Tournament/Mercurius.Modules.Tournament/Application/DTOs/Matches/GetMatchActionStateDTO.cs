@@ -6,7 +6,6 @@ internal sealed class GetMatchActionStateDTO
 {
     public GetMatchDTO Match { get; set; } = null!;
     public MatchParticipantSide? AuthorizedParticipant { get; set; }
-    public bool CanConfirmEnded { get; set; }
     public bool CanSubmitScore { get; set; }
     public bool CanForfeit { get; set; }
     public bool CanResolve { get; set; }

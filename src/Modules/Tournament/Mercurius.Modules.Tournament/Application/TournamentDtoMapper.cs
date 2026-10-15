@@ -307,7 +307,6 @@ internal sealed class TournamentDtoMapper
         Match match,
         Contracts.MatchParticipantSide? authorizedParticipant,
         bool canViewPrivateReports = false,
-        bool canConfirmEnded = false,
         bool canSubmitScore = false,
         bool canForfeit = false,
         bool canResolve = false,
@@ -321,7 +320,6 @@ internal sealed class TournamentDtoMapper
         {
             Match = ToGetMatchDto(match),
             AuthorizedParticipant = authorizedParticipant,
-            CanConfirmEnded = canConfirmEnded,
             CanSubmitScore = canSubmitScore,
             CanForfeit = canForfeit,
             CanResolve = canResolve,
