@@ -2,8 +2,9 @@
 
 Local development uses one committed Postgres compose file, `compose.yaml` at the repository root.
 
-- The image is pinned to `postgres:17`, the same major version as production, CI and the Testcontainers tests.
+- The image is pinned to `postgres:18`, the major version production runs (the CloudNativePG default image, 18.6). CI and the Testcontainers tests still use Postgres 17 for now.
 - The compose project is named `mercurius`, so every clone and every extra working tree resolves to the same project, container (`mercurius-postgres`) and volume (`mercurius_postgres_data`), whatever the folder is called.
+- The volume is mounted at `/var/lib/postgresql`, the Postgres 18 recommended layout, so the data lives in `18/docker` inside the volume. Mounting a volume at the pre-18 path `/var/lib/postgresql/data` is exactly what made Postgres 18 refuse to start.
 - Visual Studio no longer generates its own untagged `postgres` container from a Service Dependency, so opening a new clone or working tree does not start or recreate a database.
 
 ## Start the database
@@ -32,27 +33,21 @@ dotnet user-secrets set "ConnectionStrings:MercuriusDB" "Host=localhost;Port=543
 
 ## Migrating from the old Visual Studio container
 
-Earlier clones used a Visual Studio generated container `vs-postgresql-1` with volume `vs_postgresql_data`, running an untagged (now Postgres 18) image. Postgres 17 cannot read that data directory, and both containers want port 5432, so:
+Earlier clones used a Visual Studio generated container `vs-postgresql-1` with volume `vs_postgresql_data`. That volume is already Postgres 18 with the data directory at its root, so no dump or restore is needed: copy it into the new volume at file level.
 
-1. Optional, keep the data: dump it with Postgres 18 while the old container is still running.
-
-   ```sh
-   docker exec vs-postgresql-1 pg_dumpall -U postgres > old-dump.sql
-   ```
-
-   If the old container is stopped or crash looping, start a throwaway Postgres 18 against the old volume instead. The volume is mounted at the Postgres 18 data directory (`/var/lib/postgresql/18/docker`) because the old volume holds the data directory at its root; mounted anywhere else, Postgres would initialise a fresh empty cluster and the dump would be empty. Wait until the server accepts connections before dumping, since crash recovery on that volume can take minutes:
+1. Stop the old container so it shuts down cleanly: `docker stop vs-postgresql-1`. If it is crash looping, skip this; the copy still works because Postgres runs crash recovery on first start.
+2. Remove the old containers: `docker rm -f vs-postgresql-1 vs-adminer-1`.
+3. Create the new volume: `docker volume create mercurius_postgres_data`.
+4. Copy the data into the `18/docker` directory of the new volume:
 
    ```sh
-   docker run --rm -d --name old-pg -e POSTGRES_HOST_AUTH_METHOD=trust -v vs_postgresql_data:/var/lib/postgresql/18/docker postgres:18
-   until docker exec old-pg pg_isready -U postgres; do sleep 2; done
-   docker exec old-pg pg_dumpall -U postgres > old-dump.sql
-   docker stop old-pg
+   docker run --rm -v vs_postgresql_data:/from:ro -v mercurius_postgres_data:/to alpine sh -c "mkdir -p /to/18/docker && cp -a /from/. /to/18/docker/"
    ```
 
-2. Stop and remove the old container: `docker rm -f vs-postgresql-1` (and the old Adminer, `docker rm -f vs-adminer-1`, if it exists).
-3. Start the new database: `docker compose up -d`.
-4. Optional, restore the dump: `docker exec -i mercurius-postgres psql -U postgres < old-dump.sql`. Alternatively skip the dump and let the application migrations recreate the schema.
-5. Once you are sure you no longer need the old data: `docker volume rm vs_postgresql_data`.
+5. Start the new database: `docker compose up -d`.
+6. Once it works, optionally remove the old volume: `docker volume rm vs_postgresql_data`.
+
+If the old volume is from Postgres 17 or older (its `PG_VERSION` file holds 17 or lower), the file copy does not work. Dump with that major version's image and restore into the new container instead (`pg_dumpall`, then `docker exec -i mercurius-postgres psql -U postgres < dump.sql`), or skip the data and let the application migrations recreate the schema.
 
 ## Reset the database
 
