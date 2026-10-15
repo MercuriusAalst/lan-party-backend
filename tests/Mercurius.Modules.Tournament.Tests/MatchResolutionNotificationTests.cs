@@ -6,6 +6,7 @@ using Mercurius.Modules.Tournament.Contracts;
 using Mercurius.Modules.Tournament.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Platform.Eventing;
+using ContractResolutionReason = Mercurius.Modules.Tournament.Contracts.MatchResolutionReason;
 using DomainRecipientKind = Mercurius.Modules.Tournament.Domain.MatchResolutionNotificationRecipientKind;
 
 namespace Mercurius.Modules.Tournament.Tests;
@@ -78,6 +79,31 @@ public class MatchResolutionNotificationTests
         Assert.Equal(
             DomainRecipientKind.GlobalAdmin,
             notification.RecipientKind);
+    }
+
+    [Fact]
+    public void Event_DeserializesPayloadsWithoutReasonAsDisputed()
+    {
+        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        var matchId = Guid.NewGuid();
+        var tournamentId = Guid.NewGuid();
+
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<MatchResolutionRequiredIntegrationEvent>(
+            $$"""{"matchId":{"value":"{{matchId}}"},"tournamentId":{"value":"{{tournamentId}}"},"assignedAdminUserId":null}""",
+            options);
+        var current = new MatchResolutionRequiredIntegrationEvent(
+            new MatchId(matchId),
+            new TournamentId(tournamentId),
+            null,
+            ContractResolutionReason.MissingOpponentReport);
+        var roundTripped = System.Text.Json.JsonSerializer.Deserialize<MatchResolutionRequiredIntegrationEvent>(
+            System.Text.Json.JsonSerializer.Serialize(current, options),
+            options);
+
+        Assert.NotNull(legacy);
+        Assert.Equal(ContractResolutionReason.Disputed, legacy.Reason);
+        Assert.Equal(matchId, legacy.MatchId.Value);
+        Assert.Equal(current, roundTripped);
     }
 
     private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();

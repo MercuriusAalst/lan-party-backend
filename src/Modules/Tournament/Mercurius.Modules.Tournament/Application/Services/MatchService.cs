@@ -321,7 +321,8 @@ internal sealed class MatchService : IMatchService
             _moduleEventPublisher.Publish(new MatchResolutionRequiredIntegrationEvent(
                 new MatchId(match.Id),
                 new TournamentId(match.TournamentId),
-                tournament.AssignedAdminUserId));
+                tournament.AssignedAdminUserId,
+                (Contracts.MatchResolutionReason)(match.GetResolutionReason() ?? MatchResolutionReason.Disputed)));
         }
     }
 
