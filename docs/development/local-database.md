@@ -50,7 +50,7 @@ Earlier clones used a Visual Studio generated container `vs-postgresql-1` with v
 4. Start the new database: `docker compose up -d`.
 5. Once it works, optionally remove the old volume: `docker volume rm vs_postgresql_data`.
 
-If the copy refuses, either `mercurius_postgres_data` already holds a cluster from an earlier `docker compose up`, or the old volume is missing or not Postgres 18. Back the destination volume up first if you want to keep it (`docker run --rm -v mercurius_postgres_data:/data -v "$PWD":/backup alpine tar czf /backup/mercurius_postgres_data.tgz -C /data .`), then empty it and rerun the copy. Nothing here deletes a volume for you.
+If the copy refuses, either `mercurius_postgres_data` already holds a cluster from an earlier `docker compose up`, or the old volume is missing or not Postgres 18. Back up any destination data you need before deliberately removing the destination volume; the reset below removes it, and nothing here deletes a volume for you.
 
 If the old volume is from Postgres 17 or older (its `PG_VERSION` file holds 17 or lower), the file copy does not work. Dump with that major version's image and restore into the new container instead (`pg_dumpall`, then `docker exec -i mercurius-postgres psql -U postgres < dump.sql`), or skip the data and let the application migrations recreate the schema.
 
