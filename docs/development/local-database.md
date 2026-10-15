@@ -40,10 +40,11 @@ Earlier clones used a Visual Studio generated container `vs-postgresql-1` with v
    docker exec vs-postgresql-1 pg_dumpall -U postgres > old-dump.sql
    ```
 
-   If the old container is stopped or crash looping, start a throwaway Postgres 18 against the old volume instead:
+   If the old container is stopped or crash looping, start a throwaway Postgres 18 against the old volume instead. The volume is mounted at the Postgres 18 data directory (`/var/lib/postgresql/18/docker`) because the old volume holds the data directory at its root; mounted anywhere else, Postgres would initialise a fresh empty cluster and the dump would be empty. Wait until the server accepts connections before dumping, since crash recovery on that volume can take minutes:
 
    ```sh
-   docker run --rm -d --name old-pg -e POSTGRES_HOST_AUTH_METHOD=trust -v vs_postgresql_data:/var/lib/postgresql postgres:18
+   docker run --rm -d --name old-pg -e POSTGRES_HOST_AUTH_METHOD=trust -v vs_postgresql_data:/var/lib/postgresql/18/docker postgres:18
+   until docker exec old-pg pg_isready -U postgres; do sleep 2; done
    docker exec old-pg pg_dumpall -U postgres > old-dump.sql
    docker stop old-pg
    ```
