@@ -184,11 +184,12 @@ public class TournamentScheduleTests
     {
         await using var dbContext = CreateDbContext();
         var mediaModule = new RecordingMediaModule();
+        var assignedAdminId = Guid.NewGuid();
         var service = new TournamentService(
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
             new FixedMatchModeratorFactory(new FixedScheduleMatchModerator()),
             mediaModule,
-            TournamentTestSupport.CreateIdentityModule(),
+            TournamentTestSupport.CreateIdentityModule(adminUserIds: [assignedAdminId]),
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             TournamentTestSupport.CreateModuleEventPublisher(),
@@ -212,7 +213,8 @@ public class TournamentScheduleTests
             Image = image,
             PlannedStartTime = PlannedStart,
             AverageGameDurationMinutes = 10,
-            RoundBreakDurationMinutes = 5
+            RoundBreakDurationMinutes = 5,
+            AssignedAdminUserId = assignedAdminId.ToString()
         }, cancellationSource.Token);
 
         Assert.Equal(cancellationSource.Token, mediaModule.ReceivedCancellationToken);

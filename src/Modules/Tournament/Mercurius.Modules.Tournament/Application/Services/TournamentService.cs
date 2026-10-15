@@ -64,7 +64,7 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         var firstPlacePrize = NormalizePrize(createTournamentDTO.FirstPlacePrize, nameof(createTournamentDTO.FirstPlacePrize));
         var secondPlacePrize = NormalizePrize(createTournamentDTO.SecondPlacePrize, nameof(createTournamentDTO.SecondPlacePrize));
         var thirdPlacePrize = NormalizePrize(createTournamentDTO.ThirdPlacePrize, nameof(createTournamentDTO.ThirdPlacePrize));
-        var assignedAdminUserId = ParseOptionalAdminId(createTournamentDTO.AssignedAdminUserId);
+        var assignedAdminUserId = ParseRequiredAdminId(createTournamentDTO.AssignedAdminUserId);
         await ValidateAssignedAdminAsync(assignedAdminUserId, cancellationToken);
 
         var tournament = new TournamentAggregate(
@@ -156,9 +156,11 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         if (tournament.Name != tournamentDTO.Name && await TournamentNameExistsAsync(tournamentDTO.Name, cancellationToken))
             throw new ValidationException($"Tournament {tournamentDTO.Name} already exists");
 
+        // The assigned admin is mandatory: an update may keep, replace or (for legacy rows) supply it, but never clear it.
         var assignedAdminUserId = tournamentDTO.AssignedAdminUserIdSpecified
-            ? ParseOptionalAdminId(tournamentDTO.AssignedAdminUserId)
-            : tournament.AssignedAdminUserId;
+            ? ParseRequiredAdminId(tournamentDTO.AssignedAdminUserId)
+            : tournament.AssignedAdminUserId
+                ?? throw new ValidationException($"{nameof(UpdateTournamentDTO.AssignedAdminUserId)} is required.");
         var firstPlacePrize = tournamentDTO.FirstPlacePrizeSpecified
             ? NormalizePrize(tournamentDTO.FirstPlacePrize, nameof(tournamentDTO.FirstPlacePrize))
             : tournament.FirstPlacePrize;
@@ -431,10 +433,9 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         }
     }
 
-    private async Task ValidateAssignedAdminAsync(Guid? assignedAdminUserId, CancellationToken cancellationToken)
+    private async Task ValidateAssignedAdminAsync(Guid assignedAdminUserId, CancellationToken cancellationToken)
     {
-        if (assignedAdminUserId.HasValue &&
-            !await _identityModule.IsAdminUserAsync(new UserId(assignedAdminUserId.Value), cancellationToken))
+        if (!await _identityModule.IsAdminUserAsync(new UserId(assignedAdminUserId), cancellationToken))
         {
             throw new ValidationException("Assigned contact must be an existing administrator.");
         }
@@ -449,10 +450,10 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
         return string.IsNullOrEmpty(normalized) ? null : normalized;
     }
 
-    private static Guid? ParseOptionalAdminId(string? value)
+    private static Guid ParseRequiredAdminId(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
-            return null;
+            throw new ValidationException($"{nameof(CreateTournamentDTO.AssignedAdminUserId)} is required.");
 
         return Guid.TryParse(value, out var parsed)
             ? parsed

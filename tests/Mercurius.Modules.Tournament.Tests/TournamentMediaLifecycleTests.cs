@@ -15,6 +15,7 @@ public sealed class TournamentMediaLifecycleTests
 {
     private const string PreviousImageUrl = "images/previous-tournament.webp";
     private const string NewImageUrl = "images/new-tournament.webp";
+    private static readonly Guid AssignedAdminId = Guid.NewGuid();
 
     [Fact]
     public async Task CreateTournamentAsync_WhenPersistenceFails_CompensatesOnlyNewImageAndPreservesOriginalFailure()
@@ -246,7 +247,7 @@ public sealed class TournamentMediaLifecycleTests
             dbContext,
             new UnsupportedMatchModeratorFactory(),
             mediaModule,
-            TournamentTestSupport.CreateIdentityModule(),
+            TournamentTestSupport.CreateIdentityModule(adminUserIds: [AssignedAdminId]),
             TournamentTestSupport.CreateSponsorshipModule(),
             TournamentTestSupport.CreateMapper(),
             moduleEventPublisher ?? TournamentTestSupport.CreateModuleEventPublisher(),
@@ -269,6 +270,7 @@ public sealed class TournamentMediaLifecycleTests
             30,
             10)
             .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.AssignedAdminUserId, AssignedAdminId)
             .Set(x => x.ImageUrl, PreviousImageUrl);
     }
 
@@ -284,7 +286,8 @@ public sealed class TournamentMediaLifecycleTests
             Image = CreateImage(),
             PlannedStartTime = DateTime.UtcNow.AddHours(1),
             AverageGameDurationMinutes = 30,
-            RoundBreakDurationMinutes = 10
+            RoundBreakDurationMinutes = 10,
+            AssignedAdminUserId = AssignedAdminId.ToString()
         };
     }
 
