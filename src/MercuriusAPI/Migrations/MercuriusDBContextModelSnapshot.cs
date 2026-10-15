@@ -388,6 +388,7 @@ namespace Mercurius.LAN.API.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<long>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
@@ -476,6 +477,28 @@ namespace Mercurius.LAN.API.Migrations
                         .HasDatabaseName("IX_team_members_UserId");
 
                     b.ToTable("team_members", "teams");
+                });
+
+            modelBuilder.Entity("Mercurius.Modules.Tournament.Domain.FeaturedHomepageTournamentSelection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.PrimitiveCollection<Guid[]>("TournamentIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("featured_homepage_tournaments", "tournament", t =>
+                        {
+                            t.HasCheckConstraint("CK_featured_homepage_tournaments_count", "cardinality(\"TournamentIds\") BETWEEN 1 AND 4");
+
+                            t.HasCheckConstraint("CK_featured_homepage_tournaments_singleton", "\"Id\" = 1");
+                        });
                 });
 
             modelBuilder.Entity("Mercurius.Modules.Tournament.Domain.LeaderboardAttempt", b =>

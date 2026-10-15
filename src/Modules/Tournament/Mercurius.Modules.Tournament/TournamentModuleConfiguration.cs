@@ -30,6 +30,7 @@ public static class TournamentModuleConfiguration
         services.AddTransient<TournamentRegistrationReadModelService>();
         services.AddTransient<PublicProfileMatchSummaryReadService>();
         services.AddTransient<ITournamentQueries, TournamentService>();
+        services.AddTransient<IFeaturedHomepageTournamentService, FeaturedHomepageTournamentService>();
         services.AddTransient<ITournamentManagementCommands, TournamentService>();
         services.AddTransient<ITournamentLifecycleCommands, TournamentService>();
         services.AddTransient<ILeaderboardService, LeaderboardService>();
@@ -53,6 +54,7 @@ public static class TournamentModuleConfiguration
     public static ModelBuilder ApplyTournamentModelConfiguration(this ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new Infrastructure.TournamentConfiguration());
+        modelBuilder.ApplyConfiguration(new Infrastructure.FeaturedHomepageTournamentSelectionConfiguration());
         modelBuilder.ApplyConfiguration(new MatchConfiguration());
         modelBuilder.ApplyConfiguration(new MatchResolutionNotificationConfiguration());
         modelBuilder.ApplyConfiguration(new TournamentRegistrationConfiguration());
@@ -70,6 +72,7 @@ public static class TournamentModuleConfiguration
     public static IEndpointRouteBuilder MapTournamentModule(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapTournamentEndpoints();
+        endpoints.MapFeaturedHomepageTournamentEndpoints();
         endpoints.MapTournamentRegistrationEndpoints();
         endpoints.MapMatchEndpoints();
         endpoints.MapPublicProfileMatchSummaryEndpoints();
