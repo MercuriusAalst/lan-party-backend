@@ -173,12 +173,21 @@ internal sealed class MatchService : IMatchService
             return [];
 
         var matchIds = matches.Select(match => match.Id).ToArray();
-        var requiredSince = await _dbContext.MatchResolutionNotifications
+        // Only a notification from the current escalation cycle counts: a reversal (or result) stamps
+        // ResultRecordedAtUtc, so anything published before it belongs to an earlier cycle.
+        var notificationTimes = await _dbContext.MatchResolutionNotifications
             .AsNoTracking()
             .Where(notification => matchIds.Contains(notification.MatchId))
-            .GroupBy(notification => notification.MatchId)
-            .Select(group => new { MatchId = group.Key, OccurredAtUtc = group.Max(notification => notification.OccurredAtUtc) })
-            .ToDictionaryAsync(row => row.MatchId, row => row.OccurredAtUtc, cancellationToken);
+            .Select(notification => new { notification.MatchId, notification.OccurredAtUtc })
+            .ToListAsync(cancellationToken);
+        var requiredSince = matches.ToDictionary(
+            match => match.Id,
+            match => notificationTimes
+                .Where(notification =>
+                    notification.MatchId == match.Id &&
+                    (!match.ResultRecordedAtUtc.HasValue || notification.OccurredAtUtc > match.ResultRecordedAtUtc.Value))
+                .Select(notification => (DateTime?)notification.OccurredAtUtc)
+                .Max());
 
         var userNames = await _identityModule.GetPublicUsernamesByIdsAsync(
             matches
@@ -219,7 +228,7 @@ internal sealed class MatchService : IMatchService
                 Participant2ReportedScore1 = match.Participant2ReportedScore1,
                 Participant2ReportedScore2 = match.Participant2ReportedScore2,
                 Reason = (Contracts.MatchResolutionReason)(match.GetResolutionReason() ?? MatchResolutionReason.Disputed),
-                RequiredSinceUtc = requiredSince.TryGetValue(match.Id, out var occurredAtUtc) ? occurredAtUtc : null
+                RequiredSinceUtc = requiredSince[match.Id]
             })
             .OrderBy(item => item.RequiredSinceUtc is null)
             .ThenBy(item => item.RequiredSinceUtc)
@@ -241,13 +250,14 @@ internal sealed class MatchService : IMatchService
         var side = await RequireParticipantSideAsync(match, userId, cancellationToken);
         var wasResult = match.HasResult;
         var now = UtcNow();
-        ApplyDeadline(tournament, match, now);
+        var escalated = ApplyDeadline(match, now);
         match.SubmitScore((int)side, request.Participant1Score, request.Participant2Score, now);
         if (!wasResult && match.HasResult)
         {
             match.RecordResultBy(userId);
         }
 
+        PublishResolutionRequiredIfStillPending(tournament, match, escalated);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -283,13 +293,14 @@ internal sealed class MatchService : IMatchService
 
         var wasResult = match.HasResult;
         var now = UtcNow();
-        ApplyDeadline(tournament, match, now);
+        var escalated = ApplyDeadline(match, now);
         match.Forfeit((int)targetSide.Value, now);
         if (!wasResult)
         {
             match.RecordResultBy(userId);
         }
 
+        PublishResolutionRequiredIfStillPending(tournament, match, escalated);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -305,9 +316,10 @@ internal sealed class MatchService : IMatchService
         var (tournament, match) = await GetMatchMutationGraphAsync(id, cancellationToken);
         EnsureInProgress(tournament);
         var now = UtcNow();
-        ApplyDeadline(tournament, match, now);
+        var escalated = ApplyDeadline(match, now);
         match.ResolveScore(request.Participant1Score, request.Participant2Score, now);
         match.RecordResultBy(userId);
+        PublishResolutionRequiredIfStillPending(tournament, match, escalated);
         await SaveAndCommitAsync(transaction, tournament, cancellationToken);
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
@@ -384,22 +396,29 @@ internal sealed class MatchService : IMatchService
             .Include(candidate => candidate.LoserNextMatch)
             .Where(candidate => candidate.Id == id);
 
-    private void ApplyDeadline(
-        TournamentAggregate tournament,
-        Match match,
-        DateTime nowUtc)
+    // Returns whether this call escalated the match to AdminResolutionRequired. The event is published
+    // separately, after the action, so a match resolved in the same transaction leaves no stale event.
+    private static bool ApplyDeadline(Match match, DateTime nowUtc)
     {
         var beforeState = match.LifecycleState;
         match.ApplyDeadline(nowUtc);
-        if (beforeState != MatchLifecycleState.AdminResolutionRequired &&
-            match.LifecycleState == MatchLifecycleState.AdminResolutionRequired)
-        {
-            _moduleEventPublisher.Publish(new MatchResolutionRequiredIntegrationEvent(
-                new MatchId(match.Id),
-                new TournamentId(match.TournamentId),
-                tournament.AssignedAdminUserId,
-                (Contracts.MatchResolutionReason)(match.GetResolutionReason() ?? MatchResolutionReason.Disputed)));
-        }
+        return beforeState != MatchLifecycleState.AdminResolutionRequired &&
+            match.LifecycleState == MatchLifecycleState.AdminResolutionRequired;
+    }
+
+    private void PublishResolutionRequiredIfStillPending(
+        TournamentAggregate tournament,
+        Match match,
+        bool escalated)
+    {
+        if (!escalated || match.LifecycleState != MatchLifecycleState.AdminResolutionRequired)
+            return;
+
+        _moduleEventPublisher.Publish(new MatchResolutionRequiredIntegrationEvent(
+            new MatchId(match.Id),
+            new TournamentId(match.TournamentId),
+            tournament.AssignedAdminUserId,
+            (Contracts.MatchResolutionReason)(match.GetResolutionReason() ?? MatchResolutionReason.Disputed)));
     }
 
     private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken) =>

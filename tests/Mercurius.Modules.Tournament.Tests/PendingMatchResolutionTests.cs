@@ -127,6 +127,35 @@ public class PendingMatchResolutionTests
     }
 
     [Fact]
+    public async Task GetPendingResolutionsAsync_IgnoresNotificationsFromBeforeTheLastReversal()
+    {
+        var admin = CreateUser("assigned-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Reversed Cup", admin.Id);
+        // Resolved, reversed at -5 minutes, then escalated again: the -30 minute notification is from the first cycle.
+        var reEscalatedNotYetNotified = CreatePendingMatch(tournament, player1, player2, bothReports: false)
+            .Set(x => x.ResultRecordedAtUtc, NowUtc.AddMinutes(-5));
+        var reEscalatedAndNotified = CreatePendingMatch(tournament, player1, player2, bothReports: false)
+            .Set(x => x.ResultRecordedAtUtc, NowUtc.AddMinutes(-5));
+        tournament.Matches.Add(reEscalatedNotYetNotified);
+        tournament.Matches.Add(reEscalatedAndNotified);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [tournament], [admin, player1, player2]);
+        dbContext.Set<MatchResolutionNotification>().AddRange(
+            CreateNotification(reEscalatedNotYetNotified, admin.Id, NowUtc.AddMinutes(-30)),
+            CreateNotification(reEscalatedAndNotified, admin.Id, NowUtc.AddMinutes(-30)),
+            CreateNotification(reEscalatedAndNotified, admin.Id, NowUtc.AddMinutes(-1)));
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext, [admin, player1, player2]);
+
+        var pending = (await service.GetPendingResolutionsAsync(admin.Auth0UserId)).ToDictionary(item => item.MatchId);
+
+        Assert.Null(pending[reEscalatedNotYetNotified.Id].RequiredSinceUtc);
+        Assert.Equal(NowUtc.AddMinutes(-1), pending[reEscalatedAndNotified.Id].RequiredSinceUtc);
+    }
+
+    [Fact]
     public async Task GetPendingResolutionsAsync_UsesTeamNamesForTeamMatches()
     {
         var admin = CreateUser("assigned-admin");

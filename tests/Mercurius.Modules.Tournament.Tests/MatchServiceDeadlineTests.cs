@@ -252,6 +252,45 @@ public class MatchServiceDeadlineTests
     }
 
     [Fact]
+    public async Task ResolveAsync_AfterSingleReportExpiryInTheSameTransaction_LeavesNoStaleResolutionEvent()
+    {
+        var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var admin = new User { Id = Guid.NewGuid(), Auth0UserId = "auth0|resolving-admin" };
+        await using var dbContext = CreateDbContext();
+        var expired = CreateExpiredMatch(nowUtc.AddMinutes(-1));
+        var participant1Id = Guid.NewGuid();
+        var participant2Id = Guid.NewGuid();
+        expired.Match
+            .Set(x => x.UserParticipant1Id, participant1Id)
+            .Set(x => x.UserParticipant2Id, participant2Id);
+        dbContext.Users.AddRange(
+            admin,
+            new User { Id = participant1Id, Auth0UserId = $"auth0|{participant1Id:N}" },
+            new User { Id = participant2Id, Auth0UserId = $"auth0|{participant2Id:N}" });
+        dbContext.Set<TournamentAggregate>().Add(expired.Tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var tournamentDbContext = new TournamentDbContextAdapter<MercuriusDBContext>(dbContext);
+        var service = new MatchService(
+            tournamentDbContext,
+            TournamentTestSupport.CreateIdentityModule([admin]),
+            TournamentTestSupport.CreateTeamsModule(),
+            new ModuleEventPublisher(dbContext),
+            new FixedTimeProvider(nowUtc),
+            new MatchBracketImpactAnalyzer(tournamentDbContext));
+
+        await service.ResolveAsync(
+            expired.Match.Id,
+            admin.Auth0UserId,
+            new ResolveMatchDTO { Participant1Score = 0, Participant2Score = 1 });
+
+        var persisted = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == expired.Match.Id);
+        Assert.Equal(MatchLifecycleState.Completed, persisted.LifecycleState);
+        Assert.Equal(MatchResultKind.AdminResolution, persisted.ResultKind);
+        Assert.Empty(await dbContext.OutboxMessages.ToListAsync());
+    }
+
+    [Fact]
     public async Task DeadlineProcessor_CorrectionWindowExpiry_PublishesDisputedReason()
     {
         var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
