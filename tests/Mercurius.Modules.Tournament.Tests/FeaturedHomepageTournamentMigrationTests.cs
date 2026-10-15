@@ -1,4 +1,4 @@
-using Mercurius.LAN.API.Data;
+﻿using Mercurius.LAN.API.Data;
 using Mercurius.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -9,27 +9,29 @@ namespace Mercurius.Modules.Tournament.Tests;
 
 public sealed class FeaturedHomepageTournamentMigrationTests
 {
-    private const string PreviousMigrationId = "20261009160724_FeaturedHomepageTournaments";
-    private const string RangeMigrationId = "20261011200010_FeaturedHomepageTournamentCountRange";
+    private const string PreviousMigrationId = "20261010081503_RestrictCrossModuleDeletes";
+    private const string FeaturedMigrationId = "20261015142322_FeaturedHomepageTournaments";
+    private const string SelectionTable = "tournament.featured_homepage_tournaments";
 
     [Fact]
-    public async Task RangeMigrationPreservesFourItemDataAndEnforcesOneToFourAcrossUpgradeAndRollback()
+    public async Task UpCreatesTableThatAcceptsOneToFourAndRejectsInvalidSelections()
     {
         await using var database = PostgresTestDatabase.Create();
-        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
-            .UseNpgsql(database.ConnectionString)
-            .Options;
-        await using var db = new MercuriusDBContext(options);
+        await using var db = CreateContext(database.ConnectionString);
         var migrator = db.GetService<IMigrator>();
 
         await migrator.MigrateAsync(PreviousMigrationId);
-        var originalIds = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
-        await InsertSelectionAsync(database.ConnectionString, originalIds);
+        Assert.False(await TableExistsAsync(database.ConnectionString));
 
-        await migrator.MigrateAsync(RangeMigrationId);
-        Assert.Equal(originalIds, await ReadSelectionAsync(database.ConnectionString));
+        await migrator.MigrateAsync(FeaturedMigrationId);
+        Assert.True(await TableExistsAsync(database.ConnectionString));
+        Assert.Contains(FeaturedMigrationId, await db.Database.GetAppliedMigrationsAsync());
 
-        foreach (var count in new[] { 1, 3, 4 })
+        var firstIds = new[] { Guid.NewGuid() };
+        await InsertSelectionAsync(database.ConnectionString, firstIds);
+        Assert.Equal(firstIds, await ReadSelectionAsync(database.ConnectionString));
+
+        foreach (var count in new[] { 1, 2, 3, 4 })
         {
             var ids = Enumerable.Range(0, count).Select(_ => Guid.NewGuid()).ToArray();
             await UpdateSelectionAsync(db, ids);
@@ -45,25 +47,55 @@ public sealed class FeaturedHomepageTournamentMigrationTests
         Assert.Equal(PostgresErrorCodes.CheckViolation, tooManyViolation.SqlState);
         Assert.Equal("CK_featured_homepage_tournaments_count", tooManyViolation.ConstraintName);
 
-        var partialIds = Enumerable.Range(0, 3).Select(_ => Guid.NewGuid()).ToArray();
-        await UpdateSelectionAsync(db, partialIds);
-        await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(PreviousMigrationId));
+        var singletonViolation = await Assert.ThrowsAsync<PostgresException>(() =>
+            ExecuteSelectionCommandAsync(
+                database.ConnectionString,
+                $"INSERT INTO {SelectionTable} (\"Id\", \"TournamentIds\") VALUES (2, @ids)",
+                [Guid.NewGuid()]));
+        Assert.Equal(PostgresErrorCodes.CheckViolation, singletonViolation.SqlState);
+        Assert.Equal("CK_featured_homepage_tournaments_singleton", singletonViolation.ConstraintName);
+    }
 
-        Assert.Contains(RangeMigrationId, await db.Database.GetAppliedMigrationsAsync());
-        Assert.Equal(partialIds, await ReadSelectionAsync(database.ConnectionString));
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DownDropsOnlyTheFeaturedTableAndReapplyingWorks(bool withSavedRow)
+    {
+        await using var database = PostgresTestDatabase.Create();
+        await using var db = CreateContext(database.ConnectionString);
+        var migrator = db.GetService<IMigrator>();
 
-        var stillWidenedIds = new[] { Guid.NewGuid() };
-        await UpdateSelectionAsync(db, stillWidenedIds);
-        Assert.Equal(stillWidenedIds, await ReadSelectionAsync(database.ConnectionString));
+        await migrator.MigrateAsync(FeaturedMigrationId);
+        if (withSavedRow)
+        {
+            await InsertSelectionAsync(database.ConnectionString, [Guid.NewGuid(), Guid.NewGuid()]);
+        }
 
-        await UpdateSelectionAsync(db, originalIds);
         await migrator.MigrateAsync(PreviousMigrationId);
-        Assert.DoesNotContain(RangeMigrationId, await db.Database.GetAppliedMigrationsAsync());
+        Assert.False(await TableExistsAsync(database.ConnectionString));
+        var applied = await db.Database.GetAppliedMigrationsAsync();
+        Assert.DoesNotContain(FeaturedMigrationId, applied);
+        Assert.Contains(PreviousMigrationId, applied);
 
-        var narrowedViolation = await Assert.ThrowsAsync<PostgresException>(() =>
-            UpdateSelectionAsync(db, [Guid.NewGuid()]));
-        Assert.Equal(PostgresErrorCodes.CheckViolation, narrowedViolation.SqlState);
-        Assert.Equal("CK_featured_homepage_tournaments_count", narrowedViolation.ConstraintName);
+        await migrator.MigrateAsync(FeaturedMigrationId);
+        Assert.True(await TableExistsAsync(database.ConnectionString));
+        Assert.Contains(FeaturedMigrationId, await db.Database.GetAppliedMigrationsAsync());
+
+        var ids = new[] { Guid.NewGuid() };
+        await InsertSelectionAsync(database.ConnectionString, ids);
+        Assert.Equal(ids, await ReadSelectionAsync(database.ConnectionString));
+    }
+
+    private static MercuriusDBContext CreateContext(string connectionString) =>
+        new(new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options);
+
+    private static async Task<bool> TableExistsAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT to_regclass('tournament.featured_homepage_tournaments') IS NOT NULL";
+        return (bool)(await command.ExecuteScalarAsync())!;
     }
 
     private static Task<int> InsertSelectionAsync(string connectionString, Guid[] tournamentIds) =>
