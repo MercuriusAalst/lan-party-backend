@@ -14,6 +14,9 @@ internal interface IMatchService
         string auth0UserId,
         bool isAdmin = false,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PendingMatchResolutionDTO>> GetPendingResolutionsAsync(
+        string auth0UserId,
+        CancellationToken cancellationToken = default);
     Task<GetMatchDTO> SubmitScoreAsync(Guid id, string auth0UserId, SubmitMatchScoreDTO request, CancellationToken cancellationToken = default);
     Task<GetMatchDTO> ForfeitAsync(Guid id, string auth0UserId, ForfeitMatchDTO request, bool isAdmin, CancellationToken cancellationToken = default);
     Task<GetMatchDTO> ResolveAsync(Guid id, string auth0UserId, ResolveMatchDTO request, CancellationToken cancellationToken = default);

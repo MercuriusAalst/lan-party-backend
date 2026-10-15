@@ -152,6 +152,82 @@ internal sealed class MatchService : IMatchService
             canReverse ? null : reverseBlockedReason);
     }
 
+    public async Task<IReadOnlyList<PendingMatchResolutionDTO>> GetPendingResolutionsAsync(
+        string auth0UserId,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
+
+        // Derived from persisted match state, so an item disappears as soon as the match is resolved.
+        // Tournaments without an assigned admin (legacy rows) are shown to every administrator.
+        var matches = await _dbContext.Matches
+            .AsNoTracking()
+            .Include(match => match.Tournament)
+            .Where(match =>
+                match.LifecycleState == MatchLifecycleState.AdminResolutionRequired &&
+                match.Tournament.Status == TournamentStatus.InProgress &&
+                (match.Tournament.AssignedAdminUserId == null ||
+                 match.Tournament.AssignedAdminUserId == userId))
+            .ToListAsync(cancellationToken);
+        if (matches.Count == 0)
+            return [];
+
+        var matchIds = matches.Select(match => match.Id).ToArray();
+        var requiredSince = await _dbContext.MatchResolutionNotifications
+            .AsNoTracking()
+            .Where(notification => matchIds.Contains(notification.MatchId))
+            .GroupBy(notification => notification.MatchId)
+            .Select(group => new { MatchId = group.Key, OccurredAtUtc = group.Max(notification => notification.OccurredAtUtc) })
+            .ToDictionaryAsync(row => row.MatchId, row => row.OccurredAtUtc, cancellationToken);
+
+        var userNames = await _identityModule.GetPublicUsernamesByIdsAsync(
+            matches
+                .Where(match => match.ParticipationMode == ParticipationMode.Individual)
+                .SelectMany(match => new[] { match.UserParticipant1Id, match.UserParticipant2Id })
+                .Where(id => id.HasValue)
+                .Select(id => new UserId(id!.Value))
+                .Distinct()
+                .ToArray(),
+            cancellationToken);
+        var teamNames = await _teamsModule.GetPublicTeamNamesByIdsAsync(
+            matches
+                .Where(match => match.ParticipationMode == ParticipationMode.Team)
+                .SelectMany(match => new[] { match.TeamParticipant1Id, match.TeamParticipant2Id })
+                .Where(id => id.HasValue)
+                .Select(id => new TeamId(id!.Value))
+                .Distinct()
+                .ToArray(),
+            cancellationToken);
+
+        string NameOf(Match match, Guid? participantId) =>
+            !participantId.HasValue
+                ? string.Empty
+                : match.ParticipationMode == ParticipationMode.Individual
+                    ? userNames.GetValueOrDefault(new UserId(participantId.Value), "Incomplete profile")
+                    : teamNames.GetValueOrDefault(new TeamId(participantId.Value), "Unknown team");
+
+        return matches
+            .Select(match => new PendingMatchResolutionDTO
+            {
+                MatchId = match.Id,
+                TournamentId = match.TournamentId,
+                TournamentName = match.Tournament.Name,
+                Participant1Name = NameOf(match, match.GetParticipant1Id()),
+                Participant2Name = NameOf(match, match.GetParticipant2Id()),
+                Participant1ReportedScore1 = match.Participant1ReportedScore1,
+                Participant1ReportedScore2 = match.Participant1ReportedScore2,
+                Participant2ReportedScore1 = match.Participant2ReportedScore1,
+                Participant2ReportedScore2 = match.Participant2ReportedScore2,
+                Reason = (Contracts.MatchResolutionReason)(match.GetResolutionReason() ?? MatchResolutionReason.Disputed),
+                RequiredSinceUtc = requiredSince.TryGetValue(match.Id, out var occurredAtUtc) ? occurredAtUtc : null
+            })
+            .OrderBy(item => item.RequiredSinceUtc is null)
+            .ThenBy(item => item.RequiredSinceUtc)
+            .ThenBy(item => item.TournamentName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.MatchId)
+            .ToList();
+    }
+
     public async Task<GetMatchDTO> SubmitScoreAsync(
         Guid id,
         string auth0UserId,

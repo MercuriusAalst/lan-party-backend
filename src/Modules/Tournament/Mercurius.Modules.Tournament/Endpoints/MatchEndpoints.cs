@@ -80,6 +80,14 @@ internal static class MatchEndpoints
         var adminGroup = group.MapGroup(string.Empty)
             .RequireAuthorization(new AuthorizeAttribute { Roles = "admin" });
 
+        adminGroup.MapGet("/pending-resolution", async (
+            ClaimsPrincipal user,
+            IMatchService matchService,
+            CancellationToken cancellationToken) =>
+        {
+            return await matchService.GetPendingResolutionsAsync(user.GetAuth0UserId(), cancellationToken);
+        });
+
         adminGroup.MapPost("/{id:guid}/resolve", async (
             Guid id,
             ResolveMatchDTO request,
