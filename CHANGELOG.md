@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.6.0...backend-v0.7.0) (2026-10-15)
+
+
+### Features
+
+* Add Optional Tournament Prizes and Assigned Contact Admin ([#142](https://github.com/MercuriusAalst/lan-party-backend/issues/142)) ([980530e](https://github.com/MercuriusAalst/lan-party-backend/commit/980530eb20c12c311078f9dde2da5e3a40663c9f)), closes [#86](https://github.com/MercuriusAalst/lan-party-backend/issues/86)
+* Persist And Expose Featured Homepage Tournaments ([#145](https://github.com/MercuriusAalst/lan-party-backend/issues/145)) ([e7121a2](https://github.com/MercuriusAalst/lan-party-backend/commit/e7121a2901ef4e8872983b78045f226412dc6237))
+
+
+### Bug Fixes
+
+* Allow Direct Match Score Submission ([#151](https://github.com/MercuriusAalst/lan-party-backend/issues/151)) ([7663e7f](https://github.com/MercuriusAalst/lan-party-backend/commit/7663e7f6b6ff4a5abd0d65442ae494f7d693f18c))
+* Correct Discovery search index usage and make rebuilds cluster-safe ([662170e](https://github.com/MercuriusAalst/lan-party-backend/commit/662170e9602abcfe554bfd134758701a21e06800)), closes [#140](https://github.com/MercuriusAalst/lan-party-backend/issues/140)
+* Correct Discovery search index usage and make rebuilds cluster-safe ([#143](https://github.com/MercuriusAalst/lan-party-backend/issues/143)) ([662170e](https://github.com/MercuriusAalst/lan-party-backend/commit/662170e9602abcfe554bfd134758701a21e06800))
+
 ## [0.6.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.5.2...backend-v0.6.0) (2026-10-06)
 
 
