@@ -388,6 +388,7 @@ namespace Mercurius.LAN.API.Migrations
                         .HasColumnType("character varying(100)");
 
                     b.Property<long>("Version")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");

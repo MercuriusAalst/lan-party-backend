@@ -24,7 +24,7 @@ namespace Mercurius.LAN.API.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_featured_homepage_tournaments", x => x.Id);
-                    table.CheckConstraint("CK_featured_homepage_tournaments_count", "cardinality(\"TournamentIds\") = 4");
+                    table.CheckConstraint("CK_featured_homepage_tournaments_count", "cardinality(\"TournamentIds\") BETWEEN 1 AND 4");
                     table.CheckConstraint("CK_featured_homepage_tournaments_singleton", "\"Id\" = 1");
                 });
         }
