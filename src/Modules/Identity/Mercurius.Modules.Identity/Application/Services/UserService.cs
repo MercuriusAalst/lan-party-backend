@@ -11,11 +11,13 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using System.Buffers.Binary;
+using System.Runtime.ExceptionServices;
 
 namespace Mercurius.Modules.Identity.Application.Services;
 
 internal class UserService : IUserService
 {
+    internal const string UncommittedPictureUrlExceptionDataKey = "Identity.UncommittedPictureUrl";
     private const string GenericVerificationMessage = "If verification is available for this account, a verification email has been sent.";
     private const string GenericPasswordResetMessage = "If password reset is available for this account, a password reset email has been sent.";
     private readonly IIdentityDbContext _dbContext;
@@ -293,27 +295,30 @@ internal class UserService : IUserService
     {
         var (user, transaction) = await GetCurrentUserForMutationAsync(auth0UserId, cancellationToken);
         var oldUrl = user.ProfilePictureUrl;
-        await using var stream = picture.OpenReadStream();
-        var asset = await (_mediaModule ?? throw new InvalidOperationException("Media module is unavailable."))
-            .SaveImageAsync(new MediaUpload(stream, picture.FileName, picture.ContentType, picture.Length), cancellationToken);
-        var saved = false;
+        var originalUpdatedAt = user.UpdatedAtUtc;
+        StoredMediaAsset? asset = null;
+        Exception? failure = null;
         try
         {
+            await using var stream = picture.OpenReadStream();
+            asset = await (_mediaModule ?? throw new InvalidOperationException("Media module is unavailable."))
+                .SaveImageAsync(new MediaUpload(stream, picture.FileName, picture.ContentType, picture.Length), cancellationToken);
             user.ProfilePictureUrl = asset.Url;
             user.UpdatedAtUtc = UtcNow();
             cancellationToken.ThrowIfCancellationRequested();
             await _dbContext.SaveChangesAsync(cancellationToken);
-            saved = true;
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);
         }
-        catch
+        catch (Exception exception)
         {
             if (transaction is not null)
                 await transaction.RollbackAsync(CancellationToken.None);
-            if (!saved && !string.Equals(asset.Url, oldUrl, StringComparison.Ordinal))
-                await RetirePictureIfUnreferencedAsync(asset.Url, oldUrl);
-            throw;
+            user.ProfilePictureUrl = oldUrl;
+            user.UpdatedAtUtc = originalUpdatedAt;
+            if (transaction is null && asset is not null && !string.Equals(asset.Url, oldUrl, StringComparison.Ordinal))
+                exception.Data[UncommittedPictureUrlExceptionDataKey] = asset.Url;
+            failure = exception;
         }
         finally
         {
@@ -321,8 +326,15 @@ internal class UserService : IUserService
                 await transaction.DisposeAsync();
         }
 
+        if (failure is not null)
+        {
+            if (transaction is not null && asset is not null && !string.Equals(asset.Url, oldUrl, StringComparison.Ordinal))
+                await RetirePictureIfUnreferencedAsync(asset.Url, oldUrl);
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+
         if (transaction is not null)
-            await RetirePictureIfUnreferencedAsync(oldUrl, asset.Url);
+            await RetirePictureIfUnreferencedAsync(oldUrl, asset!.Url);
         return new CurrentUserProfileResponse(user.IsComplete, new GetUserDTO(user));
     }
 

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
+using System.Runtime.ExceptionServices;
 using Platform.Eventing;
 using Platform.Realtime;
 
@@ -108,26 +109,51 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
     public async Task<CurrentUserProfileResponse> UploadCurrentUserPictureAsync(string auth0UserId, IFormFile picture, CancellationToken cancellationToken = default)
     {
-        await using var transaction = await BeginTransactionIfSupportedAsync();
-        var before = await GetUserByAuth0IdAsync(auth0UserId);
+        var transaction = await BeginTransactionIfSupportedAsync();
+        UserEventState? before = null;
         CurrentUserProfileResponse? response = null;
+        Exception? failure = null;
+        string? failedPictureUrl = null;
         try
         {
-            response = await _inner.UploadCurrentUserPictureAsync(auth0UserId, picture, cancellationToken);
-            if (response.User is not null)
-                await PublishEventsAsync(BuildProfileEvents(response.User, before));
-            await CommitIfStartedAsync(transaction);
+            try
+            {
+                before = await GetUserByAuth0IdAsync(auth0UserId);
+                response = await _inner.UploadCurrentUserPictureAsync(auth0UserId, picture, cancellationToken);
+                if (response.User is not null)
+                    await PublishEventsAsync(BuildProfileEvents(response.User, before));
+                await CommitIfStartedAsync(transaction);
+            }
+            catch (Exception exception)
+            {
+                if (transaction is not null)
+                    await transaction.RollbackAsync(CancellationToken.None);
+                failedPictureUrl = response?.User?.ProfilePictureUrl ??
+                    exception.Data[UserService.UncommittedPictureUrlExceptionDataKey] as string;
+                failure = exception;
+            }
         }
-        catch
+        finally
         {
             if (transaction is not null)
-                await transaction.RollbackAsync(CancellationToken.None);
-            var newUrl = response?.User?.ProfilePictureUrl;
-            if (!string.IsNullOrWhiteSpace(newUrl) && !string.Equals(newUrl, before?.ProfilePictureUrl, StringComparison.Ordinal))
-                await DeletePictureIfUnreferencedAsync(newUrl);
-            throw;
+                await transaction.DisposeAsync();
         }
 
+        if (failure is not null)
+        {
+            if (before is not null)
+            {
+                var trackedUser = await _dbContext.Users.FirstOrDefaultAsync(user => user.Id == before.Id);
+                if (trackedUser is not null)
+                {
+                    trackedUser.ProfilePictureUrl = before.ProfilePictureUrl;
+                    trackedUser.UpdatedAtUtc = before.UpdatedAtUtc;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(failedPictureUrl) && !string.Equals(failedPictureUrl, before?.ProfilePictureUrl, StringComparison.Ordinal))
+                await DeletePictureIfUnreferencedAsync(failedPictureUrl);
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
         if (response?.User is not null)
             await RetirePictureIfUnreferencedAsync(before?.ProfilePictureUrl, response.User.ProfilePictureUrl);
         return response!;

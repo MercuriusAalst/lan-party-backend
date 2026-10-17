@@ -11,6 +11,8 @@ using Mercurius.Modules.Shared.Search;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Media.Contracts;
+using Platform.Eventing;
+using Platform.Realtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
@@ -949,6 +951,71 @@ public class UserTests
     }
 
     [Fact]
+    public async Task FailedPictureReferenceSaveRollsBackAndRemovesOnlyTheUnreferencedUpload()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture-save-failure", "picture-save-failure@example.com");
+        user.ProfilePictureUrl = "/images/old.webp";
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var newUrl = "/images/" + new string('x', 2050);
+        var media = new RecordingMediaModule { SavedUrl = newUrl };
+        var service = new UserService(
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            media);
+        var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
+        {
+            Headers = new Microsoft.AspNetCore.Http.HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => service.UploadCurrentUserPictureAsync(user.Auth0UserId, upload));
+
+        Assert.Null(dbContext.Database.CurrentTransaction);
+        Assert.Equal("/images/old.webp", user.ProfilePictureUrl);
+        Assert.Equal("/images/old.webp", (await dbContext.Users.AsNoTracking().SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Equal([newUrl], media.DeletedUrls);
+    }
+
+    [Fact]
+    public async Task FailedPictureEventPublicationRollsBackReferenceAndCleansNewUploadAfterTransactionDisposal()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture-event-failure", "picture-event-failure@example.com");
+        user.ProfilePictureUrl = "/images/old.webp";
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var newUrl = "/images/new-event.webp";
+        var media = new RecordingMediaModule { SavedUrl = newUrl };
+        var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
+        var innerService = new UserService(
+            identityDbContext,
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            media);
+        var service = new UserIntegrationEventPublishingService(
+            innerService,
+            identityDbContext,
+            new ThrowingModuleEventPublisher(),
+            new NoopRealtimeConnectionManager(),
+            media);
+        var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
+        {
+            Headers = new Microsoft.AspNetCore.Http.HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+
+        await Assert.ThrowsAsync<IOException>(() => service.UploadCurrentUserPictureAsync(user.Auth0UserId, upload));
+
+        Assert.Null(dbContext.Database.CurrentTransaction);
+        Assert.Equal("/images/old.webp", user.ProfilePictureUrl);
+        Assert.Equal("/images/old.webp", (await dbContext.Users.AsNoTracking().SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Equal([newUrl], media.DeletedUrls);
+    }
+
+    [Fact]
     public async Task GetUserByUsernameAsync_ReturnsDetailedProfileForAdminWorkflow()
     {
         await using var dbContext = CreateDbContext();
@@ -1441,6 +1508,24 @@ public class UserTests
             DeletedUrls.Add(mediaUrl);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ThrowingModuleEventPublisher : IModuleEventPublisher
+    {
+        public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null) where TPayload : notnull =>
+            throw new IOException("outbox publication failed");
+    }
+
+    private sealed class NoopRealtimeConnectionManager : IRealtimeConnectionManager
+    {
+        public Task ExecuteWithAccessGateAsync(Func<CancellationToken, Task> action, Guid? userId, string? groupName = null, string? connectionId = null, CancellationToken cancellationToken = default) => action(cancellationToken);
+        public void RegisterConnection(Guid userId, string connectionId, string personalGroup) { }
+        public void TrackGroup(string connectionId, string groupName) { }
+        public void UntrackGroup(string connectionId, string groupName) { }
+        public void UnregisterConnection(string connectionId) { }
+        public Task RevokeUserFromGroupAsync(Guid userId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RevokeGroupAsync(string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RevokeUserAsync(Guid userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class RecordingIdentityModule : IIdentityModule
