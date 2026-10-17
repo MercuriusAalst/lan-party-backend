@@ -4,8 +4,13 @@ using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Shared.Search;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using System.Buffers.Binary;
 
 namespace Mercurius.Modules.Identity.Application.Services;
 
@@ -17,17 +22,23 @@ internal class UserService : IUserService
     private readonly TimeProvider _timeProvider;
     private readonly IAuth0ManagementService _auth0ManagementService;
     private readonly IIdentityModule _identityModule;
+    private readonly IMediaModule? _mediaModule;
+    private readonly ILogger<UserService>? _logger;
 
     public UserService(
         IIdentityDbContext dbContext,
         IAuth0ManagementService auth0ManagementService,
         IIdentityModule identityModule,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IMediaModule? mediaModule = null,
+        ILogger<UserService>? logger = null)
     {
         _dbContext = dbContext;
         _auth0ManagementService = auth0ManagementService;
         _identityModule = identityModule;
         _timeProvider = timeProvider;
+        _mediaModule = mediaModule;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<GetUserDTO>> GetAllUsersAsync(
@@ -151,7 +162,8 @@ internal class UserService : IUserService
                 !string.IsNullOrWhiteSpace(u.Lastname))
             .Select(u => new PublicUserProfileDTO
             {
-                Username = u.Username!
+                Username = u.Username!,
+                ProfilePictureUrl = u.ProfilePictureUrl
             })
             .FirstOrDefaultAsync();
 
@@ -231,7 +243,8 @@ internal class UserService : IUserService
                     ? 0
                     : EF.Functions.Like(user.NormalizedUsername, prefixPattern, "\\") ? 1 : 2,
                 NormalizedUsername = user.NormalizedUsername!,
-                Username = user.Username!
+                Username = user.Username!,
+                ProfilePictureUrl = user.ProfilePictureUrl
             });
     }
 
@@ -257,7 +270,8 @@ internal class UserService : IUserService
             Type = "user",
             Username = candidate.Username,
             DisplayLabel = candidate.Username,
-            SupportingText = "User"
+            SupportingText = "User",
+            ProfilePictureUrl = candidate.ProfilePictureUrl
         };
     }
 
@@ -270,6 +284,77 @@ internal class UserService : IUserService
 
         await SaveProfileChangesAsync();
         return new GetUserDTO(user);
+    }
+
+    public async Task<CurrentUserProfileResponse> UploadCurrentUserPictureAsync(
+        string auth0UserId,
+        IFormFile picture,
+        CancellationToken cancellationToken = default)
+    {
+        var (user, transaction) = await GetCurrentUserForMutationAsync(auth0UserId, cancellationToken);
+        var oldUrl = user.ProfilePictureUrl;
+        await using var stream = picture.OpenReadStream();
+        var asset = await (_mediaModule ?? throw new InvalidOperationException("Media module is unavailable."))
+            .SaveImageAsync(new MediaUpload(stream, picture.FileName, picture.ContentType, picture.Length), cancellationToken);
+        var saved = false;
+        try
+        {
+            user.ProfilePictureUrl = asset.Url;
+            user.UpdatedAtUtc = UtcNow();
+            cancellationToken.ThrowIfCancellationRequested();
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            saved = true;
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            if (!saved && !string.Equals(asset.Url, oldUrl, StringComparison.Ordinal))
+                await RetirePictureIfUnreferencedAsync(asset.Url, oldUrl);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
+
+        if (transaction is not null)
+            await RetirePictureIfUnreferencedAsync(oldUrl, asset.Url);
+        return new CurrentUserProfileResponse(user.IsComplete, new GetUserDTO(user));
+    }
+
+    public async Task<CurrentUserProfileResponse> RemoveCurrentUserPictureAsync(
+        string auth0UserId,
+        CancellationToken cancellationToken = default)
+    {
+        var (user, transaction) = await GetCurrentUserForMutationAsync(auth0UserId, cancellationToken);
+        var oldUrl = user.ProfilePictureUrl;
+        try
+        {
+            user.ProfilePictureUrl = null;
+            user.UpdatedAtUtc = UtcNow();
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
+
+        if (transaction is not null)
+            await RetirePictureIfUnreferencedAsync(oldUrl, null);
+        return new CurrentUserProfileResponse(user.IsComplete, new GetUserDTO(user));
     }
 
     public async Task<UsernameAvailabilityResponse> CheckUsernameAvailabilityAsync(string auth0UserId, string username)
@@ -345,13 +430,33 @@ internal class UserService : IUserService
 
     public async Task<UserActionResponse> AnonymizeCurrentUserAsync(string auth0UserId)
     {
-        var user = await GetRequiredCurrentUserAsync(auth0UserId);
-        if (!user.IsDeleted)
+        var (user, transaction) = await GetCurrentUserForMutationAsync(auth0UserId, CancellationToken.None, ensureActive: false);
+        var oldUrl = user.ProfilePictureUrl;
+        try
         {
-            var deletedAtUtc = UtcNow();
-            user.Anonymize(deletedAtUtc);
-            await _dbContext.SaveChangesAsync();
+            if (!user.IsDeleted)
+            {
+                var deletedAtUtc = UtcNow();
+                user.Anonymize(deletedAtUtc);
+                await _dbContext.SaveChangesAsync();
+            }
+            if (transaction is not null)
+                await transaction.CommitAsync();
         }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
+
+        if (transaction is not null)
+            await RetirePictureIfUnreferencedAsync(oldUrl, null);
 
         return new UserActionResponse("Account deleted.");
     }
@@ -379,25 +484,76 @@ internal class UserService : IUserService
 
     public async Task DeleteUserAsync(string username)
     {
+        var transaction = _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync()
+            : null;
         var normalizedUsername = UserProfileValidationHelper.NormalizeUsername(username);
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.NormalizedUsername == normalizedUsername);
-        if (user == null)
-            throw new NotFoundException($"User '{username}' not found.");
-
-        var deletedAtUtc = UtcNow();
-        user.Anonymize(deletedAtUtc);
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            var id = await _dbContext.Users.AsNoTracking()
+                .Where(u => u.NormalizedUsername == normalizedUsername)
+                .Select(u => (Guid?)u.Id)
+                .FirstOrDefaultAsync();
+            if (id is null)
+                throw new NotFoundException($"User '{username}' not found.");
+            await AcquireUserMutationLockAsync(id.Value, CancellationToken.None);
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id.Value);
+            if (user is null)
+                throw new NotFoundException($"User '{username}' not found.");
+            var oldUrl = user.ProfilePictureUrl;
+            user.Anonymize(UtcNow());
+            await _dbContext.SaveChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
+            if (transaction is not null)
+                await RetirePictureIfUnreferencedAsync(oldUrl, null);
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
     }
 
     public async Task DeleteUserByIdAsync(Guid id)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id);
-        if (user == null)
-            throw new NotFoundException($"User with ID {id} not found.");
-
-        var deletedAtUtc = UtcNow();
-        user.Anonymize(deletedAtUtc);
-        await _dbContext.SaveChangesAsync();
+        var transaction = _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync()
+            : null;
+        try
+        {
+            var exists = await _dbContext.Users.AsNoTracking().AnyAsync(u => u.Id == id);
+            if (!exists)
+                throw new NotFoundException($"User with ID {id} not found.");
+            await AcquireUserMutationLockAsync(id, CancellationToken.None);
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id);
+            if (user is null)
+                throw new NotFoundException($"User with ID {id} not found.");
+            var oldUrl = user.ProfilePictureUrl;
+            user.Anonymize(UtcNow());
+            await _dbContext.SaveChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
+            if (transaction is not null)
+                await RetirePictureIfUnreferencedAsync(oldUrl, null);
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
     }
 
     private async Task<User> GetRequiredCurrentUserAsync(string auth0UserId)
@@ -513,6 +669,7 @@ internal class UserService : IUserService
         public int RelevanceRank { get; init; }
         public required string NormalizedUsername { get; init; }
         public required string Username { get; init; }
+        public string? ProfilePictureUrl { get; init; }
     }
 
     private sealed record UserSearchCursor(string Query, int RelevanceRank, string NormalizedUsername, Guid StableId);
@@ -521,6 +678,84 @@ internal class UserService : IUserService
     {
         if (user.IsDeleted)
             throw new DeletedAccountException();
+    }
+
+    private async Task<(User User, IDbContextTransaction? Transaction)> GetCurrentUserForMutationAsync(
+        string auth0UserId,
+        CancellationToken cancellationToken,
+        bool ensureActive = true)
+    {
+        var normalized = NormalizeAuth0UserId(auth0UserId);
+        var id = await _dbContext.Users.AsNoTracking()
+            .Where(user => user.Auth0UserId == normalized)
+            .Select(user => (Guid?)user.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (id is null)
+            throw new NotFoundException("Current user profile was not found.");
+
+        var transaction = _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            await AcquireUserMutationLockAsync(id.Value, cancellationToken);
+            var user = await _dbContext.Users.FirstOrDefaultAsync(candidate => candidate.Id == id.Value, cancellationToken);
+            if (user is null)
+                throw new NotFoundException("Current user profile was not found.");
+            if (ensureActive)
+                EnsureActive(user);
+            return (user, transaction);
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                await transaction.DisposeAsync();
+            }
+            throw;
+        }
+    }
+
+    private async Task AcquireUserMutationLockAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        if (_dbContext.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("User mutation locks require an active database transaction.");
+        if (_dbContext.Database.ProviderName != "Npgsql.EntityFrameworkCore.PostgreSQL")
+            return;
+        var bytes = userId.ToByteArray();
+        var key1 = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(0, 4)) ^ BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(8, 4));
+        var key2 = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4, 4)) ^ BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4));
+        await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0}, {1})", [key1, key2], cancellationToken);
+    }
+
+    private async Task RetirePictureIfUnreferencedAsync(string? url, string? currentUrl)
+    {
+        if (string.IsNullOrWhiteSpace(url) || string.Equals(url, currentUrl, StringComparison.Ordinal))
+            return;
+        try
+        {
+            if (await _dbContext.Users.AsNoTracking().AnyAsync(user => user.ProfilePictureUrl == url))
+                return;
+            await DeletePictureBestEffortAsync(url, "retire an unreferenced user picture");
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogWarning(exception, "Failed to verify references for user picture at {MediaUrl}; the file was retained.", url);
+        }
+    }
+
+    private async Task DeletePictureBestEffortAsync(string url, string action)
+    {
+        try
+        {
+            await (_mediaModule ?? throw new InvalidOperationException("Media module is unavailable."))
+                .DeleteImageAsync(url, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogWarning(exception, "Failed to {MediaCleanupAction} at {MediaUrl}.", action, url);
+        }
     }
 
     private static string NormalizeAuth0UserId(string auth0UserId)

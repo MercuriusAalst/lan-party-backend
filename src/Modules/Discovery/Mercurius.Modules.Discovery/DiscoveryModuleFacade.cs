@@ -140,7 +140,8 @@ internal sealed class DiscoveryModuleFacade : IDiscoveryModule
                 TypeOrder = document.TypeOrder,
                 StableId = document.EntityId,
                 Type = document.EntityType,
-                DisplayLabel = document.Title
+                DisplayLabel = document.Title,
+                ImageUrl = document.ImageUrl
             });
     }
 
@@ -172,7 +173,8 @@ internal sealed class DiscoveryModuleFacade : IDiscoveryModule
                 "User",
                 candidate.DisplayLabel,
                 null,
-                null),
+                null,
+                candidate.ImageUrl),
             SearchDocumentTypes.Team => new DiscoverySearchResult(
                 candidate.Type,
                 candidate.DisplayLabel,
@@ -223,6 +225,7 @@ internal sealed class DiscoveryModuleFacade : IDiscoveryModule
         public required string StableId { get; init; }
         public required string Type { get; init; }
         public required string DisplayLabel { get; init; }
+        public string? ImageUrl { get; init; }
     }
 
     private sealed record SearchCursor(

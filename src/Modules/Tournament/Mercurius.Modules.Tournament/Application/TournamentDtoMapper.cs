@@ -112,7 +112,8 @@ internal sealed class TournamentDtoMapper
                 {
                     Id = contactAdmin.Id.Value,
                     Username = string.IsNullOrWhiteSpace(contactAdmin.Username) ? "Incomplete profile" : contactAdmin.Username,
-                    DisplayName = contactAdmin.DisplayName
+                    DisplayName = contactAdmin.DisplayName,
+                    ProfilePictureUrl = contactAdmin.ProfilePictureUrl
                 }
                 : null,
             Placements = tournament.Placements
@@ -418,7 +419,8 @@ internal sealed class TournamentDtoMapper
                 {
                     Id = member.UserId.Value,
                     Username = string.IsNullOrWhiteSpace(member.Username) ? "Incomplete profile" : member.Username,
-                    DisplayName = string.IsNullOrWhiteSpace(member.Username) ? "Incomplete profile" : member.Username
+                    DisplayName = string.IsNullOrWhiteSpace(member.Username) ? "Incomplete profile" : member.Username,
+                    ProfilePictureUrl = member.ProfilePictureUrl
                 })
                 .ToList()
         };

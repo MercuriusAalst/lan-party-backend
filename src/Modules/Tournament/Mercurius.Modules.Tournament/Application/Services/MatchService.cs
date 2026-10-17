@@ -73,7 +73,8 @@ internal sealed class MatchService : IMatchService
             profile.Lastname,
             profile.DiscordId,
             profile.SteamId,
-            profile.RiotId);
+            profile.RiotId,
+            profile.ProfilePictureUrl);
     }
 
     public async Task<GetMatchActionStateDTO> GetMatchActionStateAsync(

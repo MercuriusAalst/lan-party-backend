@@ -1,4 +1,5 @@
 using Mercurius.Modules.Identity.Application.DTOs;
+using Microsoft.AspNetCore.Http;
 
 namespace Mercurius.Modules.Identity.Application.Services;
 
@@ -12,6 +13,8 @@ internal interface IUserService
     Task<GetUserDTO> GetUserByUsernameAsync(string username);
     Task<UserSearchResponseDTO> SearchUsersAsync(string? query, string? cursor, int pageSize, CancellationToken cancellationToken = default);
     Task<GetUserDTO> UpdateCurrentUserAsync(string auth0UserId, UpdateUserProfileRequest request);
+    Task<CurrentUserProfileResponse> UploadCurrentUserPictureAsync(string auth0UserId, IFormFile picture, CancellationToken cancellationToken = default);
+    Task<CurrentUserProfileResponse> RemoveCurrentUserPictureAsync(string auth0UserId, CancellationToken cancellationToken = default);
     Task<UsernameAvailabilityResponse> CheckUsernameAvailabilityAsync(string auth0UserId, string username);
     Task<UserActionResponse> ResendVerificationEmailAsync(string auth0UserId);
     Task<UserActionResponse> SendPasswordResetEmailAsync(string auth0UserId);

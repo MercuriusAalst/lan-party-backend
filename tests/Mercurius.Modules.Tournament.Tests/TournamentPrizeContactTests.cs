@@ -230,10 +230,11 @@ public class TournamentPrizeContactTests
         using var json = System.Text.Json.JsonDocument.Parse(serialized);
         var contactJson = json.RootElement.GetProperty("ContactAdmin");
 
-        Assert.Equal(3, contactJson.EnumerateObject().Count());
+        Assert.Equal(4, contactJson.EnumerateObject().Count());
         Assert.True(contactJson.TryGetProperty("Id", out _));
         Assert.True(contactJson.TryGetProperty("Username", out _));
         Assert.True(contactJson.TryGetProperty("DisplayName", out _));
+        Assert.True(contactJson.TryGetProperty("ProfilePictureUrl", out _));
         Assert.Equal("public-admin", contactJson.GetProperty("Username").GetString());
         Assert.Equal("Contact Admin", contactJson.GetProperty("DisplayName").GetString());
         Assert.False(contactJson.TryGetProperty("DiscordId", out _));

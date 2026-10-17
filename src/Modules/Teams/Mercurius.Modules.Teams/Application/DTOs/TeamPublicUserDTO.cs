@@ -10,6 +10,7 @@ internal class TeamPublicUserDTO
     public string? DiscordId { get; set; }
     public string? SteamId { get; set; }
     public string? RiotId { get; set; }
+    public string? ProfilePictureUrl { get; set; }
 
     public TeamPublicUserDTO()
     {
@@ -23,5 +24,6 @@ internal class TeamPublicUserDTO
         DiscordId = user.DiscordId;
         SteamId = user.SteamId;
         RiotId = user.RiotId;
+        ProfilePictureUrl = user.ProfilePictureUrl;
     }
 }
