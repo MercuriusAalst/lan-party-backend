@@ -6,4 +6,5 @@
 - [x] Add the admin-only `GET /lan/matches/pending-resolution` endpoint, service and `PendingMatchResolutionDTO`, falling back to every admin for tournaments without an assigned admin.
 - [x] Add regression tests for mandatory admin, the new transition and event reason, the pending list visibility rules, and clearing after resolution.
 - [x] Run strict OpenSpec validation.
+- [x] Show a pending match to other administrators when its assigned admin is unavailable or after a configurable escalation wait, with an `Assignment` label, a bounded and cached admin lookup that fails safe, and tests at service and HTTP level.
 - [ ] Run the full verification, synchronize the live specs, and archive this change after review.

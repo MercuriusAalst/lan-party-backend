@@ -53,7 +53,13 @@ The `MatchResolutionRequiredIntegrationEvent` MUST expose an explicit assigned-a
 
 ### Requirement: Pending admin resolution list
 
-The API MUST expose an administrator-only `GET /lan/matches/pending-resolution` endpoint under the same admin authorization as match resolution. It MUST return the matches in AdminResolutionRequired, in tournaments that are in progress, for which the calling administrator is responsible: matches whose tournament's assigned admin is the caller, and matches whose tournament has no assigned admin. It MUST NOT return matches of tournaments assigned to another administrator. Each item MUST contain the match id, tournament id and name, both participant names, the participants' unconfirmed reported scores when present, a reason of `Disputed` or `MissingOpponentReport`, and the UTC time at which resolution became required when known. The list MUST be derived from persisted match state so that a resolved match no longer appears, and reading it MUST NOT change any state. The endpoint MUST NOT expose the assigned administrator's raw user id. Resolving a match MUST remain permitted for any administrator.
+The API MUST expose an administrator-only `GET /lan/matches/pending-resolution` endpoint under the same admin authorization as match resolution. It MUST return the matches in AdminResolutionRequired, in tournaments that are in progress, that the calling administrator is shown. A match MUST be listed when any of these holds: (a) the tournament's assigned admin is the caller; (b) the tournament has no assigned admin; (c) the assigned admin is no longer an administrator or no longer exists; (d) the match has been waiting for resolution for at least the configured escalation wait. Any other match of a tournament assigned to a different, still valid administrator MUST NOT be listed. Each item MUST contain the match id, tournament id and name, both participant names, the participants' unconfirmed reported scores when present, a reason of `Disputed` or `MissingOpponentReport`, an assignment of `Assigned`, `Unassigned`, `AssignedAdminUnavailable` or `Escalated`, and the UTC time at which resolution became required when known. When several rules hold the assignment MUST be chosen in the order Assigned, Unassigned, AssignedAdminUnavailable, Escalated, so the assigned administrator always sees their match as `Assigned`, even after it has escalated.
+
+The time a match has been waiting MUST be the time of the latest resolution-required notification of its current escalation cycle, that is one issued after the match's last result or reversal. When that time is unknown, because the notification has not been written yet or the match predates it, rule (d) MUST NOT apply to the match; rules (a) to (c) still apply. The escalation wait MUST be configurable as `Tournament:MatchResolution:EscalationAfterMinutes`, MUST default to 10 minutes, and MUST be rejected at startup unless it is greater than zero.
+
+Whether an assigned administrator is still an administrator MUST be checked only for the distinct assigned administrators of matches that are neither the caller's nor unassigned, MUST NOT be checked when there are no such matches, and MAY be answered from a per-process cache of at most 60 seconds. A failed check MUST be treated as the assigned administrator still being valid, so that a failure never widens the list.
+
+The list MUST be derived from persisted match state so that a resolved match no longer appears, and reading it MUST NOT change any state. The endpoint MUST NOT expose the assigned administrator's raw user id. This requirement only governs visibility: resolving a match MUST remain permitted for any administrator.
 
 #### Scenario: Assigned admin sees their pending matches
 
@@ -63,12 +69,47 @@ The API MUST expose an administrator-only `GET /lan/matches/pending-resolution` 
 #### Scenario: Other admin does not see an assigned tournament's matches
 
 - **WHEN** an administrator who is not the assigned admin requests the pending list
-- **THEN** matches of tournaments assigned to someone else MUST be omitted
+- **THEN** matches of tournaments assigned to another, still valid administrator MUST be omitted until they escalate
 
 #### Scenario: Legacy tournament without assigned admin
 
 - **WHEN** a tournament has no assigned admin and one of its matches awaits resolution
 - **THEN** every administrator MUST see that match in the pending list
+
+#### Scenario: Assigned admin is no longer an administrator
+
+- **WHEN** the assigned administrator of a tournament has lost the admin role or no longer exists and one of its matches awaits resolution
+- **THEN** every other administrator MUST see that match with the assignment `AssignedAdminUnavailable`, even when its waiting time is unknown
+
+#### Scenario: Match escalates to every administrator
+
+- **WHEN** a match has awaited resolution for at least the escalation wait and its assigned administrator is still valid
+- **THEN** every administrator MUST see it with the assignment `Escalated`
+- **AND** the assigned administrator MUST keep seeing it with the assignment `Assigned`
+- **AND** before the wait has elapsed an administrator who is not the assigned admin MUST NOT see it
+
+#### Scenario: Waiting time is unknown
+
+- **WHEN** a match of a valid assigned administrator has no resolution-required notification of its current cycle
+- **THEN** it MUST NOT be escalated to other administrators and MUST remain visible to the assigned administrator
+
+#### Scenario: Assignment labels follow their priority
+
+- **WHEN** a match is both unavailable-assigned and past the escalation wait
+- **THEN** another administrator MUST see it as `AssignedAdminUnavailable`, not `Escalated`
+
+#### Scenario: Administrator lookup fails
+
+- **WHEN** the check that an assigned administrator is still an administrator fails
+- **THEN** that administrator MUST be treated as still valid
+- **AND** the list MUST NOT gain matches because of the failure
+
+#### Scenario: Administrator lookups are bounded
+
+- **WHEN** the list is requested and every candidate match is the caller's or unassigned
+- **THEN** no administrator check MUST be made
+- **WHEN** several matches share one other assigned administrator
+- **THEN** that administrator MUST be checked once, and repeated requests within 60 seconds MUST NOT check again
 
 #### Scenario: Non-admin is denied
 

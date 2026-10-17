@@ -7,7 +7,7 @@ Every tournament currently may be created without an assigned admin, and a match
 - Tournament create MUST supply an assigned administrator; update MUST NOT clear it. Legacy tournaments without one keep working, and the next update MUST supply one. The database column stays nullable and no backfill is performed.
 - A single unconfirmed report is no longer auto-accepted. When its five-minute window expires the match enters `AdminResolutionRequired`, keeping the reported score as the first side's claim, never as a final result.
 - `MatchResolutionRequiredIntegrationEvent` gains an additive `Reason` (`Disputed` or `MissingOpponentReport`) and is published once per transition into `AdminResolutionRequired`, for both reasons.
-- New admin-only `GET /lan/matches/pending-resolution` returns the matches in `AdminResolutionRequired` that the calling admin is responsible for (assigned to them, or in a tournament without an assigned admin). It is derived from persisted match state and clears itself when the match is resolved.
+- New admin-only `GET /lan/matches/pending-resolution` returns the matches in `AdminResolutionRequired` that the calling admin is shown: assigned to them, in a tournament without an assigned admin, assigned to someone who is no longer an administrator, or pending longer than a configurable escalation wait (default 10 minutes). Each item carries an `Assignment` label. It is derived from persisted match state and clears itself when the match is resolved.
 
 ## Non-goals
 
