@@ -7,6 +7,8 @@ using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Shared;
 using Mercurius.Modules.Teams.Contracts;
+using Mercurius.Modules.Tournament;
+using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Tournament.Endpoints;
 using Mercurius.Modules.Tournament.Infrastructure;
@@ -14,6 +16,7 @@ using Mercurius.TestInfrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -98,9 +101,81 @@ public sealed class PendingResolutionEndpointTests
         var matchIds = (await ReadItemsAsync(response)).Select(item => item.GetProperty("matchId").GetGuid()).ToList();
         Assert.DoesNotContain(fixture.StillConfirming.Id, matchIds);
         Assert.DoesNotContain(fixture.InFinishedTournament.Id, matchIds);
+        Assert.DoesNotContain(fixture.AssignedToB.Id, matchIds);
+        // Own, unassigned, orphaned and escalated matches are all visible to this admin; nothing else is.
         Assert.Equal(
-            new[] { fixture.AssignedToA.Id, fixture.Legacy.Id }.Order(),
+            new[] { fixture.AssignedToA.Id, fixture.Legacy.Id, fixture.FormerAdminMatch.Id, fixture.SlowMatch.Id }.Order(),
             matchIds.Order());
+    }
+
+    [Fact]
+    public async Task PendingResolution_AdminWhoIsNotAssigned_SeesUnassignedOrphanedAndEscalatedMatchesWithTheirAssignment()
+    {
+        await using var fixture = await StartAsync();
+
+        using var response = await fixture.GetAsAsync(Route, fixture.AdminB, "admin");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var assignments = (await ReadItemsAsync(response)).ToDictionary(
+            item => item.GetProperty("matchId").GetGuid(),
+            item => item.GetProperty("assignment").GetString());
+        Assert.Equal(nameof(PendingMatchAssignment.Assigned), assignments[fixture.AssignedToB.Id]);
+        Assert.Equal(nameof(PendingMatchAssignment.Unassigned), assignments[fixture.Legacy.Id]);
+        Assert.Equal(nameof(PendingMatchAssignment.AssignedAdminUnavailable), assignments[fixture.FormerAdminMatch.Id]);
+        Assert.Equal(nameof(PendingMatchAssignment.Escalated), assignments[fixture.SlowMatch.Id]);
+        Assert.DoesNotContain(fixture.AssignedToA.Id, assignments.Keys);
+        Assert.DoesNotContain(fixture.StillConfirming.Id, assignments.Keys);
+        Assert.DoesNotContain(fixture.InFinishedTournament.Id, assignments.Keys);
+    }
+
+    [Fact]
+    public async Task PendingResolution_AssignedAdmin_StillSeesEscalatedMatchAsAssigned()
+    {
+        await using var fixture = await StartAsync();
+
+        using var response = await fixture.GetAsAsync(Route, fixture.AdminA, "admin");
+
+        var assignments = (await ReadItemsAsync(response)).ToDictionary(
+            item => item.GetProperty("matchId").GetGuid(),
+            item => item.GetProperty("assignment").GetString());
+        Assert.Equal(nameof(PendingMatchAssignment.Assigned), assignments[fixture.SlowMatch.Id]);
+        Assert.Equal(nameof(PendingMatchAssignment.Assigned), assignments[fixture.AssignedToA.Id]);
+        Assert.Equal(nameof(PendingMatchAssignment.Unassigned), assignments[fixture.Legacy.Id]);
+        Assert.Equal(nameof(PendingMatchAssignment.AssignedAdminUnavailable), assignments[fixture.FormerAdminMatch.Id]);
+    }
+
+    [Theory]
+    [InlineData(null, 10)]
+    [InlineData("3", 3)]
+    public void PendingResolution_EscalationWait_DefaultsToTenMinutesAndBindsFromConfiguration(string? configured, int expectedMinutes)
+    {
+        using var provider = BuildTournamentServices(configured);
+
+        var options = provider.GetRequiredService<IOptions<MatchResolutionOptions>>().Value;
+
+        Assert.Equal(expectedMinutes, options.EscalationAfterMinutes);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-5")]
+    public void PendingResolution_EscalationWait_RejectsNonPositiveValues(string configured)
+    {
+        using var provider = BuildTournamentServices(configured);
+
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<MatchResolutionOptions>>().Value);
+    }
+
+    private static ServiceProvider BuildTournamentServices(string? escalationAfterMinutes)
+    {
+        var values = new Dictionary<string, string?>();
+        if (escalationAfterMinutes is not null)
+            values["Tournament:MatchResolution:EscalationAfterMinutes"] = escalationAfterMinutes;
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var services = new ServiceCollection();
+        services.AddDbContext<MercuriusDBContext>(options => options.UseNpgsql());
+        services.AddTournamentModule<MercuriusDBContext>(configuration);
+        return services.BuildServiceProvider();
     }
 
     private static async Task<List<JsonElement>> ReadItemsAsync(HttpResponseMessage response)
@@ -117,7 +192,8 @@ public sealed class PendingResolutionEndpointTests
         var regular = CreateUser("regular-user");
         var player1 = CreateUser("player-one");
         var player2 = CreateUser("player-two");
-        var users = new[] { adminA, adminB, regular, player1, player2 };
+        var formerAdmin = CreateUser("former-assigned");
+        var users = new[] { adminA, adminB, regular, player1, player2, formerAdmin };
 
         var tournamentA = CreateTournament("Assigned To A", adminA.Id, Domain.TournamentStatus.InProgress);
         var assignedToA = CreateMatch(tournamentA, player1, player2, Domain.MatchLifecycleState.AdminResolutionRequired);
@@ -129,8 +205,26 @@ public sealed class PendingResolutionEndpointTests
         var finishedTournament = CreateTournament("Finished Cup", adminA.Id, Domain.TournamentStatus.Completed);
         var inFinished = CreateMatch(finishedTournament, player1, player2, Domain.MatchLifecycleState.AdminResolutionRequired);
 
+        var orphanedTournament = CreateTournament("Orphaned Cup", formerAdmin.Id, Domain.TournamentStatus.InProgress);
+        var formerAdminMatch = CreateMatch(orphanedTournament, player1, player2, Domain.MatchLifecycleState.AdminResolutionRequired);
+        var slowTournament = CreateTournament("Slow Cup", adminA.Id, Domain.TournamentStatus.InProgress);
+        var slowMatch = CreateMatch(slowTournament, player1, player2, Domain.MatchLifecycleState.AdminResolutionRequired);
+
         dbContext.Users.AddRange(users);
-        dbContext.Set<TournamentAggregate>().AddRange(tournamentA, tournamentB, legacyTournament, finishedTournament);
+        dbContext.Set<TournamentAggregate>().AddRange(
+            tournamentA, tournamentB, legacyTournament, finishedTournament, orphanedTournament, slowTournament);
+        await dbContext.SaveChangesAsync();
+        // The escalation wait is one minute in this host: the slow match has been pending for five, the others for none.
+        dbContext.Set<Domain.MatchResolutionNotification>().Add(new Domain.MatchResolutionNotification
+        {
+            Id = Guid.NewGuid(),
+            MatchId = slowMatch.Id,
+            TournamentId = slowTournament.Id,
+            RecipientUserId = adminA.Id,
+            RecipientKind = Domain.MatchResolutionNotificationRecipientKind.AssignedAdmin,
+            OccurredAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        });
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
         var connectionString = dbContext.Database.GetConnectionString()!;
@@ -145,10 +239,12 @@ public sealed class PendingResolutionEndpointTests
             new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options));
         builder.Services.AddScoped<ITournamentDbContext>(provider =>
             new TournamentDbContextAdapter<MercuriusDBContext>(provider.GetRequiredService<MercuriusDBContext>()));
-        builder.Services.AddSingleton<IIdentityModule>(new StubIdentityModule(users));
+        builder.Services.AddSingleton<IIdentityModule>(new StubIdentityModule(users, [adminA.Id, adminB.Id]));
         builder.Services.AddSingleton<ITeamsModule, StubTeamsModule>();
         builder.Services.AddSingleton<IModuleEventPublisher, NoopModuleEventPublisher>();
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.Configure<MatchResolutionOptions>(options => options.EscalationAfterMinutes = 1);
+        builder.Services.AddSingleton<AssignedAdminAvailabilityCache>();
         builder.Services.AddScoped<MatchBracketImpactAnalyzer>();
         builder.Services.AddScoped<IMatchService, MatchService>();
 
@@ -162,7 +258,11 @@ public sealed class PendingResolutionEndpointTests
         var addresses = app.Services.GetRequiredService<Microsoft.AspNetCore.Hosting.Server.IServer>()
             .Features.Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()!;
         var client = new HttpClient { BaseAddress = new Uri(Assert.Single(addresses.Addresses)) };
-        return new Fixture(app, client, dbContext, adminA, adminB, regular, tournamentA, assignedToA, stillConfirming, assignedToB, legacy, inFinished);
+        return new Fixture(app, client, dbContext, adminA, adminB, regular, tournamentA, assignedToA, stillConfirming, assignedToB, legacy, inFinished)
+        {
+            FormerAdminMatch = formerAdminMatch,
+            SlowMatch = slowMatch
+        };
     }
 
     private static TournamentAggregate CreateTournament(string name, Guid? assignedAdminUserId, Domain.TournamentStatus status) =>
@@ -235,6 +335,8 @@ public sealed class PendingResolutionEndpointTests
         public Domain.Match AssignedToB { get; } = assignedToB;
         public Domain.Match Legacy { get; } = legacy;
         public Domain.Match InFinishedTournament { get; } = inFinishedTournament;
+        public Domain.Match FormerAdminMatch { get; init; } = null!;
+        public Domain.Match SlowMatch { get; init; } = null!;
 
         public Task<HttpResponseMessage> GetAsAsync(string route, User persona, string role)
         {
@@ -277,8 +379,11 @@ public sealed class PendingResolutionEndpointTests
             where TPayload : notnull => Guid.NewGuid();
     }
 
-    private sealed class StubIdentityModule(IReadOnlyCollection<User> users) : IIdentityModule
+    private sealed class StubIdentityModule(IReadOnlyCollection<User> users, IReadOnlyCollection<Guid> adminUserIds) : IIdentityModule
     {
+        public Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(adminUserIds.Contains(userId.Value));
+
         private static UserProfileSummary ToSummary(User user) => new(
             new UserId(user.Id), user.Username, user.Username ?? string.Empty, false, null, null, null);
 
