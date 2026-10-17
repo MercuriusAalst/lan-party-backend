@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.7.0...backend-v0.8.0) (2026-10-17)
+
+
+### Features
+
+* Require Assigned Admin And Route Match Resolution To Them ([#153](https://github.com/MercuriusAalst/lan-party-backend/issues/153)) ([ca7b6cc](https://github.com/MercuriusAalst/lan-party-backend/commit/ca7b6cc57e9376210c0132e8ba1d35602e801ed0))
+
 ## [0.7.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.6.0...backend-v0.7.0) (2026-10-15)
 
 
