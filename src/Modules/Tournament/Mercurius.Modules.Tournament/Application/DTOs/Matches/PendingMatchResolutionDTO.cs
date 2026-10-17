@@ -17,6 +17,7 @@ internal sealed class PendingMatchResolutionDTO
     public int? Participant2ReportedScore1 { get; set; }
     public int? Participant2ReportedScore2 { get; set; }
     public MatchResolutionReason Reason { get; set; }
+    public PendingMatchAssignment Assignment { get; set; }
     // Latest resolution-required notification of the current escalation cycle, i.e. after the match's last result or reversal.
     // Null while that cycle's notification has not been written yet (outbox lag) or for matches that predate it.
     public DateTime? RequiredSinceUtc { get; set; }

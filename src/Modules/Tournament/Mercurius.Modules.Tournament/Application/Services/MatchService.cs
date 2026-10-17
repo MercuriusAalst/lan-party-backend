@@ -7,6 +7,8 @@ using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.Modules.Teams.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Platform.Eventing;
 using MatchResolutionRequiredIntegrationEvent = Mercurius.Modules.Tournament.Contracts.MatchResolutionRequiredIntegrationEvent;
 using MatchParticipantSide = Mercurius.Modules.Tournament.Contracts.MatchParticipantSide;
@@ -23,6 +25,9 @@ internal sealed class MatchService : IMatchService
     private readonly IModuleEventPublisher _moduleEventPublisher;
     private readonly TimeProvider _timeProvider;
     private readonly MatchBracketImpactAnalyzer _bracketImpactAnalyzer;
+    private readonly MatchResolutionOptions _matchResolutionOptions;
+    private readonly AssignedAdminAvailabilityCache _assignedAdminAvailability;
+    private readonly ILogger _logger;
 
     public MatchService(
         ITournamentDbContext dbContext,
@@ -30,7 +35,10 @@ internal sealed class MatchService : IMatchService
         ITeamsModule teamsModule,
         IModuleEventPublisher moduleEventPublisher,
         TimeProvider timeProvider,
-        MatchBracketImpactAnalyzer bracketImpactAnalyzer)
+        MatchBracketImpactAnalyzer bracketImpactAnalyzer,
+        IOptions<MatchResolutionOptions>? matchResolutionOptions = null,
+        AssignedAdminAvailabilityCache? assignedAdminAvailability = null,
+        ILogger<MatchService>? logger = null)
     {
         _dbContext = dbContext;
         _identityModule = identityModule;
@@ -38,6 +46,9 @@ internal sealed class MatchService : IMatchService
         _moduleEventPublisher = moduleEventPublisher;
         _timeProvider = timeProvider;
         _bracketImpactAnalyzer = bracketImpactAnalyzer;
+        _matchResolutionOptions = matchResolutionOptions?.Value ?? new MatchResolutionOptions();
+        _assignedAdminAvailability = assignedAdminAvailability ?? new AssignedAdminAvailabilityCache(timeProvider);
+        _logger = (ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     }
 
     public async Task<GetMatchDTO> GetMatchByIdAsync(
@@ -159,15 +170,14 @@ internal sealed class MatchService : IMatchService
         var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
 
         // Derived from persisted match state, so an item disappears as soon as the match is resolved.
-        // Tournaments without an assigned admin (legacy rows) are shown to every administrator.
+        // Every match awaiting resolution in an in-progress tournament is a candidate; the visibility rules below
+        // decide which ones this administrator is shown.
         var matches = await _dbContext.Matches
             .AsNoTracking()
             .Include(match => match.Tournament)
             .Where(match =>
                 match.LifecycleState == MatchLifecycleState.AdminResolutionRequired &&
-                match.Tournament.Status == TournamentStatus.InProgress &&
-                (match.Tournament.AssignedAdminUserId == null ||
-                 match.Tournament.AssignedAdminUserId == userId))
+                match.Tournament.Status == TournamentStatus.InProgress)
             .ToListAsync(cancellationToken);
         if (matches.Count == 0)
             return [];
@@ -188,6 +198,42 @@ internal sealed class MatchService : IMatchService
                     (!match.ResultRecordedAtUtc.HasValue || notification.OccurredAtUtc > match.ResultRecordedAtUtc.Value))
                 .Select(notification => (DateTime?)notification.OccurredAtUtc)
                 .Max());
+
+        // The live Auth0 admin check only runs for the distinct admins assigned to matches that are not already
+        // the caller's or unassigned, and never when there are none.
+        var otherAssignedAdminIds = matches
+            .Select(match => match.Tournament.AssignedAdminUserId)
+            .Where(adminId => adminId.HasValue && adminId.Value != userId)
+            .Select(adminId => adminId!.Value)
+            .Distinct()
+            .ToArray();
+        var unavailableAdminIds = await GetUnavailableAssignedAdminIdsAsync(otherAssignedAdminIds, cancellationToken);
+        var nowUtc = UtcNow();
+        var escalationAfter = _matchResolutionOptions.EscalationAfter;
+
+        PendingMatchAssignment? AssignmentFor(Match match)
+        {
+            var assignedAdminId = match.Tournament.AssignedAdminUserId;
+            if (assignedAdminId == userId)
+                return PendingMatchAssignment.Assigned;
+            if (!assignedAdminId.HasValue)
+                return PendingMatchAssignment.Unassigned;
+            if (unavailableAdminIds.Contains(assignedAdminId.Value))
+                return PendingMatchAssignment.AssignedAdminUnavailable;
+            // Without a current-cycle notification time the wait is unknowable, so the match is not escalated yet.
+            return requiredSince[match.Id] is { } since && nowUtc - since >= escalationAfter
+                ? PendingMatchAssignment.Escalated
+                : null;
+        }
+
+        var visible = matches
+            .Select(match => (Match: match, Assignment: AssignmentFor(match)))
+            .Where(entry => entry.Assignment.HasValue)
+            .ToList();
+        if (visible.Count == 0)
+            return [];
+        matches = visible.Select(entry => entry.Match).ToList();
+        var assignments = visible.ToDictionary(entry => entry.Match.Id, entry => entry.Assignment!.Value);
 
         var userNames = await _identityModule.GetPublicUsernamesByIdsAsync(
             matches
@@ -228,6 +274,7 @@ internal sealed class MatchService : IMatchService
                 Participant2ReportedScore1 = match.Participant2ReportedScore1,
                 Participant2ReportedScore2 = match.Participant2ReportedScore2,
                 Reason = (Contracts.MatchResolutionReason)(match.GetResolutionReason() ?? MatchResolutionReason.Disputed),
+                Assignment = assignments[match.Id],
                 RequiredSinceUtc = requiredSince[match.Id]
             })
             .OrderBy(item => item.RequiredSinceUtc is null)
@@ -235,6 +282,38 @@ internal sealed class MatchService : IMatchService
             .ThenBy(item => item.TournamentName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.MatchId)
             .ToList();
+    }
+
+    // One lookup per distinct admin id, answered from a 60 second per-process cache when possible. A failed lookup
+    // counts as "still an administrator" (and is cached like an answer), so an Auth0 outage can never widen
+    // visibility or turn every poll into another Auth0 call. Only the caller's own cancellation propagates.
+    private async Task<HashSet<Guid>> GetUnavailableAssignedAdminIdsAsync(
+        IReadOnlyCollection<Guid> assignedAdminIds,
+        CancellationToken cancellationToken)
+    {
+        var unavailable = new HashSet<Guid>();
+        foreach (var adminId in assignedAdminIds)
+        {
+            if (!_assignedAdminAvailability.TryGet(adminId, out var isAvailable))
+            {
+                try
+                {
+                    isAvailable = await _identityModule.IsAdminUserAsync(new UserId(adminId), cancellationToken);
+                }
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning(exception, "Could not verify that the assigned tournament admin is still an administrator; treating as available.");
+                    isAvailable = true;
+                }
+
+                _assignedAdminAvailability.Set(adminId, isAvailable);
+            }
+
+            if (!isAvailable)
+                unavailable.Add(adminId);
+        }
+
+        return unavailable;
     }
 
     public async Task<GetMatchDTO> SubmitScoreAsync(

@@ -1,4 +1,8 @@
 using Mercurius.LAN.API.Data;
+using Mercurius.Modules.Identity.Contracts;
+using Mercurius.Modules.Shared;
+using Mercurius.Modules.Shared.Exceptions;
+using Microsoft.Extensions.Options;
 using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Tournament.Domain;
@@ -210,6 +214,248 @@ public class PendingMatchResolutionTests
         Assert.Empty(await service.GetPendingResolutionsAsync(admin.Auth0UserId));
     }
 
+    [Fact]
+    public async Task GetPendingResolutionsAsync_LabelsAssignedAndUnassigned()
+    {
+        var assignedAdmin = CreateUser("assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var assigned = CreateTournament("Assigned Cup", assignedAdmin.Id);
+        var legacy = CreateTournament("Legacy Cup", null);
+        var assignedMatch = CreatePendingMatch(assigned, player1, player2, bothReports: false);
+        var legacyMatch = CreatePendingMatch(legacy, player1, player2, bothReports: false);
+        assigned.Matches.Add(assignedMatch);
+        legacy.Matches.Add(legacyMatch);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [assigned, legacy], [assignedAdmin, otherAdmin, player1, player2]);
+        var service = CreateService(dbContext, [assignedAdmin, otherAdmin, player1, player2]);
+
+        var forAssigned = (await service.GetPendingResolutionsAsync(assignedAdmin.Auth0UserId)).ToDictionary(item => item.MatchId);
+        var forOther = (await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId)).ToDictionary(item => item.MatchId);
+
+        Assert.Equal(PendingMatchAssignment.Assigned, forAssigned[assignedMatch.Id].Assignment);
+        Assert.Equal(PendingMatchAssignment.Unassigned, forAssigned[legacyMatch.Id].Assignment);
+        Assert.Equal(PendingMatchAssignment.Unassigned, forOther[legacyMatch.Id].Assignment);
+        Assert.DoesNotContain(assignedMatch.Id, forOther.Keys);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPendingResolutionsAsync_AssignedAdminNoLongerAdministratorOrMissing_IsVisibleToEveryAdmin(bool assignedUserExists)
+    {
+        var formerAdmin = CreateUser("former-assigned");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Orphaned Cup", formerAdmin.Id);
+        var match = CreatePendingMatch(tournament, player1, player2, bothReports: false);
+        tournament.Matches.Add(match);
+        await using var dbContext = CreateDbContext();
+        // The user either lost the admin role or no longer exists in the identity module.
+        List<User> users = assignedUserExists
+            ? [formerAdmin, otherAdmin, player1, player2]
+            : [otherAdmin, player1, player2];
+        await SaveAsync(dbContext, [tournament], [formerAdmin, otherAdmin, player1, player2]);
+        var service = CreateService(dbContext, users, adminUserIds: [otherAdmin.Id]);
+
+        var item = Assert.Single(await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId));
+
+        Assert.Equal(match.Id, item.MatchId);
+        Assert.Equal(PendingMatchAssignment.AssignedAdminUnavailable, item.Assignment);
+        // No current-cycle notification yet: still listed because the assigned admin cannot act.
+        Assert.Null(item.RequiredSinceUtc);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_EscalatesAfterTheConfiguredWaitToEveryAdmin()
+    {
+        var assignedAdmin = CreateUser("assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Slow Cup", assignedAdmin.Id);
+        var stale = CreatePendingMatch(tournament, player1, player2, bothReports: false);
+        var fresh = CreatePendingMatch(tournament, player1, player2, bothReports: false);
+        tournament.Matches.Add(stale);
+        tournament.Matches.Add(fresh);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [tournament], [assignedAdmin, otherAdmin, player1, player2]);
+        dbContext.Set<MatchResolutionNotification>().AddRange(
+            CreateNotification(stale, assignedAdmin.Id, NowUtc.AddMinutes(-10)),
+            CreateNotification(fresh, assignedAdmin.Id, NowUtc.AddMinutes(-9)));
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext, [assignedAdmin, otherAdmin, player1, player2]);
+
+        var forOther = await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        var forAssigned = (await service.GetPendingResolutionsAsync(assignedAdmin.Auth0UserId)).ToDictionary(item => item.MatchId);
+
+        var escalated = Assert.Single(forOther);
+        Assert.Equal(stale.Id, escalated.MatchId);
+        Assert.Equal(PendingMatchAssignment.Escalated, escalated.Assignment);
+        Assert.Equal(PendingMatchAssignment.Assigned, forAssigned[stale.Id].Assignment);
+        Assert.Equal(PendingMatchAssignment.Assigned, forAssigned[fresh.Id].Assignment);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_UsesTheConfiguredEscalationWait()
+    {
+        var assignedAdmin = CreateUser("assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Configured Cup", assignedAdmin.Id);
+        var match = CreatePendingMatch(tournament, player1, player2, bothReports: false);
+        tournament.Matches.Add(match);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [tournament], [assignedAdmin, otherAdmin, player1, player2]);
+        dbContext.Set<MatchResolutionNotification>().Add(CreateNotification(match, assignedAdmin.Id, NowUtc.AddMinutes(-3)));
+        await dbContext.SaveChangesAsync();
+        var users = new[] { assignedAdmin, otherAdmin, player1, player2 };
+
+        var defaultWait = await CreateService(dbContext, users).GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        var shortWait = await CreateService(dbContext, users, escalationAfterMinutes: 2).GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+
+        Assert.Empty(defaultWait);
+        Assert.Equal(PendingMatchAssignment.Escalated, Assert.Single(shortWait).Assignment);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_LabelPriority_UnavailableBeatsEscalated_AssignedBeatsBoth()
+    {
+        var formerAdmin = CreateUser("former-assigned");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Priority Cup", formerAdmin.Id);
+        var match = CreatePendingMatch(tournament, player1, player2, bothReports: false);
+        tournament.Matches.Add(match);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [tournament], [formerAdmin, otherAdmin, player1, player2]);
+        dbContext.Set<MatchResolutionNotification>().Add(CreateNotification(match, formerAdmin.Id, NowUtc.AddMinutes(-60)));
+        await dbContext.SaveChangesAsync();
+        var users = new[] { formerAdmin, otherAdmin, player1, player2 };
+
+        var asOther = await CreateService(dbContext, users, adminUserIds: [otherAdmin.Id])
+            .GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        var asAssigned = await CreateService(dbContext, users, adminUserIds: [otherAdmin.Id])
+            .GetPendingResolutionsAsync(formerAdmin.Auth0UserId);
+
+        Assert.Equal(PendingMatchAssignment.AssignedAdminUnavailable, Assert.Single(asOther).Assignment);
+        Assert.Equal(PendingMatchAssignment.Assigned, Assert.Single(asAssigned).Assignment);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_UnknownRequiredSince_IsNotEscalatedForAValidAssignedAdmin()
+    {
+        var assignedAdmin = CreateUser("assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Unknown Wait Cup", assignedAdmin.Id);
+        var match = CreatePendingMatch(tournament, player1, player2, bothReports: false)
+            .Set(x => x.ResultRecordedAtUtc, NowUtc.AddMinutes(-120));
+        tournament.Matches.Add(match);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [tournament], [assignedAdmin, otherAdmin, player1, player2]);
+        var service = CreateService(dbContext, [assignedAdmin, otherAdmin, player1, player2]);
+
+        Assert.Empty(await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId));
+        Assert.Null(Assert.Single(await service.GetPendingResolutionsAsync(assignedAdmin.Auth0UserId)).RequiredSinceUtc);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_WhenAdminLookupFails_TreatsAssignedAdminAsAvailable()
+    {
+        var assignedAdmin = CreateUser("assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Outage Cup", assignedAdmin.Id);
+        var waiting = CreatePendingMatch(tournament, player1, player2, bothReports: false);
+        var stale = CreatePendingMatch(tournament, player1, player2, bothReports: false);
+        tournament.Matches.Add(waiting);
+        tournament.Matches.Add(stale);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [tournament], [assignedAdmin, otherAdmin, player1, player2]);
+        dbContext.Set<MatchResolutionNotification>().Add(CreateNotification(stale, assignedAdmin.Id, NowUtc.AddMinutes(-30)));
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(
+            dbContext,
+            [assignedAdmin, otherAdmin, player1, player2],
+            adminLookupFailure: new ServiceUnavailableException("Auth0 is unavailable."));
+
+        var forOther = await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+
+        // The failure never broadens visibility: only the escalated match shows, labelled by the escalation rule.
+        var item = Assert.Single(forOther);
+        Assert.Equal(stale.Id, item.MatchId);
+        Assert.Equal(PendingMatchAssignment.Escalated, item.Assignment);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_ChecksEachOtherAssignedAdminOncePerCacheWindow()
+    {
+        var assignedAdmin = CreateUser("assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var own = CreateTournament("Own Cup", otherAdmin.Id);
+        var legacy = CreateTournament("Legacy Cup", null);
+        var theirs = CreateTournament("Their Cup", assignedAdmin.Id);
+        own.Matches.Add(CreatePendingMatch(own, player1, player2, bothReports: false));
+        legacy.Matches.Add(CreatePendingMatch(legacy, player1, player2, bothReports: false));
+        theirs.Matches.Add(CreatePendingMatch(theirs, player1, player2, bothReports: false));
+        theirs.Matches.Add(CreatePendingMatch(theirs, player1, player2, bothReports: false));
+        theirs.Matches.Add(CreatePendingMatch(theirs, player1, player2, bothReports: false));
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [own, legacy, theirs], [assignedAdmin, otherAdmin, player1, player2]);
+        var users = new[] { assignedAdmin, otherAdmin, player1, player2 };
+        var clock = new FixedTimeProvider(NowUtc);
+        var identity = new CountingIdentityModule(TournamentTestSupport.CreateIdentityModule(
+            users,
+            adminUserIds: [assignedAdmin.Id, otherAdmin.Id]));
+        var service = CreateService(dbContext, users, identityModule: identity, timeProvider: clock);
+
+        // From the assigned admin's view only other-admin's tournament belongs to someone else: one lookup.
+        await service.GetPendingResolutionsAsync(assignedAdmin.Auth0UserId);
+        Assert.Equal(1, identity.AdminLookupCount);
+        // From other-admin's view the three matches of assigned-admin's tournament cost a single lookup.
+        await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        Assert.Equal(2, identity.AdminLookupCount);
+        // Repeated polls inside the TTL are answered from the cache.
+        await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        await service.GetPendingResolutionsAsync(assignedAdmin.Auth0UserId);
+        Assert.Equal(2, identity.AdminLookupCount);
+
+        clock.Advance(AssignedAdminAvailabilityCache.TimeToLive + TimeSpan.FromSeconds(1));
+        await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        Assert.Equal(3, identity.AdminLookupCount);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_WithOnlyOwnAndUnassignedMatches_NeverCallsTheAdminLookup()
+    {
+        var admin = CreateUser("assigned-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var own = CreateTournament("Own Cup", admin.Id);
+        var legacy = CreateTournament("Legacy Cup", null);
+        own.Matches.Add(CreatePendingMatch(own, player1, player2, bothReports: false));
+        legacy.Matches.Add(CreatePendingMatch(legacy, player1, player2, bothReports: false));
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [own, legacy], [admin, player1, player2]);
+        var users = new[] { admin, player1, player2 };
+        var identity = new CountingIdentityModule(TournamentTestSupport.CreateIdentityModule(users, adminUserIds: [admin.Id]));
+        var service = CreateService(dbContext, users, identityModule: identity);
+
+        var items = await service.GetPendingResolutionsAsync(admin.Auth0UserId);
+
+        Assert.Equal(2, items.Count);
+        Assert.Equal(0, identity.AdminLookupCount);
+    }
+
     private static TournamentAggregate CreateTournament(string name, Guid? assignedAdminUserId) =>
         new TournamentAggregate(
             name,
@@ -268,17 +514,32 @@ public class PendingMatchResolutionTests
         dbContext.ChangeTracker.Clear();
     }
 
+    // By default every user whose name contains "admin" is a current administrator.
     private static MatchService CreateService(
         MercuriusDBContext dbContext,
         IReadOnlyCollection<User> users,
-        IReadOnlyCollection<Team>? teams = null) =>
-        new(
+        IReadOnlyCollection<Team>? teams = null,
+        IReadOnlyCollection<Guid>? adminUserIds = null,
+        Exception? adminLookupFailure = null,
+        CountingIdentityModule? identityModule = null,
+        FixedTimeProvider? timeProvider = null,
+        int escalationAfterMinutes = 10)
+    {
+        var clock = timeProvider ?? new FixedTimeProvider(NowUtc);
+        var identity = identityModule ?? new CountingIdentityModule(TournamentTestSupport.CreateIdentityModule(
+            users,
+            adminUserIds: adminUserIds ?? users.Where(user => user.Username!.Contains("admin")).Select(user => user.Id).ToList(),
+            adminLookupFailure: adminLookupFailure));
+        return new MatchService(
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
-            TournamentTestSupport.CreateIdentityModule(users),
+            identity,
             TournamentTestSupport.CreateTeamsModule(teams, users),
             TournamentTestSupport.CreateModuleEventPublisher(),
-            new FixedTimeProvider(NowUtc),
-            new MatchBracketImpactAnalyzer(new TournamentDbContextAdapter<MercuriusDBContext>(dbContext)));
+            clock,
+            new MatchBracketImpactAnalyzer(new TournamentDbContextAdapter<MercuriusDBContext>(dbContext)),
+            Options.Create(new MatchResolutionOptions { EscalationAfterMinutes = escalationAfterMinutes }),
+            new AssignedAdminAvailabilityCache(clock));
+    }
 
     private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
 
@@ -294,6 +555,37 @@ public class PendingMatchResolutionTests
 
     private sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => new(utcNow);
+        private DateTime _utcNow = utcNow;
+
+        public void Advance(TimeSpan by) => _utcNow += by;
+
+        public override DateTimeOffset GetUtcNow() => new(_utcNow);
+    }
+
+    // Forwards to the stub identity module and counts the live admin lookups.
+    private sealed class CountingIdentityModule(IIdentityModule inner) : IIdentityModule
+    {
+        public int AdminLookupCount { get; private set; }
+
+        public Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default)
+        {
+            AdminLookupCount++;
+            return inner.IsAdminUserAsync(userId, cancellationToken);
+        }
+
+        public Task<UserProfileSummary?> GetUserProfileAsync(UserId userId, CancellationToken cancellationToken = default) =>
+            inner.GetUserProfileAsync(userId, cancellationToken);
+        public Task<UserProfileSummary?> GetUserProfileByAuth0IdAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+            inner.GetUserProfileByAuth0IdAsync(auth0UserId, cancellationToken);
+        public Task<PublicUserProfileSummary?> GetPublicProfileByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+            inner.GetPublicProfileByUsernameAsync(username, cancellationToken);
+        public Task<PublicUserProfileSummary?> GetPublicProfileByIdAsync(UserId userId, CancellationToken cancellationToken = default) =>
+            inner.GetPublicProfileByIdAsync(userId, cancellationToken);
+        public Task<IReadOnlyDictionary<UserId, UserProfileSummary>> GetUsersByIdsAsync(IReadOnlyCollection<UserId> userIds, CancellationToken cancellationToken = default) =>
+            inner.GetUsersByIdsAsync(userIds, cancellationToken);
+        public Task<IReadOnlyDictionary<UserId, string>> GetPublicUsernamesByIdsAsync(IReadOnlyCollection<UserId> userIds, CancellationToken cancellationToken = default) =>
+            inner.GetPublicUsernamesByIdsAsync(userIds, cancellationToken);
+        public Task<IReadOnlyList<PublicUserSearchDocument>> GetPublicUserSearchDocumentsPageAsync(UserId? afterId, int pageSize, CancellationToken cancellationToken = default) =>
+            inner.GetPublicUserSearchDocumentsPageAsync(afterId, pageSize, cancellationToken);
     }
 }
