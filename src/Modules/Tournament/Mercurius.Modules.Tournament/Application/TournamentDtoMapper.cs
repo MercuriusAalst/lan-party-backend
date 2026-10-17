@@ -364,7 +364,7 @@ internal sealed class TournamentDtoMapper
                 ? []
                 : tournament.GetLeaderboardRanking()
                     .Where(row => row.Rank == placement.Place && placement.LeaderboardParticipants.Any(link => link.LeaderboardParticipantId == row.Participant.Id))
-                    .Select(LeaderboardRowDTO.From)
+                    .Select(row => LeaderboardRowDTO.From(row, context.Users))
                     .ToList()
         };
     }

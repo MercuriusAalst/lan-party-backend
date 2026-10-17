@@ -47,6 +47,7 @@ public class TeamsModuleFacadeTests
     {
         await using var dbContext = CreateDbContext();
         var captain = CreateUser("captain", "Captain", "Player");
+        captain.ProfilePictureUrl = "/images/captain.webp";
         var team = new Team("Alpha Team", captain.Id)
         {
             Id = Guid.NewGuid(),
@@ -120,6 +121,7 @@ public class TeamsModuleFacadeTests
     {
         await using var dbContext = CreateDbContext();
         var captain = CreateUser("captain", "Captain", "Player");
+        captain.ProfilePictureUrl = "/images/captain.webp";
         var zeta = CreateUser("zeta", null, null);
         var alpha = CreateUser("alpha", "Alpha", "Member");
         var team = new Team("Roster Team", captain.Id) { Id = Guid.NewGuid() };
@@ -139,7 +141,18 @@ public class TeamsModuleFacadeTests
         Assert.Equal(captain.Id, roster.CaptainUserId!.Value.Value);
         Assert.Equal(["alpha", "captain", "zeta"], roster.Members.Select(member => member.Username).ToList());
         Assert.Equal(["Alpha Member", "Captain Player", "zeta"], roster.Members.Select(member => member.DisplayName).ToList());
+        Assert.Equal("/images/captain.webp", roster.Members.Single(member => member.UserId.Value == captain.Id).ProfilePictureUrl);
         Assert.True(roster.Members.Single(member => member.UserId.Value == captain.Id).IsCaptain);
+    }
+
+    [Fact]
+    public void TeamPublicUserDTO_MapsCurrentProfilePicture()
+    {
+        var userId = new UserId(Guid.NewGuid());
+        var dto = new Mercurius.Modules.Teams.Application.DTOs.TeamPublicUserDTO(
+            new UserProfileSummary(userId, "captain", "Captain Player", false, null, null, null, "/images/captain.webp"));
+
+        Assert.Equal("/images/captain.webp", dto.ProfilePictureUrl);
     }
 
     [Fact]

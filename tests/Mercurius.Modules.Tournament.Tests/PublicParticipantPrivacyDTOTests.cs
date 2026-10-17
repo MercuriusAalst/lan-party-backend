@@ -24,6 +24,7 @@ public class PublicParticipantPrivacyDTOTests
     {
         var tournament = CreateTournament(ParticipationMode.Individual);
         var user = CreateUser(2);
+        user.ProfilePictureUrl = "/images/user2.webp";
         tournament.TournamentRegistrations.Add(new TournamentRegistration
         {
             Id = Guid.NewGuid(),
@@ -43,8 +44,25 @@ public class PublicParticipantPrivacyDTOTests
         Assert.DoesNotContain("\"users\":", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\"teams\":", json, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"username\":\"user2\"", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"profilePictureUrl\":\"/images/user2.webp\"", json, StringComparison.OrdinalIgnoreCase);
         AssertPublicPlatformIdsAreAbsent(json);
         AssertPrivateUserFieldsAreAbsent(json);
+    }
+
+    [Fact]
+    public void GetPlacementDTO_MapsCurrentParticipantPicture()
+    {
+        var user = CreateUser(20);
+        user.ProfilePictureUrl = "/images/user20.webp";
+        var placement = new Placement
+        {
+            Place = 1,
+            Users = [new PlacementUser { UserId = user.Id }]
+        };
+
+        var json = Serialize(placement.ToGetPlacementDTO(users: [user]));
+
+        Assert.Contains("\"profilePictureUrl\":\"/images/user20.webp\"", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

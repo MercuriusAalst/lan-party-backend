@@ -1270,7 +1270,7 @@ public class UserTests
         {
             AdminUsers =
             [
-                new UserProfileSummary(new UserId(Guid.NewGuid()), "picker-user", "Picker Person", false, null, null, null),
+                new UserProfileSummary(new UserId(Guid.NewGuid()), "picker-user", "Picker Person", false, null, null, null, "/images/picker.webp"),
                 new UserProfileSummary(new UserId(Guid.NewGuid()), "   ", "Incomplete profile", false, null, null, null)
             ]
         };
@@ -1284,7 +1284,9 @@ public class UserTests
         Assert.Equal(2, options.Count);
         Assert.Equal("picker-user", options[0].Username);
         Assert.Equal("Picker Person", options[0].DisplayName);
+        Assert.Equal("/images/picker.webp", options[0].ProfilePictureUrl);
         Assert.Equal("Incomplete profile", options[1].Username);
+        Assert.Null(options[1].ProfilePictureUrl);
     }
 
     [Fact]

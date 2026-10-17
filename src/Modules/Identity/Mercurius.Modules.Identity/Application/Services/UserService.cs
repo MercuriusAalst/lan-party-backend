@@ -78,7 +78,8 @@ internal class UserService : IUserService
             .Select(user => new AdminUserOptionDTO(
                 user.Id.Value,
                 string.IsNullOrWhiteSpace(user.Username) ? "Incomplete profile" : user.Username,
-                user.DisplayName))
+                user.DisplayName,
+                user.ProfilePictureUrl))
             .ToList();
     }
 
