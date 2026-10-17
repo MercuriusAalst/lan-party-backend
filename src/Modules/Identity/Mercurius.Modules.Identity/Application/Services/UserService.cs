@@ -10,7 +10,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using System.Buffers.Binary;
 using System.Runtime.ExceptionServices;
 
 namespace Mercurius.Modules.Identity.Application.Services;
@@ -131,12 +130,25 @@ internal class UserService : IUserService
 
     public async Task<GetUserDTO> CompleteProfileAsync(string auth0UserId, CompleteUserProfileRequest request)
     {
-        var user = await GetRequiredCurrentUserAsync(auth0UserId);
-        EnsureActive(user);
-
-        await ApplyProfileUpdateAsync(user, request.Username, request.Firstname, request.Lastname, request.DiscordId, request.SteamId, request.RiotId);
-
-        await SaveProfileChangesAsync();
+        var (user, transaction) = await GetCurrentUserForMutationAsync(auth0UserId, CancellationToken.None);
+        try
+        {
+            await ApplyProfileUpdateAsync(user, request.Username, request.Firstname, request.Lastname, request.DiscordId, request.SteamId, request.RiotId);
+            await SaveProfileChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
         return new GetUserDTO(user);
     }
 
@@ -279,12 +291,25 @@ internal class UserService : IUserService
 
     public async Task<GetUserDTO> UpdateCurrentUserAsync(string auth0UserId, UpdateUserProfileRequest request)
     {
-        var user = await GetRequiredCurrentUserAsync(auth0UserId);
-        EnsureActive(user);
-
-        await ApplyProfileUpdateAsync(user, request.Username, request.Firstname, request.Lastname, request.DiscordId, request.SteamId, request.RiotId);
-
-        await SaveProfileChangesAsync();
+        var (user, transaction) = await GetCurrentUserForMutationAsync(auth0UserId, CancellationToken.None);
+        try
+        {
+            await ApplyProfileUpdateAsync(user, request.Username, request.Firstname, request.Lastname, request.DiscordId, request.SteamId, request.RiotId);
+            await SaveProfileChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
         return new GetUserDTO(user);
     }
 
@@ -483,13 +508,25 @@ internal class UserService : IUserService
 
     public async Task<GetUserDTO> UpdateUserAsync(Guid id, UpdateUserProfileRequest request)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id);
-        if (user == null)
-            throw new NotFoundException($"User with ID {id} not found.");
-
-        await ApplyProfileUpdateAsync(user, request.Username, request.Firstname, request.Lastname, request.DiscordId, request.SteamId, request.RiotId);
-
-        await SaveProfileChangesAsync();
+        var (user, transaction) = await GetUserForMutationByIdAsync(id, CancellationToken.None);
+        try
+        {
+            await ApplyProfileUpdateAsync(user, request.Username, request.Firstname, request.Lastname, request.DiscordId, request.SteamId, request.RiotId);
+            await SaveProfileChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+                await transaction.DisposeAsync();
+        }
 
         return new GetUserDTO(user);
     }
@@ -508,7 +545,7 @@ internal class UserService : IUserService
                 .FirstOrDefaultAsync();
             if (id is null)
                 throw new NotFoundException($"User '{username}' not found.");
-            await AcquireUserMutationLockAsync(id.Value, CancellationToken.None);
+            await UserMutationLock.AcquireAsync(_dbContext, id.Value);
             var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id.Value);
             if (user is null)
                 throw new NotFoundException($"User '{username}' not found.");
@@ -543,7 +580,7 @@ internal class UserService : IUserService
             var exists = await _dbContext.Users.AsNoTracking().AnyAsync(u => u.Id == id);
             if (!exists)
                 throw new NotFoundException($"User with ID {id} not found.");
-            await AcquireUserMutationLockAsync(id, CancellationToken.None);
+            await UserMutationLock.AcquireAsync(_dbContext, id);
             var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id);
             if (user is null)
                 throw new NotFoundException($"User with ID {id} not found.");
@@ -710,7 +747,7 @@ internal class UserService : IUserService
             : null;
         try
         {
-            await AcquireUserMutationLockAsync(id.Value, cancellationToken);
+            await UserMutationLock.AcquireAsync(_dbContext, id.Value, cancellationToken);
             var user = await _dbContext.Users.FirstOrDefaultAsync(candidate => candidate.Id == id.Value, cancellationToken);
             if (user is null)
                 throw new NotFoundException("Current user profile was not found.");
@@ -729,16 +766,30 @@ internal class UserService : IUserService
         }
     }
 
-    private async Task AcquireUserMutationLockAsync(Guid userId, CancellationToken cancellationToken)
+    private async Task<(User User, IDbContextTransaction? Transaction)> GetUserForMutationByIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
     {
-        if (_dbContext.Database.CurrentTransaction is null)
-            throw new InvalidOperationException("User mutation locks require an active database transaction.");
-        if (_dbContext.Database.ProviderName != "Npgsql.EntityFrameworkCore.PostgreSQL")
-            return;
-        var bytes = userId.ToByteArray();
-        var key1 = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(0, 4)) ^ BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(8, 4));
-        var key2 = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4, 4)) ^ BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4));
-        await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0}, {1})", [key1, key2], cancellationToken);
+        var transaction = _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            await UserMutationLock.AcquireAsync(_dbContext, userId, cancellationToken);
+            var user = await _dbContext.Users.FirstOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+            if (user is null)
+                throw new NotFoundException($"User with ID {userId} not found.");
+            return (user, transaction);
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                await transaction.DisposeAsync();
+            }
+            throw;
+        }
     }
 
     private async Task RetirePictureIfUnreferencedAsync(string? url, string? currentUrl)

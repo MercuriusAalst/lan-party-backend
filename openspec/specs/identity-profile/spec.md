@@ -36,4 +36,3 @@ The system SHALL include nullable picture URLs in existing user and player ident
 #### Scenario: Existing identity projections include picture URLs
 - **WHEN** an existing identity or player projection returns a user
 - **THEN** it includes that user’s nullable picture URL without adding per-user queries or changing visibility
-

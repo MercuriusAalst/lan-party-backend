@@ -64,7 +64,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task<GetUserDTO> CompleteProfileAsync(string auth0UserId, CompleteUserProfileRequest request)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
-        var before = await GetUserByAuth0IdAsync(auth0UserId);
+        var before = await GetUserByAuth0IdForMutationAsync(auth0UserId);
         var user = await _inner.CompleteProfileAsync(auth0UserId, request);
 
         await PublishEventsAsync(BuildProfileEvents(user, before));
@@ -99,7 +99,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task<GetUserDTO> UpdateCurrentUserAsync(string auth0UserId, UpdateUserProfileRequest request)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
-        var before = await GetUserByAuth0IdAsync(auth0UserId);
+        var before = await GetUserByAuth0IdForMutationAsync(auth0UserId);
         var user = await _inner.UpdateCurrentUserAsync(auth0UserId, request);
 
         await PublishEventsAsync(BuildProfileEvents(user, before));
@@ -118,7 +118,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         {
             try
             {
-                before = await GetUserByAuth0IdAsync(auth0UserId);
+                before = await GetUserByAuth0IdForMutationAsync(auth0UserId);
                 response = await _inner.UploadCurrentUserPictureAsync(auth0UserId, picture, cancellationToken);
                 if (response.User is not null)
                     await PublishEventsAsync(BuildProfileEvents(response.User, before));
@@ -162,7 +162,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task<CurrentUserProfileResponse> RemoveCurrentUserPictureAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
-        var before = await GetUserByAuth0IdAsync(auth0UserId);
+        var before = await GetUserByAuth0IdForMutationAsync(auth0UserId, cancellationToken);
         var response = await _inner.RemoveCurrentUserPictureAsync(auth0UserId, cancellationToken);
         if (response.User is not null)
             await PublishEventsAsync(BuildProfileEvents(response.User, before));
@@ -189,7 +189,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task<UserActionResponse> AnonymizeCurrentUserAsync(string auth0UserId)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
-        var before = await GetUserByAuth0IdAsync(auth0UserId);
+        var before = await GetUserByAuth0IdForMutationAsync(auth0UserId);
         var response = await _inner.AnonymizeCurrentUserAsync(auth0UserId);
         var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
         var deletionEvents = BuildDeletionEvents(before, after);
@@ -205,7 +205,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task DeleteUserAsync(string username)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
-        var before = await GetUserByNormalizedUsernameAsync(username);
+        var before = await GetUserByNormalizedUsernameForMutationAsync(username);
         await _inner.DeleteUserAsync(username);
         var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
         var deletionEvents = BuildDeletionEvents(before, after);
@@ -220,6 +220,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task DeleteUserByIdAsync(Guid id)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
+        await UserMutationLock.AcquireAsync(_dbContext, id);
         var before = await GetUserEventStateByIdAsync(id);
         await _inner.DeleteUserByIdAsync(id);
         var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
@@ -254,6 +255,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task<GetUserDTO> UpdateUserAsync(Guid id, UpdateUserProfileRequest request)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
+        await UserMutationLock.AcquireAsync(_dbContext, id);
         var before = await GetUserEventStateByIdAsync(id);
         var user = await _inner.UpdateUserAsync(id, request);
 
@@ -360,38 +362,32 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
             !string.Equals(user.DisplayName, "Incomplete profile", StringComparison.Ordinal);
     }
 
-    private Task<UserEventState?> GetUserByAuth0IdAsync(string auth0UserId)
+    private async Task<UserEventState?> GetUserByAuth0IdForMutationAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         var normalizedAuth0UserId = auth0UserId.Trim();
-        return _dbContext.Users
+        var userId = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.Auth0UserId == normalizedAuth0UserId)
-            .Select(user => new UserEventState(
-                user.Id,
-                user.Username,
-                user.DisplayName,
-                user.IsDeleted,
-                user.DeletedAtUtc,
-                user.UpdatedAtUtc,
-                user.ProfilePictureUrl))
-            .FirstOrDefaultAsync();
+            .Select(user => (Guid?)user.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (userId is null)
+            return null;
+        await UserMutationLock.AcquireAsync(_dbContext, userId.Value, cancellationToken);
+        return await GetUserEventStateByIdAsync(userId.Value);
     }
 
-    private Task<UserEventState?> GetUserByNormalizedUsernameAsync(string username)
+    private async Task<UserEventState?> GetUserByNormalizedUsernameForMutationAsync(string username)
     {
         var normalizedUsername = UserProfileValidationHelper.NormalizeUsername(username);
-        return _dbContext.Users
+        var userId = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.NormalizedUsername == normalizedUsername)
-            .Select(user => new UserEventState(
-                user.Id,
-                user.Username,
-                user.DisplayName,
-                user.IsDeleted,
-                user.DeletedAtUtc,
-                user.UpdatedAtUtc,
-                user.ProfilePictureUrl))
+            .Select(user => (Guid?)user.Id)
             .FirstOrDefaultAsync();
+        if (userId is null)
+            return null;
+        await UserMutationLock.AcquireAsync(_dbContext, userId.Value);
+        return await GetUserEventStateByIdAsync(userId.Value);
     }
 
     private Task<UserEventState?> GetUserEventStateByIdAsync(Guid id)
