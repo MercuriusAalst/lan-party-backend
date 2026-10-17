@@ -33,8 +33,9 @@ internal sealed class AssignedAdminAvailabilityCache
     public void Set(Guid adminUserId, bool isAvailable)
     {
         var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
-        foreach (var expired in _entries.Where(entry => entry.Value.ExpiresAtUtc <= nowUtc).Select(entry => entry.Key))
-            _entries.TryRemove(expired, out _);
+        // Compare-and-remove, so an entry refreshed concurrently after the snapshot is never swept away.
+        foreach (var expired in _entries.Where(entry => entry.Value.ExpiresAtUtc <= nowUtc).ToList())
+            _entries.TryRemove(expired);
 
         _entries[adminUserId] = (isAvailable, nowUtc.Add(TimeToLive));
     }

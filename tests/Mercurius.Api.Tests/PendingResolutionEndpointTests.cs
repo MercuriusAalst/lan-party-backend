@@ -147,9 +147,11 @@ public sealed class PendingResolutionEndpointTests
     [Theory]
     [InlineData(null, 10)]
     [InlineData("3", 3)]
+    [InlineData("10080", 10080)]
     public void PendingResolution_EscalationWait_DefaultsToTenMinutesAndBindsFromConfiguration(string? configured, int expectedMinutes)
     {
         using var provider = BuildTournamentServices(configured);
+        provider.GetRequiredService<IStartupValidator>().Validate();
 
         var options = provider.GetRequiredService<IOptions<MatchResolutionOptions>>().Value;
 
@@ -159,11 +161,14 @@ public sealed class PendingResolutionEndpointTests
     [Theory]
     [InlineData("0")]
     [InlineData("-5")]
-    public void PendingResolution_EscalationWait_RejectsNonPositiveValues(string configured)
+    [InlineData("10081")]
+    public void PendingResolution_EscalationWait_FailsStartupValidationOutsideTheAllowedRange(string configured)
     {
         using var provider = BuildTournamentServices(configured);
 
-        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<MatchResolutionOptions>>().Value);
+        var exception = Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IStartupValidator>().Validate());
+        Assert.Contains("EscalationAfterMinutes", exception.Message);
     }
 
     private static ServiceProvider BuildTournamentServices(string? escalationAfterMinutes)

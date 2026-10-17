@@ -240,10 +240,8 @@ public class PendingMatchResolutionTests
         Assert.DoesNotContain(assignedMatch.Id, forOther.Keys);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task GetPendingResolutionsAsync_AssignedAdminNoLongerAdministratorOrMissing_IsVisibleToEveryAdmin(bool assignedUserExists)
+    [Fact]
+    public async Task GetPendingResolutionsAsync_AssignedAdminNoLongerAdministrator_IsVisibleToEveryAdmin()
     {
         var formerAdmin = CreateUser("former-assigned");
         var otherAdmin = CreateUser("other-admin");
@@ -253,12 +251,9 @@ public class PendingMatchResolutionTests
         var match = CreatePendingMatch(tournament, player1, player2, bothReports: false);
         tournament.Matches.Add(match);
         await using var dbContext = CreateDbContext();
-        // The user either lost the admin role or no longer exists in the identity module.
-        List<User> users = assignedUserExists
-            ? [formerAdmin, otherAdmin, player1, player2]
-            : [otherAdmin, player1, player2];
         await SaveAsync(dbContext, [tournament], [formerAdmin, otherAdmin, player1, player2]);
-        var service = CreateService(dbContext, users, adminUserIds: [otherAdmin.Id]);
+        // The assigned user lost the admin role: the identity module no longer reports them as an administrator.
+        var service = CreateService(dbContext, [formerAdmin, otherAdmin, player1, player2], adminUserIds: [otherAdmin.Id]);
 
         var item = Assert.Single(await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId));
 
@@ -435,6 +430,111 @@ public class PendingMatchResolutionTests
     }
 
     [Fact]
+    public async Task GetPendingResolutionsAsync_HangingAdminLookups_AreCutOffTogetherAndNeverWidenVisibility()
+    {
+        var firstAssigned = CreateUser("first-assigned-admin");
+        var secondAssigned = CreateUser("second-assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var firstTournament = CreateTournament("First Cup", firstAssigned.Id);
+        var secondTournament = CreateTournament("Second Cup", secondAssigned.Id);
+        var firstMatch = CreatePendingMatch(firstTournament, player1, player2, bothReports: false);
+        var escalated = CreatePendingMatch(secondTournament, player1, player2, bothReports: false);
+        firstTournament.Matches.Add(firstMatch);
+        secondTournament.Matches.Add(escalated);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [firstTournament, secondTournament], [firstAssigned, secondAssigned, otherAdmin, player1, player2]);
+        dbContext.Set<MatchResolutionNotification>().Add(CreateNotification(escalated, secondAssigned.Id, NowUtc.AddMinutes(-30)));
+        await dbContext.SaveChangesAsync();
+        var users = new[] { firstAssigned, secondAssigned, otherAdmin, player1, player2 };
+        var identity = new CountingIdentityModule(
+            TournamentTestSupport.CreateIdentityModule(users),
+            async (_, cancellationToken) =>
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return false;
+            });
+        var service = CreateService(
+            dbContext,
+            users,
+            identityModule: identity,
+            adminLookupTimeout: TimeSpan.FromMilliseconds(250));
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var items = await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        stopwatch.Stop();
+
+        // One shared deadline bounds the batch; the timed-out admins count as still valid, so only the escalated match shows.
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3), $"Lookups took {stopwatch.Elapsed}.");
+        var item = Assert.Single(items);
+        Assert.Equal(escalated.Id, item.MatchId);
+        Assert.Equal(PendingMatchAssignment.Escalated, item.Assignment);
+        // The fail-open answer is cached: the next poll does not hit the lookup again.
+        var lookupsAfterFirstPoll = identity.AdminLookupCount;
+        await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+        Assert.Equal(lookupsAfterFirstPoll, identity.AdminLookupCount);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_AdminLookupsRunSequentiallyBecauseTheIdentityModuleSharesADbContext()
+    {
+        var firstAssigned = CreateUser("first-assigned-admin");
+        var secondAssigned = CreateUser("second-assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var firstTournament = CreateTournament("First Cup", firstAssigned.Id);
+        var secondTournament = CreateTournament("Second Cup", secondAssigned.Id);
+        firstTournament.Matches.Add(CreatePendingMatch(firstTournament, player1, player2, bothReports: false));
+        secondTournament.Matches.Add(CreatePendingMatch(secondTournament, player1, player2, bothReports: false));
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [firstTournament, secondTournament], [firstAssigned, secondAssigned, otherAdmin, player1, player2]);
+        var users = new[] { firstAssigned, secondAssigned, otherAdmin, player1, player2 };
+        var inFlight = 0;
+        var maxInFlight = 0;
+        var identity = new CountingIdentityModule(
+            TournamentTestSupport.CreateIdentityModule(users, adminUserIds: [firstAssigned.Id, secondAssigned.Id]),
+            async (_, _) =>
+            {
+                maxInFlight = Math.Max(maxInFlight, Interlocked.Increment(ref inFlight));
+                await Task.Delay(20);
+                Interlocked.Decrement(ref inFlight);
+                return true;
+            });
+        var service = CreateService(dbContext, users, identityModule: identity);
+
+        await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId);
+
+        Assert.Equal(2, identity.AdminLookupCount);
+        Assert.Equal(1, maxInFlight);
+    }
+
+    [Fact]
+    public async Task GetPendingResolutionsAsync_OldCycleNotificationOlderThanTheWait_DoesNotEscalateAfterAReversal()
+    {
+        var assignedAdmin = CreateUser("assigned-admin");
+        var otherAdmin = CreateUser("other-admin");
+        var player1 = CreateUser("player-one");
+        var player2 = CreateUser("player-two");
+        var tournament = CreateTournament("Reversed Slow Cup", assignedAdmin.Id);
+        // Reversed five minutes ago and escalated again; the only notification is from the first cycle, 30 minutes ago.
+        var match = CreatePendingMatch(tournament, player1, player2, bothReports: false)
+            .Set(x => x.ResultRecordedAtUtc, NowUtc.AddMinutes(-5));
+        tournament.Matches.Add(match);
+        await using var dbContext = CreateDbContext();
+        await SaveAsync(dbContext, [tournament], [assignedAdmin, otherAdmin, player1, player2]);
+        dbContext.Set<MatchResolutionNotification>().Add(CreateNotification(match, assignedAdmin.Id, NowUtc.AddMinutes(-30)));
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext, [assignedAdmin, otherAdmin, player1, player2]);
+
+        Assert.Empty(await service.GetPendingResolutionsAsync(otherAdmin.Auth0UserId));
+        var forAssigned = Assert.Single(await service.GetPendingResolutionsAsync(assignedAdmin.Auth0UserId));
+        Assert.Equal(PendingMatchAssignment.Assigned, forAssigned.Assignment);
+        Assert.Null(forAssigned.RequiredSinceUtc);
+    }
+
+    [Fact]
     public async Task GetPendingResolutionsAsync_WithOnlyOwnAndUnassignedMatches_NeverCallsTheAdminLookup()
     {
         var admin = CreateUser("assigned-admin");
@@ -523,7 +623,8 @@ public class PendingMatchResolutionTests
         Exception? adminLookupFailure = null,
         CountingIdentityModule? identityModule = null,
         FixedTimeProvider? timeProvider = null,
-        int escalationAfterMinutes = 10)
+        int escalationAfterMinutes = 10,
+        TimeSpan? adminLookupTimeout = null)
     {
         var clock = timeProvider ?? new FixedTimeProvider(NowUtc);
         var identity = identityModule ?? new CountingIdentityModule(TournamentTestSupport.CreateIdentityModule(
@@ -537,7 +638,11 @@ public class PendingMatchResolutionTests
             TournamentTestSupport.CreateModuleEventPublisher(),
             clock,
             new MatchBracketImpactAnalyzer(new TournamentDbContextAdapter<MercuriusDBContext>(dbContext)),
-            Options.Create(new MatchResolutionOptions { EscalationAfterMinutes = escalationAfterMinutes }),
+            Options.Create(new MatchResolutionOptions
+            {
+                EscalationAfterMinutes = escalationAfterMinutes,
+                AdminLookupTimeout = adminLookupTimeout ?? TimeSpan.FromSeconds(3)
+            }),
             new AssignedAdminAvailabilityCache(clock));
     }
 
@@ -563,14 +668,18 @@ public class PendingMatchResolutionTests
     }
 
     // Forwards to the stub identity module and counts the live admin lookups.
-    private sealed class CountingIdentityModule(IIdentityModule inner) : IIdentityModule
+    private sealed class CountingIdentityModule(
+        IIdentityModule inner,
+        Func<UserId, CancellationToken, Task<bool>>? adminLookup = null) : IIdentityModule
     {
         public int AdminLookupCount { get; private set; }
 
         public Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default)
         {
             AdminLookupCount++;
-            return inner.IsAdminUserAsync(userId, cancellationToken);
+            return adminLookup is null
+                ? inner.IsAdminUserAsync(userId, cancellationToken)
+                : adminLookup(userId, cancellationToken);
         }
 
         public Task<UserProfileSummary?> GetUserProfileAsync(UserId userId, CancellationToken cancellationToken = default) =>

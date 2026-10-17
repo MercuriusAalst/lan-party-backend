@@ -284,21 +284,27 @@ internal sealed class MatchService : IMatchService
             .ToList();
     }
 
-    // One lookup per distinct admin id, answered from a 60 second per-process cache when possible. A failed lookup
-    // counts as "still an administrator" (and is cached like an answer), so an Auth0 outage can never widen
-    // visibility or turn every poll into another Auth0 call. Only the caller's own cancellation propagates.
+    // One lookup per distinct admin id, answered from a 60 second per-process cache when possible. A failed or
+    // timed-out lookup counts as "still an administrator" (and is cached like an answer), so an Auth0 outage can
+    // never widen visibility or turn every poll into another Auth0 call. Only the caller's own cancellation propagates.
+    // The lookups run one after another under a single shared deadline: the identity module shares this request's
+    // scoped DbContext, which does not allow concurrent use, and one deadline bounds the whole batch regardless of
+    // how many admins are checked. Lookups that miss the deadline are treated like failures.
     private async Task<HashSet<Guid>> GetUnavailableAssignedAdminIdsAsync(
         IReadOnlyCollection<Guid> assignedAdminIds,
         CancellationToken cancellationToken)
     {
         var unavailable = new HashSet<Guid>();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(_matchResolutionOptions.AdminLookupTimeout);
         foreach (var adminId in assignedAdminIds)
         {
             if (!_assignedAdminAvailability.TryGet(adminId, out var isAvailable))
             {
                 try
                 {
-                    isAvailable = await _identityModule.IsAdminUserAsync(new UserId(adminId), cancellationToken);
+                    deadline.Token.ThrowIfCancellationRequested();
+                    isAvailable = await _identityModule.IsAdminUserAsync(new UserId(adminId), deadline.Token);
                 }
                 catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
                 {
