@@ -9,4 +9,5 @@ public sealed record UserProfileSummary(
     bool IsDeleted,
     string? DiscordId,
     string? SteamId,
-    string? RiotId);
+    string? RiotId,
+    string? ProfilePictureUrl = null);

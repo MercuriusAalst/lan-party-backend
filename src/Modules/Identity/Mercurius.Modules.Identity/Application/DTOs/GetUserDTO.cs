@@ -13,6 +13,7 @@ internal class GetUserDTO
     public string? DiscordId { get; set; }
     public string? SteamId { get; set; }
     public string? RiotId { get; set; }
+    public string? ProfilePictureUrl { get; set; }
     public string DisplayName { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime CreatedAtUtc { get; set; }
@@ -29,6 +30,7 @@ internal class GetUserDTO
         DiscordId = user.DiscordId;
         SteamId = user.SteamId;
         RiotId = user.RiotId;
+        ProfilePictureUrl = user.ProfilePictureUrl;
         DisplayName = user.DisplayName;
         IsDeleted = user.IsDeleted;
         CreatedAtUtc = user.CreatedAtUtc;

@@ -13,6 +13,7 @@ public class User
     public string? DiscordId { get; set; } = string.Empty;
     public string? SteamId { get; set; } = string.Empty;
     public string? RiotId { get; set; } = string.Empty;
+    public string? ProfilePictureUrl { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -93,6 +94,7 @@ public class User
         DiscordId = null;
         SteamId = null;
         RiotId = null;
+        ProfilePictureUrl = null;
         IsDeleted = true;
         DeletedAtUtc = deletedAtUtc;
         UpdatedAtUtc = deletedAtUtc;

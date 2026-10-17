@@ -9,4 +9,5 @@ public sealed record PublicUserProfileSummary(
     string Lastname,
     string? DiscordId,
     string? SteamId,
-    string? RiotId);
+    string? RiotId,
+    string? ProfilePictureUrl = null);
