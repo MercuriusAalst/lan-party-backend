@@ -191,7 +191,7 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
             null,
             DateTime.UtcNow,
             30,
-            10).Set(x => x.Id, Guid.NewGuid());
+            10).Set(x => x.Id, Guid.NewGuid()).Set(x => x.AssignedAdminUserId, Guid.NewGuid());
         var user = new User
         {
             Id = Guid.NewGuid(),
@@ -222,7 +222,7 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
             2,
             DateTime.UtcNow,
             30,
-            10).Set(x => x.Id, Guid.NewGuid());
+            10).Set(x => x.Id, Guid.NewGuid()).Set(x => x.AssignedAdminUserId, Guid.NewGuid());
         var captain = new User
         {
             Id = Guid.NewGuid(),

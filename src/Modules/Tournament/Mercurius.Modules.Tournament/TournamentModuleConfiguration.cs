@@ -18,7 +18,7 @@ public static class TournamentModuleConfiguration
 {
     public static IServiceCollection AddTournamentModule<TDbContext>(
         this IServiceCollection services,
-        IConfiguration _)
+        IConfiguration configuration)
         where TDbContext : DbContext
     {
         services.TryAddScoped<ITournamentDbContext, TournamentDbContextAdapter<TDbContext>>();
@@ -39,6 +39,13 @@ public static class TournamentModuleConfiguration
         services.AddModuleEventHandler<MatchResolutionRequiredIntegrationEvent, MatchResolutionNotificationHandler>();
         services.AddHostedService<MatchDeadlineProcessor>();
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<AssignedAdminAvailabilityCache>();
+        services.AddOptions<MatchResolutionOptions>()
+            .Bind(configuration.GetSection(MatchResolutionOptions.SectionName))
+            .Validate(
+                options => options.EscalationAfterMinutes is > 0 and <= 10080,
+                "Tournament:MatchResolution:EscalationAfterMinutes must be between 1 and 10080.")
+            .ValidateOnStart();
         services.AddTransient<ITournamentRegistrationService, TournamentRegistrationService>();
         services.AddTransient<IMatchModeratorFactory, MatchModeratorFactory>();
         services.AddTransient<SingleEliminationMatchModerator>();

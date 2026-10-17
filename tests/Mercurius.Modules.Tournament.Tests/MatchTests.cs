@@ -176,17 +176,85 @@ public class MatchTests
     }
 
     [Fact]
-    public void SubmitScore_AutoAcceptsFirstReportAtDeadline()
+    public void ApplyDeadline_SingleReport_RequiresAdminResolutionInsteadOfAutoAccepting()
     {
         var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
         var match = CreateIndividualMatch();
 
         match.SubmitScore(1, 1, 0, now);
+        var versionBeforeDeadline = match.ResultVersion;
         match.ApplyDeadline(now.AddMinutes(5));
 
+        Assert.Equal(MatchLifecycleState.AdminResolutionRequired, match.LifecycleState);
+        Assert.False(match.HasResult);
+        Assert.Null(match.Participant1Score);
+        Assert.Null(match.Participant2Score);
+        Assert.Null(match.UserWinnerId);
+        Assert.Null(match.ResultKind);
+        Assert.Null(match.ScoreConfirmationDeadlineUtc);
+        Assert.Equal(1, match.Participant1ReportedScore1);
+        Assert.Equal(0, match.Participant1ReportedScore2);
+        Assert.Equal(MatchResolutionReason.MissingOpponentReport, match.GetResolutionReason());
+        Assert.Equal(versionBeforeDeadline + 1, match.ResultVersion);
+    }
+
+    [Fact]
+    public void ApplyDeadline_SingleReportBeforeDeadline_StaysInScoreConfirmation()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var match = CreateIndividualMatch();
+
+        match.SubmitScore(2, 0, 1, now);
+        match.ApplyDeadline(now.AddMinutes(5).AddTicks(-1));
+
+        Assert.Equal(MatchLifecycleState.ScoreConfirmation, match.LifecycleState);
+        Assert.Null(match.GetResolutionReason());
+    }
+
+    [Fact]
+    public void ApplyDeadline_SingleReportExpiry_IsIdempotentAndBlocksFurtherReports()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var match = CreateIndividualMatch();
+        match.SubmitScore(1, 1, 0, now);
+        match.ApplyDeadline(now.AddMinutes(5));
+        var version = match.ResultVersion;
+
+        match.ApplyDeadline(now.AddMinutes(10));
+
+        Assert.Equal(version, match.ResultVersion);
+        Assert.Equal(MatchLifecycleState.AdminResolutionRequired, match.LifecycleState);
+        Assert.Throws<ValidationException>(() => match.SubmitScore(2, 1, 0, now.AddMinutes(11)));
+    }
+
+    [Fact]
+    public void ResolveScore_AfterSingleReportExpiry_CompletesAsAdminResolution()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var match = CreateIndividualMatch();
+        match.SubmitScore(1, 1, 0, now);
+        match.ApplyDeadline(now.AddMinutes(5));
+
+        match.ResolveScore(0, 1, now.AddMinutes(6));
+
         Assert.Equal(MatchLifecycleState.Completed, match.LifecycleState);
-        Assert.Equal(1, match.Participant1Score);
-        Assert.Equal(match.UserParticipant1Id, match.UserWinnerId);
+        Assert.Equal(MatchResultKind.AdminResolution, match.ResultKind);
+        Assert.Equal(match.UserParticipant2Id, match.UserWinnerId);
+        Assert.Null(match.GetResolutionReason());
+    }
+
+    [Fact]
+    public void ApplyDeadline_CorrectionWindowExpiry_RequiresAdminResolutionAsDisputed()
+    {
+        var now = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var match = CreateIndividualMatch();
+        match.SubmitScore(1, 1, 0, now);
+        match.SubmitScore(2, 0, 1, now.AddMinutes(1));
+
+        match.ApplyDeadline(now.AddMinutes(6));
+
+        Assert.Equal(MatchLifecycleState.AdminResolutionRequired, match.LifecycleState);
+        Assert.Equal(MatchResolutionReason.Disputed, match.GetResolutionReason());
     }
 
     [Fact]

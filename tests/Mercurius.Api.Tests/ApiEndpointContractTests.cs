@@ -149,6 +149,7 @@ public class ApiEndpointContractTests
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/sponsors")]
     [InlineData("PUT", "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/lifecycle-state")]
     [InlineData("PUT", "v{version:apiVersion}/lan/featured-tournaments/")]
+    [InlineData("GET", "v{version:apiVersion}/lan/matches/pending-resolution")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/resolve")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/reverse")]
     [InlineData("POST", "v{version:apiVersion}/lan/matches/{id:guid}/admin/forfeit")]

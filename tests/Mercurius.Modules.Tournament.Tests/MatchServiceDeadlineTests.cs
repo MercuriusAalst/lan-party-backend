@@ -111,7 +111,9 @@ public class MatchServiceDeadlineTests
 
         var result = await service.GetMatchByIdAsync(match.Id);
 
-        Assert.Equal(ContractLifecycleState.Completed, result.LifecycleState);
+        Assert.Equal(ContractLifecycleState.AdminResolutionRequired, result.LifecycleState);
+        Assert.Null(result.Participant1Score);
+        Assert.Null(result.UserWinnerId);
         var persisted = await dbContext.Set<Match>().AsNoTracking().SingleAsync(candidate => candidate.Id == match.Id);
         Assert.Equal(MatchLifecycleState.ScoreConfirmation, persisted.LifecycleState);
         Assert.Null(persisted.Participant1Score);
@@ -148,7 +150,9 @@ public class MatchServiceDeadlineTests
             .Set(x => x.UserParticipant1Id, participant1Id)
             .Set(x => x.UserParticipant2Id, participant2Id)
             .Set(x => x.Participant1ReportedScore1, 1)
-            .Set(x => x.Participant1ReportedScore2, 0);
+            .Set(x => x.Participant1ReportedScore2, 0)
+            .Set(x => x.Participant2ReportedScore1, 1)
+            .Set(x => x.Participant2ReportedScore2, 0);
         var directNextMatch = new Match()
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.TournamentId, tournament.Id)
@@ -210,7 +214,106 @@ public class MatchServiceDeadlineTests
 
         var states = await dbContext.Set<Match>().AsNoTracking().ToDictionaryAsync(match => match.Id, match => match.LifecycleState);
         Assert.Equal(MatchLifecycleState.ScoreConfirmation, states[conflicted.Match.Id]);
-        Assert.Equal(MatchLifecycleState.Completed, states[unaffected.Match.Id]);
+        Assert.Equal(MatchLifecycleState.AdminResolutionRequired, states[unaffected.Match.Id]);
+    }
+
+    [Fact]
+    public async Task DeadlineProcessor_SingleReportExpiry_RequiresAdminResolutionAndPublishesOnce()
+    {
+        var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var assignedAdminId = Guid.NewGuid();
+        await using var dbContext = CreateDbContext();
+        var expired = CreateExpiredMatch(nowUtc.AddMinutes(-1));
+        expired.Tournament.Set(x => x.AssignedAdminUserId, assignedAdminId);
+        dbContext.Set<TournamentAggregate>().Add(expired.Tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var publisher = TournamentTestSupport.CreateModuleEventPublisher();
+        var connectionString = dbContext.Database.GetConnectionString()!;
+
+        await RunDeadlineProcessorAsync(connectionString, nowUtc, publisher);
+        await RunDeadlineProcessorAsync(connectionString, nowUtc.AddMinutes(1), publisher);
+
+        var persisted = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == expired.Match.Id);
+        Assert.Equal(MatchLifecycleState.AdminResolutionRequired, persisted.LifecycleState);
+        Assert.Null(persisted.ScoreConfirmationDeadlineUtc);
+        Assert.Null(persisted.Participant1Score);
+        Assert.Null(persisted.UserWinnerId);
+        Assert.Null(persisted.ResultKind);
+        Assert.Equal(1, persisted.Participant1ReportedScore1);
+        Assert.Equal(0, persisted.Participant1ReportedScore2);
+        var resolutionEvent = Assert.IsType<Mercurius.Modules.Tournament.Contracts.MatchResolutionRequiredIntegrationEvent>(
+            Assert.Single(publisher.Events));
+        Assert.Equal(expired.Match.Id, resolutionEvent.MatchId.Value);
+        Assert.Equal(assignedAdminId, resolutionEvent.AssignedAdminUserId);
+        Assert.Equal(
+            Mercurius.Modules.Tournament.Contracts.MatchResolutionReason.MissingOpponentReport,
+            resolutionEvent.Reason);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_AfterSingleReportExpiryInTheSameTransaction_LeavesNoStaleResolutionEvent()
+    {
+        var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        var admin = new User { Id = Guid.NewGuid(), Auth0UserId = "auth0|resolving-admin" };
+        await using var dbContext = CreateDbContext();
+        var expired = CreateExpiredMatch(nowUtc.AddMinutes(-1));
+        var participant1Id = Guid.NewGuid();
+        var participant2Id = Guid.NewGuid();
+        expired.Match
+            .Set(x => x.UserParticipant1Id, participant1Id)
+            .Set(x => x.UserParticipant2Id, participant2Id);
+        dbContext.Users.AddRange(
+            admin,
+            new User { Id = participant1Id, Auth0UserId = $"auth0|{participant1Id:N}" },
+            new User { Id = participant2Id, Auth0UserId = $"auth0|{participant2Id:N}" });
+        dbContext.Set<TournamentAggregate>().Add(expired.Tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var tournamentDbContext = new TournamentDbContextAdapter<MercuriusDBContext>(dbContext);
+        var service = new MatchService(
+            tournamentDbContext,
+            TournamentTestSupport.CreateIdentityModule([admin]),
+            TournamentTestSupport.CreateTeamsModule(),
+            new ModuleEventPublisher(dbContext),
+            new FixedTimeProvider(nowUtc),
+            new MatchBracketImpactAnalyzer(tournamentDbContext));
+
+        await service.ResolveAsync(
+            expired.Match.Id,
+            admin.Auth0UserId,
+            new ResolveMatchDTO { Participant1Score = 0, Participant2Score = 1 });
+
+        var persisted = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == expired.Match.Id);
+        Assert.Equal(MatchLifecycleState.Completed, persisted.LifecycleState);
+        Assert.Equal(MatchResultKind.AdminResolution, persisted.ResultKind);
+        Assert.Empty(await dbContext.OutboxMessages.ToListAsync());
+    }
+
+    [Fact]
+    public async Task DeadlineProcessor_CorrectionWindowExpiry_PublishesDisputedReason()
+    {
+        var nowUtc = new DateTime(2026, 8, 29, 12, 0, 0, DateTimeKind.Utc);
+        await using var dbContext = CreateDbContext();
+        var expired = CreateExpiredMatch(nowUtc.AddMinutes(-10));
+        expired.Match
+            .Set(x => x.LifecycleState, MatchLifecycleState.Disputed)
+            .Set(x => x.ScoreConfirmationDeadlineUtc, null)
+            .Set(x => x.CorrectionDeadlineUtc, nowUtc.AddMinutes(-1))
+            .Set(x => x.Participant2ReportedScore1, 0)
+            .Set(x => x.Participant2ReportedScore2, 1);
+        dbContext.Set<TournamentAggregate>().Add(expired.Tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var publisher = TournamentTestSupport.CreateModuleEventPublisher();
+
+        await RunDeadlineProcessorAsync(dbContext.Database.GetConnectionString()!, nowUtc, publisher);
+
+        var persisted = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == expired.Match.Id);
+        Assert.Equal(MatchLifecycleState.AdminResolutionRequired, persisted.LifecycleState);
+        var resolutionEvent = Assert.IsType<Mercurius.Modules.Tournament.Contracts.MatchResolutionRequiredIntegrationEvent>(
+            Assert.Single(publisher.Events));
+        Assert.Equal(Mercurius.Modules.Tournament.Contracts.MatchResolutionReason.Disputed, resolutionEvent.Reason);
     }
 
     [Fact]

@@ -127,7 +127,9 @@ internal sealed class MatchDeadlineProcessor : BackgroundService
             eventPublisher.Publish(new MatchResolutionRequiredIntegrationEvent(
                 new Mercurius.Modules.Shared.MatchId(match.Id),
                 new Mercurius.Modules.Shared.TournamentId(match.TournamentId),
-                match.Tournament.AssignedAdminUserId),
+                match.Tournament.AssignedAdminUserId,
+                (Mercurius.Modules.Tournament.Contracts.MatchResolutionReason)
+                    (match.GetResolutionReason() ?? MatchResolutionReason.Disputed)),
                 nowUtc);
         }
 

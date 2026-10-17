@@ -127,33 +127,71 @@ public class TournamentPrizeContactTests
         Assert.Equal("Existing prize", tournament.FirstPlacePrize);
     }
 
-    [Fact]
-    public async Task UpdateTournamentAsync_ClearsContactWhenExplicitlySubmittedNull()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UpdateTournamentAsync_RejectsClearingContactWhenExplicitlySubmittedBlank(string? blank)
     {
         await using var dbContext = CreateDbContext();
         var contact = CreateUser("contact-admin");
         var tournament = CreateTournament(contact.Id);
         dbContext.Set<TournamentAggregate>().Add(tournament);
         await dbContext.SaveChangesAsync();
-        var service = CreateService(dbContext, [contact], []);
+        var service = CreateService(dbContext, [contact], [contact.Id]);
         var update = CreateUpdate(tournament);
         update.AssignedAdminUserIdSpecified = true;
-        update.AssignedAdminUserId = null;
+        update.AssignedAdminUserId = blank;
 
-        var result = await service.UpdateTournamentAsync(tournament.Id, update);
+        var exception = await Assert.ThrowsAsync<ValidationException>(() => service.UpdateTournamentAsync(tournament.Id, update));
 
-        Assert.Null(tournament.AssignedAdminUserId);
-        Assert.Null(result.ContactAdmin);
+        Assert.Contains("AssignedAdminUserId", exception.Message);
+        Assert.Equal(contact.Id, tournament.AssignedAdminUserId);
     }
 
     [Fact]
-    public async Task CreateTournamentAsync_TreatsBlankContactTextAsNoAssignment()
+    public async Task UpdateTournamentAsync_RejectsLegacyTournamentWithoutAdminWhenNoneSupplied()
+    {
+        await using var dbContext = CreateDbContext();
+        var tournament = CreateTournament();
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext, [], []);
+        var update = CreateUpdate(tournament);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(() => service.UpdateTournamentAsync(tournament.Id, update));
+
+        Assert.Contains("AssignedAdminUserId", exception.Message);
+        Assert.Null(tournament.AssignedAdminUserId);
+    }
+
+    [Fact]
+    public async Task UpdateTournamentAsync_AllowsLegacyTournamentWithoutAdminOnceAdminSupplied()
     {
         await using var dbContext = CreateDbContext();
         var contact = CreateUser("contact-admin");
+        var tournament = CreateTournament();
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
         var service = CreateService(dbContext, [contact], [contact.Id]);
+        var update = CreateUpdate(tournament);
+        update.AssignedAdminUserIdSpecified = true;
+        update.AssignedAdminUserId = contact.Id.ToString();
 
-        var created = await service.CreateTournamentAsync(new CreateTournamentDTO
+        await service.UpdateTournamentAsync(tournament.Id, update);
+
+        Assert.Equal(contact.Id, tournament.AssignedAdminUserId);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public async Task CreateTournamentAsync_RejectsMissingContactWithoutSaving(string? blank)
+    {
+        await using var dbContext = CreateDbContext();
+        var service = CreateService(dbContext, [], []);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(() => service.CreateTournamentAsync(new CreateTournamentDTO
         {
             Name = "Blank Contact Cup",
             BracketType = TournamentBracketType.SingleElimination,
@@ -164,12 +202,11 @@ public class TournamentPrizeContactTests
             PlannedStartTime = PlannedStart,
             AverageGameDurationMinutes = 30,
             RoundBreakDurationMinutes = 10,
-            AssignedAdminUserId = "   "
-        });
+            AssignedAdminUserId = blank
+        }));
 
-        Assert.Null(created.ContactAdmin);
-        var saved = await dbContext.Set<TournamentAggregate>().SingleAsync(tournament => tournament.Id == created.Id);
-        Assert.Null(saved.AssignedAdminUserId);
+        Assert.Contains("AssignedAdminUserId", exception.Message);
+        Assert.Empty(dbContext.Set<TournamentAggregate>());
     }
 
     [Fact]

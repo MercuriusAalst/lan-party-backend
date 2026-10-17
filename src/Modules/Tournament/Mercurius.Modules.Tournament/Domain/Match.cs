@@ -224,9 +224,11 @@ internal sealed class Match
             }
             else if (Participant1ReportedScore1.HasValue || Participant2ReportedScore1.HasValue)
             {
-                var score1 = Participant1ReportedScore1 ?? Participant2ReportedScore1!.Value;
-                var score2 = Participant1ReportedScore2 ?? Participant2ReportedScore2!.Value;
-                CompleteScore(score1, score2, nowUtc, MatchResultKind.Score);
+                // A single unconfirmed report is never final: the retained report is only the first
+                // participant's claim, and the assigned administrator decides the result.
+                ScoreConfirmationDeadlineUtc = null;
+                LifecycleState = MatchLifecycleState.AdminResolutionRequired;
+                ResultVersion++;
             }
         }
 
@@ -238,6 +240,17 @@ internal sealed class Match
             CorrectionDeadlineUtc = null;
             ResultVersion++;
         }
+    }
+
+    // Why an administrator has to resolve this match; null while the match does not require one.
+    public MatchResolutionReason? GetResolutionReason()
+    {
+        if (LifecycleState != MatchLifecycleState.AdminResolutionRequired)
+            return null;
+
+        return Participant1ReportedScore1.HasValue && Participant2ReportedScore1.HasValue
+            ? MatchResolutionReason.Disputed
+            : MatchResolutionReason.MissingOpponentReport;
     }
 
     public void ReverseResult(DateTime nowUtc)
