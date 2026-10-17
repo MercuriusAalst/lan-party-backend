@@ -257,7 +257,8 @@ internal sealed class TeamEndpointService : ITeamEndpointService
             DisplayName = user.DisplayName,
             DiscordId = user.DiscordId,
             SteamId = user.SteamId,
-            RiotId = user.RiotId
+            RiotId = user.RiotId,
+            ProfilePictureUrl = user.ProfilePictureUrl
         };
     }
 }

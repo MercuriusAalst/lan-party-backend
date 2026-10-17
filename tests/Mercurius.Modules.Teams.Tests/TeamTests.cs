@@ -46,6 +46,46 @@ public class TeamTests
     }
 
     [Fact]
+    public async Task CurrentUserTeamSummary_ManagementMembersIncludeCurrentProfilePictures()
+    {
+        const string pictureUrl = "/images/member.webp";
+        var sourceSummary = new CurrentUserTeamSummaryDTO
+        {
+            CaptainedTeams =
+            [
+                new TeamManagementSummaryDTO
+                {
+                    Members =
+                    [
+                        new TeamPublicUserDTO
+                        {
+                            Id = Guid.NewGuid(),
+                            Username = "member",
+                            DisplayName = "Member One",
+                            ProfilePictureUrl = pictureUrl
+                        }
+                    ]
+                }
+            ]
+        };
+        var endpointService = new TeamEndpointService(null!, null!, new StubTeamInviteWorkflows(sourceSummary), null!);
+
+        var summary = await endpointService.GetCurrentUserTeamSummaryAsync("auth0|captain");
+
+        Assert.Equal(pictureUrl, Assert.Single(Assert.Single(summary.CaptainedTeams).Members).ProfilePictureUrl);
+    }
+
+    private sealed class StubTeamInviteWorkflows(CurrentUserTeamSummaryDTO summary) : ITeamInviteWorkflows
+    {
+        public Task<CurrentUserTeamSummaryDTO> GetCurrentUserTeamSummaryAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.FromResult(summary);
+        public Task<IEnumerable<TeamInviteSummaryDTO>> GetCurrentUserInvitesAsync(string auth0UserId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IEnumerable<TeamInviteSummaryDTO>> GetCurrentUserSentInvitesAsync(string auth0UserId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TeamInviteDTO> InviteUserAsync(string auth0UserId, Guid teamId, Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TeamInviteDTO> CancelInviteAsync(string auth0UserId, Guid teamId, Guid inviteId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TeamInviteDTO> RespondToInviteAsync(string auth0UserId, Guid inviteId, bool accept, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    [Fact]
     public void Team_Creation_Should_Set_Properties_Correctly()
     {
         // Arrange
