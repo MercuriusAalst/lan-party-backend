@@ -8,4 +8,5 @@ public sealed record UserProfileChangedIntegrationEvent(
     string DisplayName,
     bool IsDeleted,
     bool IsSearchable,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    string? ProfilePictureUrl = null);

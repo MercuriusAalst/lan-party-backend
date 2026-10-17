@@ -109,7 +109,7 @@ internal static class TournamentTestSupport
             .GetResult();
     }
 
-    public static IIdentityModule CreateIdentityModule(
+    public static StubIdentityModule CreateIdentityModule(
         IReadOnlyCollection<User>? users = null,
         bool throwOnPublicUsernameLookup = false,
         IReadOnlyCollection<Guid>? adminUserIds = null,
@@ -226,7 +226,7 @@ internal static class TournamentTestSupport
         public Task DeleteImageAsync(string? imageUrl, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class StubIdentityModule(
+    internal sealed class StubIdentityModule(
         IReadOnlyCollection<User> users,
         bool throwOnPublicUsernameLookup = false,
         IReadOnlyCollection<Guid>? adminUserIds = null,
@@ -234,6 +234,7 @@ internal static class TournamentTestSupport
     {
         private readonly Dictionary<Guid, User> _users = users.ToDictionary(user => user.Id);
         private readonly HashSet<Guid> _adminUserIds = adminUserIds?.ToHashSet() ?? [];
+        public int GetUsersByIdsCallCount { get; private set; }
 
         public Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default)
         {
@@ -282,6 +283,7 @@ internal static class TournamentTestSupport
             IReadOnlyCollection<UserId> userIds,
             CancellationToken cancellationToken = default)
         {
+            GetUsersByIdsCallCount++;
             return Task.FromResult<IReadOnlyDictionary<UserId, UserProfileSummary>>(
                 userIds
                     .Where(userId => _users.ContainsKey(userId.Value))
@@ -330,7 +332,8 @@ internal static class TournamentTestSupport
                     user.IsDeleted,
                     user.DiscordId,
                     user.SteamId,
-                    user.RiotId);
+                    user.RiotId,
+                    user.ProfilePictureUrl);
         }
     }
 

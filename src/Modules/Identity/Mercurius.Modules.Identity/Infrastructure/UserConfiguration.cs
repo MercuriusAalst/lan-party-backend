@@ -28,6 +28,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         entity.Property(user => user.DiscordId).HasMaxLength(100);
         entity.Property(user => user.SteamId).HasMaxLength(100);
         entity.Property(user => user.RiotId).HasMaxLength(100);
+        entity.Property(user => user.ProfilePictureUrl).HasMaxLength(2048);
         entity.Property(user => user.CreatedAtUtc).IsRequired();
         entity.Property(user => user.UpdatedAtUtc).IsRequired();
     }

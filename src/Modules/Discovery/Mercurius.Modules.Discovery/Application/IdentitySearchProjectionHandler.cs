@@ -50,7 +50,7 @@ internal sealed class IdentitySearchProjectionHandler :
             payload.UserId.Value.ToString(),
             payload.Username,
             "User",
-            imageUrl: null,
+            imageUrl: payload.ProfilePictureUrl,
             $"/users/{Uri.EscapeDataString(payload.Username)}",
             context.OccurredAtUtc.Ticks,
             context.OccurredAtUtc,

@@ -10,11 +10,15 @@ using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Shared.Search;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Identity.Application.Services;
+using Mercurius.Modules.Media.Contracts;
+using Platform.Eventing;
+using Platform.Realtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using System.Reflection;
 using System.Text.Json;
+using Npgsql;
 
 namespace Mercurius.Modules.Identity.Tests;
 
@@ -286,7 +290,7 @@ public class UserTests
         Assert.DoesNotContain("IsDeleted", properties);
         Assert.DoesNotContain("CreatedAtUtc", properties);
         Assert.DoesNotContain("UpdatedAtUtc", properties);
-        Assert.Equal(["Username"], properties);
+        Assert.Equal(["ProfilePictureUrl", "Username"], properties.Order(StringComparer.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -860,13 +864,14 @@ public class UserTests
     }
 
     [Fact]
-    public async Task GetPublicUserProfileByUsernameAsync_ReturnsUsernameOnly()
+    public async Task GetPublicUserProfileByUsernameAsync_ReturnsUsernameAndPictureOnly()
     {
         await using var dbContext = CreateDbContext();
         var user = CreateStoredUser("auth0|123", "public@example.com");
         user.DiscordId = "discord-1";
         user.SteamId = "steam-1";
         user.RiotId = "riot-1";
+        user.ProfilePictureUrl = "/images/picture.webp";
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
@@ -877,7 +882,204 @@ public class UserTests
         var profile = await service.GetPublicUserProfileByUsernameAsync("playerone");
 
         Assert.Equal("PlayerOne", profile.Username);
-        Assert.Equal(["Username"], typeof(PublicUserProfileDTO).GetProperties().Select(property => property.Name));
+        Assert.Equal("/images/picture.webp", profile.ProfilePictureUrl);
+        Assert.Equal(["ProfilePictureUrl", "Username"], typeof(PublicUserProfileDTO).GetProperties().Select(property => property.Name).Order(StringComparer.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CurrentUserPictureCanBeReplacedAndRemoved()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture", "picture@example.com");
+        user.ProfilePictureUrl = "/images/old.webp";
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var media = new RecordingMediaModule { SavedUrl = "/images/new.webp" };
+        var service = new UserService(
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            media);
+        var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
+        {
+            Headers = new Microsoft.AspNetCore.Http.HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+
+        var replaced = await service.UploadCurrentUserPictureAsync(user.Auth0UserId, upload);
+        Assert.Equal("/images/new.webp", replaced.User?.ProfilePictureUrl);
+        Assert.Equal("/images/new.webp", (await dbContext.Users.SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Equal(["/images/old.webp"], media.DeletedUrls);
+
+        var removed = await service.RemoveCurrentUserPictureAsync(user.Auth0UserId);
+        Assert.Null(removed.User?.ProfilePictureUrl);
+        Assert.Null((await dbContext.Users.SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Equal(["/images/old.webp", "/images/new.webp"], media.DeletedUrls);
+
+        user.ProfilePictureUrl = "/images/deleted-user.webp";
+        await dbContext.SaveChangesAsync();
+        await service.AnonymizeCurrentUserAsync(user.Auth0UserId);
+        var anonymized = await dbContext.Users.SingleAsync(candidate => candidate.Id == user.Id);
+        Assert.True(anonymized.IsDeleted);
+        Assert.Null(anonymized.ProfilePictureUrl);
+        Assert.Equal(["/images/old.webp", "/images/new.webp", "/images/deleted-user.webp"], media.DeletedUrls);
+    }
+
+    [Fact]
+    public async Task FailedPictureUploadKeepsExistingReference()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture-failure", "picture-failure@example.com");
+        user.ProfilePictureUrl = "/images/old.webp";
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var media = new RecordingMediaModule { SaveException = new IOException("media unavailable") };
+        var service = new UserService(
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            media);
+        var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
+        {
+            Headers = new Microsoft.AspNetCore.Http.HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+
+        await Assert.ThrowsAsync<IOException>(() => service.UploadCurrentUserPictureAsync(user.Auth0UserId, upload));
+
+        Assert.Equal("/images/old.webp", (await dbContext.Users.SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Empty(media.DeletedUrls);
+    }
+
+    [Fact]
+    public async Task FailedPictureReferenceSaveRollsBackAndRemovesOnlyTheUnreferencedUpload()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture-save-failure", "picture-save-failure@example.com");
+        user.ProfilePictureUrl = "/images/old.webp";
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var newUrl = "/images/" + new string('x', 2050);
+        var media = new RecordingMediaModule { SavedUrl = newUrl };
+        var service = new UserService(
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            media);
+        var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
+        {
+            Headers = new Microsoft.AspNetCore.Http.HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => service.UploadCurrentUserPictureAsync(user.Auth0UserId, upload));
+
+        Assert.Null(dbContext.Database.CurrentTransaction);
+        Assert.Equal("/images/old.webp", user.ProfilePictureUrl);
+        Assert.Equal("/images/old.webp", (await dbContext.Users.AsNoTracking().SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Equal([newUrl], media.DeletedUrls);
+    }
+
+    [Fact]
+    public async Task FailedPictureEventPublicationRollsBackReferenceAndCleansNewUploadAfterTransactionDisposal()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture-event-failure", "picture-event-failure@example.com");
+        user.ProfilePictureUrl = "/images/old.webp";
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var newUrl = "/images/new-event.webp";
+        var media = new RecordingMediaModule { SavedUrl = newUrl };
+        var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
+        var innerService = new UserService(
+            identityDbContext,
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            media);
+        var service = new UserIntegrationEventPublishingService(
+            innerService,
+            identityDbContext,
+            new ThrowingModuleEventPublisher(),
+            new NoopRealtimeConnectionManager(),
+            media);
+        var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
+        {
+            Headers = new Microsoft.AspNetCore.Http.HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+
+        await Assert.ThrowsAsync<IOException>(() => service.UploadCurrentUserPictureAsync(user.Auth0UserId, upload));
+
+        Assert.Null(dbContext.Database.CurrentTransaction);
+        Assert.Equal("/images/old.webp", user.ProfilePictureUrl);
+        Assert.Equal("/images/old.webp", (await dbContext.Users.AsNoTracking().SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Equal([newUrl], media.DeletedUrls);
+    }
+
+    [Fact]
+    public async Task OverlappingPictureReplacementAndRemovalPublishFreshPicturesAndRetireBothAssets()
+    {
+        await using var firstContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture-remove-race", "picture-remove-race@example.com");
+        user.ProfilePictureUrl = "/images/old.webp";
+        firstContext.Users.Add(user);
+        await firstContext.SaveChangesAsync();
+        await using var secondContext = CreatePeerDbContext(firstContext);
+        var media = new RecordingMediaModule { SavedUrl = "/images/new.webp" };
+        var publisher = new BlockingModuleEventPublisher();
+        var replaceService = CreateDecoratedUserService(firstContext, publisher, media);
+        var removeService = CreateDecoratedUserService(secondContext, publisher, media);
+
+        var replaceTask = Task.Run(() => replaceService.UploadCurrentUserPictureAsync(user.Auth0UserId, CreatePictureUpload()));
+        await publisher.FirstPublicationEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var removeTask = Task.Run(() => removeService.RemoveCurrentUserPictureAsync(user.Auth0UserId));
+        await WaitForAdvisoryLockWaiterAsync(firstContext);
+        Assert.False(removeTask.IsCompleted);
+        publisher.ReleaseFirstPublication();
+        await Task.WhenAll(replaceTask, removeTask);
+
+        var persisted = await firstContext.Users.AsNoTracking().SingleAsync(candidate => candidate.Id == user.Id);
+        var events = publisher.Events.OfType<UserProfileChangedIntegrationEvent>().ToArray();
+        Assert.Null(persisted.ProfilePictureUrl);
+        Assert.Equal(["/images/new.webp", null], events.Select(publishedEvent => publishedEvent.ProfilePictureUrl));
+        Assert.Equal(["/images/old.webp", "/images/new.webp"], media.DeletedUrls);
+    }
+
+    [Fact]
+    public async Task OverlappingPictureReplacementAndProfileUpdateKeepDiscoveryEventOnCommittedPicture()
+    {
+        await using var firstContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|picture-update-race", "picture-update-race@example.com");
+        user.ProfilePictureUrl = "/images/old-update.webp";
+        firstContext.Users.Add(user);
+        await firstContext.SaveChangesAsync();
+        await using var secondContext = CreatePeerDbContext(firstContext);
+        var media = new RecordingMediaModule { SavedUrl = "/images/new-update.webp" };
+        var publisher = new BlockingModuleEventPublisher();
+        var uploadService = CreateDecoratedUserService(firstContext, publisher, media);
+        var updateService = CreateDecoratedUserService(secondContext, publisher, media);
+        var update = new UpdateUserProfileRequest
+        {
+            Username = user.Username!,
+            Firstname = "Updated",
+            Lastname = user.Lastname!
+        };
+
+        var uploadTask = Task.Run(() => uploadService.UploadCurrentUserPictureAsync(user.Auth0UserId, CreatePictureUpload()));
+        await publisher.FirstPublicationEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var profileUpdateTask = Task.Run(() => updateService.UpdateCurrentUserAsync(user.Auth0UserId, update));
+        await WaitForAdvisoryLockWaiterAsync(firstContext);
+        Assert.False(profileUpdateTask.IsCompleted);
+        publisher.ReleaseFirstPublication();
+        await Task.WhenAll(uploadTask, profileUpdateTask);
+
+        var persisted = await firstContext.Users.AsNoTracking().SingleAsync(candidate => candidate.Id == user.Id);
+        var events = publisher.Events.OfType<UserProfileChangedIntegrationEvent>().ToArray();
+        Assert.Equal("/images/new-update.webp", persisted.ProfilePictureUrl);
+        Assert.Equal("Updated", persisted.Firstname);
+        Assert.Equal(2, events.Length);
+        Assert.All(events, publishedEvent => Assert.Equal("/images/new-update.webp", publishedEvent.ProfilePictureUrl));
+        Assert.Equal(["/images/old-update.webp"], media.DeletedUrls);
     }
 
     [Fact]
@@ -1068,7 +1270,7 @@ public class UserTests
         {
             AdminUsers =
             [
-                new UserProfileSummary(new UserId(Guid.NewGuid()), "picker-user", "Picker Person", false, null, null, null),
+                new UserProfileSummary(new UserId(Guid.NewGuid()), "picker-user", "Picker Person", false, null, null, null, "/images/picker.webp"),
                 new UserProfileSummary(new UserId(Guid.NewGuid()), "   ", "Incomplete profile", false, null, null, null)
             ]
         };
@@ -1082,7 +1284,9 @@ public class UserTests
         Assert.Equal(2, options.Count);
         Assert.Equal("picker-user", options[0].Username);
         Assert.Equal("Picker Person", options[0].DisplayName);
+        Assert.Equal("/images/picker.webp", options[0].ProfilePictureUrl);
         Assert.Equal("Incomplete profile", options[1].Username);
+        Assert.Null(options[1].ProfilePictureUrl);
     }
 
     [Fact]
@@ -1177,6 +1381,56 @@ public class UserTests
     }
 
     private static MercuriusDBContext CreateDbContext() => PostgresTestDatabase.CreateDbContext();
+
+    private static MercuriusDBContext CreatePeerDbContext(MercuriusDBContext source)
+    {
+        var options = new DbContextOptionsBuilder<MercuriusDBContext>()
+            .UseNpgsql(source.Database.GetConnectionString())
+            .Options;
+        return new MercuriusDBContext(options);
+    }
+
+    private static IUserService CreateDecoratedUserService(
+        MercuriusDBContext dbContext,
+        IModuleEventPublisher publisher,
+        IMediaModule media)
+    {
+        var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
+        var inner = new UserService(
+            identityDbContext,
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            media);
+        return new UserIntegrationEventPublishingService(
+            inner,
+            identityDbContext,
+            publisher,
+            new NoopRealtimeConnectionManager(),
+            media);
+    }
+
+    private static Microsoft.AspNetCore.Http.FormFile CreatePictureUpload() =>
+        new(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
+        {
+            Headers = new Microsoft.AspNetCore.Http.HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+
+    private static async Task WaitForAdvisoryLockWaiterAsync(MercuriusDBContext dbContext)
+    {
+        await using var connection = new NpgsqlConnection(dbContext.Database.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted";
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (true)
+        {
+            var waiting = (long)(await command.ExecuteScalarAsync(timeout.Token) ?? 0L);
+            if (waiting > 0)
+                return;
+            await Task.Delay(20, timeout.Token);
+        }
+    }
 
     private static UserService CreateUserService(
         MercuriusDBContext dbContext,
@@ -1310,6 +1564,11 @@ public class UserTests
             return Task.FromResult(CreatedUser);
         }
 
+        public Task<CurrentUserProfileResponse> UploadCurrentUserPictureAsync(string auth0UserId, Microsoft.AspNetCore.Http.IFormFile picture, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CurrentUserProfileResponse(true, CreatedUser));
+        public Task<CurrentUserProfileResponse> RemoveCurrentUserPictureAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CurrentUserProfileResponse(true, CreatedUser));
+
         public Task<UsernameAvailabilityResponse> CheckUsernameAvailabilityAsync(string auth0UserId, string username)
         {
             return Task.FromResult(new UsernameAvailabilityResponse { Username = username, IsAvailable = true });
@@ -1352,6 +1611,61 @@ public class UserTests
             LastAdminPageSize = pageSize;
             return Task.FromResult(AdminUserOptions);
         }
+    }
+
+    private sealed class RecordingMediaModule : IMediaModule
+    {
+        public string SavedUrl { get; init; } = "/images/generated.webp";
+        public Exception? SaveException { get; init; }
+        public List<string?> DeletedUrls { get; } = [];
+
+        public Task<StoredMediaAsset> SaveImageAsync(MediaUpload upload, CancellationToken cancellationToken = default) =>
+            SaveException is null ? Task.FromResult(new StoredMediaAsset(SavedUrl)) : Task.FromException<StoredMediaAsset>(SaveException);
+
+        public Task DeleteImageAsync(string? mediaUrl, CancellationToken cancellationToken = default)
+        {
+            DeletedUrls.Add(mediaUrl);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingModuleEventPublisher : IModuleEventPublisher
+    {
+        public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null) where TPayload : notnull =>
+            throw new IOException("outbox publication failed");
+    }
+
+    private sealed class BlockingModuleEventPublisher : IModuleEventPublisher
+    {
+        private int _publishCount;
+        public System.Collections.Concurrent.ConcurrentQueue<object> Events { get; } = new();
+        public TaskCompletionSource FirstPublicationEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private TaskCompletionSource ReleaseFirst { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null) where TPayload : notnull
+        {
+            Events.Enqueue(payload);
+            if (Interlocked.Increment(ref _publishCount) == 1)
+            {
+                FirstPublicationEntered.TrySetResult();
+                ReleaseFirst.Task.GetAwaiter().GetResult();
+            }
+            return Guid.NewGuid();
+        }
+
+        public void ReleaseFirstPublication() => ReleaseFirst.TrySetResult();
+    }
+
+    private sealed class NoopRealtimeConnectionManager : IRealtimeConnectionManager
+    {
+        public Task ExecuteWithAccessGateAsync(Func<CancellationToken, Task> action, Guid? userId, string? groupName = null, string? connectionId = null, CancellationToken cancellationToken = default) => action(cancellationToken);
+        public void RegisterConnection(Guid userId, string connectionId, string personalGroup) { }
+        public void TrackGroup(string connectionId, string groupName) { }
+        public void UntrackGroup(string connectionId, string groupName) { }
+        public void UnregisterConnection(string connectionId) { }
+        public Task RevokeUserFromGroupAsync(Guid userId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RevokeGroupAsync(string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RevokeUserAsync(Guid userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class RecordingIdentityModule : IIdentityModule

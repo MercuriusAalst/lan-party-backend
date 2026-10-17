@@ -102,7 +102,8 @@ internal sealed class TeamsModuleFacade : ITeamsModule
                         user!.Id,
                         user.Username,
                         user.DisplayName,
-                        team.CaptainUserId == user.Id.Value))
+                        team.CaptainUserId == user.Id.Value,
+                        user.ProfilePictureUrl))
                     .ToList()));
     }
 

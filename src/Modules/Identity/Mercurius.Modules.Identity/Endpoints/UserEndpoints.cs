@@ -54,6 +54,20 @@ internal static class UserEndpoints
         })
         .RequireAuthorization();
 
+        group.MapPut("/me/picture", async (IFormFile picture, ClaimsPrincipal user, IUserService userService, CancellationToken cancellationToken) =>
+        {
+            return Results.Ok(await userService.UploadCurrentUserPictureAsync(user.GetAuth0UserId(), picture, cancellationToken));
+        })
+        .RequireAuthorization()
+        .Accepts<IFormFile>("multipart/form-data")
+        .DisableAntiforgery();
+
+        group.MapDelete("/me/picture", async (ClaimsPrincipal user, IUserService userService, CancellationToken cancellationToken) =>
+        {
+            return Results.Ok(await userService.RemoveCurrentUserPictureAsync(user.GetAuth0UserId(), cancellationToken));
+        })
+        .RequireAuthorization();
+
         group.MapGet("/me/username-availability", async (string username, ClaimsPrincipal user, IUserService userService) =>
         {
             return await userService.CheckUsernameAvailabilityAsync(user.GetAuth0UserId(), username);

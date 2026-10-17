@@ -1,6 +1,7 @@
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Shared.Exceptions;
 using Mercurius.Modules.Shared.Search;
+using Microsoft.AspNetCore.Http;
 
 namespace Mercurius.Modules.Identity.Application.Services;
 
@@ -89,6 +90,22 @@ internal class UserValidationService : IUserService
 
         ValidateProfileRequest(request.Username, request.Firstname, request.Lastname, request.DiscordId, request.SteamId, request.RiotId);
         return _inner.UpdateCurrentUserAsync(auth0UserId, request);
+    }
+
+    public Task<CurrentUserProfileResponse> UploadCurrentUserPictureAsync(string auth0UserId, IFormFile picture, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(auth0UserId))
+            throw new ValidationException("Auth0 user id is required.");
+        if (picture is null)
+            throw new ValidationException("A picture is required.");
+        return _inner.UploadCurrentUserPictureAsync(auth0UserId, picture, cancellationToken);
+    }
+
+    public Task<CurrentUserProfileResponse> RemoveCurrentUserPictureAsync(string auth0UserId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(auth0UserId))
+            throw new ValidationException("Auth0 user id is required.");
+        return _inner.RemoveCurrentUserPictureAsync(auth0UserId, cancellationToken);
     }
 
     public Task<UsernameAvailabilityResponse> CheckUsernameAvailabilityAsync(string auth0UserId, string username)

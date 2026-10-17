@@ -11,4 +11,6 @@ public sealed record DiscoverySearchResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? TeamName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    Guid? TournamentId);
+    Guid? TournamentId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ProfilePictureUrl = null);

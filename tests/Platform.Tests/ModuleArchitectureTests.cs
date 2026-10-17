@@ -85,6 +85,16 @@ public class ModuleArchitectureTests
             requiredReferences.Add(identityContractsProject);
             allowedReferences.Add(identityContractsProject);
         }
+        else if (moduleName == "Identity")
+        {
+            allowedReferences.Add(Path.Combine(
+                repositoryRoot,
+                "src",
+                "Modules",
+                "Media",
+                "Mercurius.Modules.Media.Contracts",
+                "Mercurius.Modules.Media.Contracts.csproj"));
+        }
         else if (moduleName == "Tournament")
         {
             allowedReferences.Add(Path.Combine(

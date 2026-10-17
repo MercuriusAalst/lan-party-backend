@@ -142,10 +142,13 @@ public class DiscoveryModuleTests
             "Alpha User",
             false,
             true,
-            DateTime.UtcNow));
+            DateTime.UtcNow,
+            "/images/alpha.webp"));
         await dbContext.SaveChangesAsync();
         Assert.Equal(1, await dispatcher.DispatchPendingAsync());
-        Assert.Equal("alpha", Assert.Single((await module.SearchAsync(new DiscoverySearchRequest("alpha", null, 10))).Results).Username);
+        var projectedUser = Assert.Single((await module.SearchAsync(new DiscoverySearchRequest("alpha", null, 10))).Results);
+        Assert.Equal("alpha", projectedUser.Username);
+        Assert.Equal("/images/alpha.webp", projectedUser.ProfilePictureUrl);
 
         publisher.Publish(new UserProfileChangedIntegrationEvent(
             userId,
@@ -273,7 +276,7 @@ public class DiscoveryModuleTests
         var tournamentId = new TournamentId(Guid.NewGuid());
         var sources = new DiscoverySources
         {
-            Users = [new PublicUserSearchDocument(userId, "alpha-user")],
+            Users = [new PublicUserSearchDocument(userId, "alpha-user", "/images/alpha-user.webp")],
             Teams = [new PublicTeamSearchDocument(teamId, "alpha-team")],
             Tournaments = [new TournamentSearchDocument(tournamentId, "Alpha Cup", "/images/alpha.webp")],
             Sponsors = [new SponsorSummary(new SponsorId(7), "Alpha Sponsor", SponsorTier.Gold, "/images/sponsor.webp", "https://example.test", null)]
@@ -295,6 +298,7 @@ public class DiscoveryModuleTests
         Assert.Equal("completed", completedJob!.Status);
         var rebuiltResults = await module.SearchAsync(new DiscoverySearchRequest("alpha", null, 10));
         Assert.Equal(["tournament", "team", "user"], rebuiltResults.Results.Select(result => result.Type));
+        Assert.Equal("/images/alpha-user.webp", rebuiltResults.Results.Single(result => result.Type == "user").ProfilePictureUrl);
 
         sources.Users = [];
         sources.Teams = [];

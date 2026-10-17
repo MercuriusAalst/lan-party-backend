@@ -127,6 +127,7 @@ internal sealed class DbContextIdentityModule : IIdentityModule
             user.IsDeleted,
             user.DiscordId,
             user.SteamId,
-            user.RiotId);
+            user.RiotId,
+            user.ProfilePictureUrl);
     }
 }

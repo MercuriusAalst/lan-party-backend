@@ -46,13 +46,19 @@ internal sealed class LeaderboardService(
             })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Leaderboard tournament not found.");
+        var pictures = await GetProfilePicturesAsync(
+            leaderboard.Rows.Where(row => row.LinkedUserId.HasValue).Select(row => row.LinkedUserId!.Value),
+            cancellationToken);
+        foreach (var row in leaderboard.Rows)
+            if (row.LinkedUserId is Guid linkedUserId && pictures.TryGetValue(linkedUserId, out var pictureUrl))
+                row.ProfilePictureUrl = pictureUrl;
         AssignCompetitionRanks(leaderboard);
         return leaderboard;
     }
 
     public async Task<AdminLeaderboardResponseDTO> GetAdminLeaderboardAsync(Guid tournamentId, CancellationToken cancellationToken = default)
     {
-        return await dbContext.Tournaments.AsNoTracking()
+        var leaderboard = await dbContext.Tournaments.AsNoTracking()
             .Where(item => item.Id == tournamentId && item.BracketType == BracketType.Leaderboard)
             .Select(item => new AdminLeaderboardResponseDTO
             {
@@ -86,6 +92,13 @@ internal sealed class LeaderboardService(
             })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Leaderboard tournament not found.");
+        var pictures = await GetProfilePicturesAsync(
+            leaderboard.Participants.Where(participant => participant.LinkedUserId.HasValue).Select(participant => participant.LinkedUserId!.Value),
+            cancellationToken);
+        foreach (var participant in leaderboard.Participants)
+            if (participant.LinkedUserId is Guid linkedUserId && pictures.TryGetValue(linkedUserId, out var pictureUrl))
+                participant.ProfilePictureUrl = pictureUrl;
+        return leaderboard;
     }
 
     public async Task<AdminLeaderboardParticipantDTO> RecordAttemptAsync(
@@ -130,7 +143,14 @@ internal sealed class LeaderboardService(
         tournament.IncrementRevision();
         await SaveMutationAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return ToAdminParticipantDto(participant);
+        var response = ToAdminParticipantDto(participant);
+        if (response.LinkedUserId.HasValue)
+        {
+            var pictures = await GetProfilePicturesAsync([response.LinkedUserId.Value], cancellationToken);
+            if (pictures.TryGetValue(response.LinkedUserId.Value, out var pictureUrl))
+                response.ProfilePictureUrl = pictureUrl;
+        }
+        return response;
     }
 
     public async Task<LeaderboardAttemptDTO> UpdateAttemptAsync(
@@ -205,6 +225,20 @@ internal sealed class LeaderboardService(
         UpdatedAtUtc = attempt.UpdatedAtUtc,
         RowVersion = attempt.RowVersion
     };
+
+    private async Task<IReadOnlyDictionary<Guid, string>> GetProfilePicturesAsync(
+        IEnumerable<Guid> linkedUserIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = linkedUserIds.Distinct().Select(id => new UserId(id)).ToArray();
+        if (ids.Length == 0)
+            return new Dictionary<Guid, string>();
+
+        var profiles = await identityModule.GetUsersByIdsAsync(ids, cancellationToken);
+        return profiles.Values
+            .Where(profile => !profile.IsDeleted && !string.IsNullOrWhiteSpace(profile.Username) && !string.IsNullOrWhiteSpace(profile.ProfilePictureUrl))
+            .ToDictionary(profile => profile.Id.Value, profile => profile.ProfilePictureUrl!);
+    }
 
     private IQueryable<TournamentAggregate> GetLeaderboardForMutationQuery() => dbContext.Tournaments
         .Where(item => item.BracketType == BracketType.Leaderboard)
