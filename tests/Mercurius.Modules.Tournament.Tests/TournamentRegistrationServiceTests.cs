@@ -85,6 +85,144 @@ public class TournamentRegistrationServiceTests
         Assert.True(await dbContext.Set<TournamentRegistration>().AnyAsync(registration => registration.TournamentId == tournament.Id && registration.UserId == user.Id));
     }
 
+    [Theory]
+    [InlineData((int)BracketType.SingleElimination, (int)TournamentStatus.InProgress)]
+    [InlineData((int)BracketType.SingleElimination, (int)TournamentStatus.Completed)]
+    [InlineData((int)BracketType.SingleElimination, (int)TournamentStatus.Canceled)]
+    [InlineData((int)BracketType.DoubleElimination, (int)TournamentStatus.InProgress)]
+    [InlineData((int)BracketType.DoubleElimination, (int)TournamentStatus.Completed)]
+    [InlineData((int)BracketType.DoubleElimination, (int)TournamentStatus.Canceled)]
+    public async Task RemoveIndividualAsAdmin_RejectsNonScheduledEliminationTournament(
+        int bracketType,
+        int status)
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateUser("solo");
+        var tournament = CreateIndividualTournament();
+        tournament.Set(x => x.BracketType, (BracketType)bracketType).Set(x => x.Status, (TournamentStatus)status);
+        dbContext.Users.Add(user);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        AddIndividualRegistration(dbContext, tournament, user);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            service.RemoveIndividualAsAdminAsync(tournament.Id, user.Id, null, user.Auth0UserId));
+
+        Assert.Contains("scheduled", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(await dbContext.Set<TournamentRegistration>().AnyAsync(registration =>
+            registration.TournamentId == tournament.Id && registration.UserId == user.Id));
+    }
+
+    [Theory]
+    [InlineData((int)BracketType.SingleElimination, (int)TournamentStatus.InProgress)]
+    [InlineData((int)BracketType.SingleElimination, (int)TournamentStatus.Completed)]
+    [InlineData((int)BracketType.SingleElimination, (int)TournamentStatus.Canceled)]
+    [InlineData((int)BracketType.DoubleElimination, (int)TournamentStatus.InProgress)]
+    [InlineData((int)BracketType.DoubleElimination, (int)TournamentStatus.Completed)]
+    [InlineData((int)BracketType.DoubleElimination, (int)TournamentStatus.Canceled)]
+    public async Task RemoveTeamAsAdmin_RejectsNonScheduledEliminationTournament(
+        int bracketType,
+        int status)
+    {
+        await using var dbContext = CreateDbContext();
+        var captain = CreateUser("captain");
+        var member = CreateUser("member");
+        var team = CreateTeam(captain, member);
+        var tournament = CreateTeamTournament(teamSize: 2);
+        tournament.Set(x => x.BracketType, (BracketType)bracketType).Set(x => x.Status, (TournamentStatus)status);
+        dbContext.Users.AddRange(captain, member);
+        dbContext.Teams.Add(team);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        AddTeamRegistration(dbContext, tournament, team, captain, [captain, member], DomainTournamentRegistrationStatus.Active);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            service.RemoveTeamAsAdminAsync(tournament.Id, team.Id, null, captain.Auth0UserId));
+
+        Assert.Contains("scheduled", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(await dbContext.Set<TournamentRegistration>().AnyAsync(registration =>
+            registration.TournamentId == tournament.Id && registration.TeamId == team.Id));
+        Assert.Equal(2, await dbContext.Set<TournamentRegistrationRosterMember>().CountAsync(member =>
+            member.TournamentId == tournament.Id && member.TeamId == team.Id));
+    }
+
+    [Theory]
+    [InlineData((int)BracketType.SingleElimination)]
+    [InlineData((int)BracketType.DoubleElimination)]
+    public async Task AdminRemovalOfScheduledIndividual_ConflictsWithConcurrentTournamentStart(int bracketTypeValue)
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateUser("solo");
+        var tournament = CreateIndividualTournament();
+        tournament.Set(x => x.BracketType, (BracketType)bracketTypeValue);
+        dbContext.Users.Add(user);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        AddIndividualRegistration(dbContext, tournament, user);
+        await dbContext.SaveChangesAsync();
+        var connectionString = dbContext.Database.GetConnectionString();
+        var trackedTournament = await dbContext.Set<TournamentAggregate>().SingleAsync(item => item.Id == tournament.Id);
+        var service = CreateService(dbContext);
+        await using var competingContext = new MercuriusDBContext(
+            new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options);
+        var competingTournament = await competingContext.Set<TournamentAggregate>().SingleAsync(item => item.Id == tournament.Id);
+        competingTournament.Set(x => x.Status, TournamentStatus.InProgress);
+        competingTournament.IncrementRevision();
+        await competingContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() =>
+            service.RemoveIndividualAsAdminAsync(tournament.Id, user.Id, null, user.Auth0UserId));
+
+        Assert.Equal("registration_changed", exception.Code);
+        Assert.Equal(TournamentStatus.Scheduled, trackedTournament.Status);
+        Assert.True(await competingContext.Set<TournamentRegistration>().AnyAsync(registration =>
+            registration.TournamentId == tournament.Id && registration.UserId == user.Id));
+    }
+
+    [Theory]
+    [InlineData((int)BracketType.SingleElimination)]
+    [InlineData((int)BracketType.DoubleElimination)]
+    public async Task RemoveIndividualAsAdmin_AllowsScheduledEliminationTournament(int bracketTypeValue)
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateUser("solo");
+        var tournament = CreateIndividualTournament();
+        tournament.Set(x => x.BracketType, (BracketType)bracketTypeValue);
+        dbContext.Users.Add(user);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        AddIndividualRegistration(dbContext, tournament, user);
+        await dbContext.SaveChangesAsync();
+        var revision = tournament.LeaderboardRevision;
+        var service = CreateService(dbContext);
+
+        await service.RemoveIndividualAsAdminAsync(tournament.Id, user.Id, null, user.Auth0UserId);
+
+        Assert.False(await dbContext.Set<TournamentRegistration>().AnyAsync(registration =>
+            registration.TournamentId == tournament.Id && registration.UserId == user.Id));
+        Assert.Equal(revision + 1, tournament.LeaderboardRevision);
+    }
+
+    [Fact]
+    public async Task RemoveIndividualAsAdmin_PreservesStartedRoundRobinBehavior()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateUser("solo");
+        var tournament = CreateIndividualTournament();
+        tournament.Set(x => x.BracketType, BracketType.RoundRobin).Set(x => x.Status, TournamentStatus.InProgress);
+        dbContext.Users.Add(user);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        AddIndividualRegistration(dbContext, tournament, user);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        await service.RemoveIndividualAsAdminAsync(tournament.Id, user.Id, null, user.Auth0UserId);
+
+        Assert.False(await dbContext.Set<TournamentRegistration>().AnyAsync(registration =>
+            registration.TournamentId == tournament.Id && registration.UserId == user.Id));
+        Assert.Equal(0, tournament.LeaderboardRevision);
+    }
+
     [Fact]
     public async Task RegisterIndividualAsync_BlocksPendingRosterParticipation()
     {
