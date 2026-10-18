@@ -27,24 +27,24 @@ internal sealed class LeaderboardRowDTO
     public static LeaderboardRowDTO From(
         LeaderboardRankingEntry entry,
         IReadOnlyDictionary<UserId, UserProfileSummary>? users = null) => new()
-    {
-        Rank = entry.Rank,
-        ParticipantId = entry.Participant.Id,
-        DisplayName = entry.Participant.DisplayName,
-        ParticipantKind = entry.Participant.LinkedUserId.HasValue
+        {
+            Rank = entry.Rank,
+            ParticipantId = entry.Participant.Id,
+            DisplayName = entry.Participant.DisplayName,
+            ParticipantKind = entry.Participant.LinkedUserId.HasValue
             ? LeaderboardParticipantKind.LinkedUser
             : LeaderboardParticipantKind.Guest,
-        LinkedUserId = entry.Participant.LinkedUserId,
-        ProfilePictureUrl = entry.Participant.LinkedUserId is Guid linkedUserId &&
+            LinkedUserId = entry.Participant.LinkedUserId,
+            ProfilePictureUrl = entry.Participant.LinkedUserId is Guid linkedUserId &&
                             users is not null &&
                             users.TryGetValue(new UserId(linkedUserId), out var user) &&
                             !user.IsDeleted &&
                             !string.IsNullOrWhiteSpace(user.Username)
             ? user.ProfilePictureUrl
             : null,
-        Score = entry.Score,
-        DurationMilliseconds = entry.DurationMilliseconds
-    };
+            Score = entry.Score,
+            DurationMilliseconds = entry.DurationMilliseconds
+        };
 }
 
 internal sealed class AdminLeaderboardResponseDTO
