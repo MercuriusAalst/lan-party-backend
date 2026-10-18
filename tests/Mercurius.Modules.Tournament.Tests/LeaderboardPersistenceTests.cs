@@ -511,6 +511,73 @@ public sealed class LeaderboardPersistenceTests
     }
 
     [Fact]
+    public async Task RecordAttempt_WhenPictureLookupFails_DoesNotCommitAttemptOrRevision()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        var linkedUser = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "runner",
+            NormalizedUsername = "RUNNER",
+            ProfilePictureUrl = "/images/runner.webp"
+        };
+        var tournament = await SeedInProgressLeaderboardAsync(options);
+        var initialRevision = tournament.LeaderboardRevision;
+
+        await using var db = new MercuriusDBContext(options);
+        var identity = new TournamentTestSupport.StubIdentityModule([linkedUser], usersByIdsFailure: new IOException("identity unavailable"));
+        var service = new LeaderboardService(new TournamentDbContextAdapter<MercuriusDBContext>(db), identity, TimeProvider.System);
+
+        await Assert.ThrowsAsync<IOException>(() => service.RecordAttemptAsync(
+            tournament.Id,
+            new RecordLeaderboardAttemptDTO { LinkedUserId = linkedUser.Id, Score = 12m }));
+
+        await using var verify = new MercuriusDBContext(options);
+        Assert.Equal(0, await verify.Set<LeaderboardAttempt>().CountAsync());
+        Assert.Equal(initialRevision, await verify.Set<TournamentAggregate>().Where(item => item.Id == tournament.Id)
+            .Select(item => item.LeaderboardRevision).SingleAsync());
+
+        var success = await CreateLeaderboardService(verify, [linkedUser]).RecordAttemptAsync(
+            tournament.Id,
+            new RecordLeaderboardAttemptDTO { LinkedUserId = linkedUser.Id, Score = 12m });
+        Assert.Equal("/images/runner.webp", success.ProfilePictureUrl);
+        var persistedAttempt = await verify.Set<LeaderboardAttempt>().AsNoTracking().SingleAsync();
+        Assert.Equal(persistedAttempt.RowVersion, Assert.Single(success.Attempts).RowVersion);
+    }
+
+    [Fact]
+    public async Task RecordAttempt_WhenPictureLookupIsCancelled_DoesNotCommitAttemptOrRevision()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        var linkedUser = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "runner",
+            NormalizedUsername = "RUNNER",
+            ProfilePictureUrl = "/images/runner.webp"
+        };
+        var tournament = await SeedInProgressLeaderboardAsync(options);
+        var initialRevision = tournament.LeaderboardRevision;
+        using var cancellation = new CancellationTokenSource();
+
+        await using var db = new MercuriusDBContext(options);
+        var identity = new TournamentTestSupport.StubIdentityModule([linkedUser]);
+        identity.BeforeGetUsersByIds = cancellation.Cancel;
+        var service = new LeaderboardService(new TournamentDbContextAdapter<MercuriusDBContext>(db), identity, TimeProvider.System);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RecordAttemptAsync(
+            tournament.Id,
+            new RecordLeaderboardAttemptDTO { LinkedUserId = linkedUser.Id, Score = 12m }, cancellation.Token));
+
+        await using var verify = new MercuriusDBContext(options);
+        Assert.Equal(0, await verify.Set<LeaderboardAttempt>().CountAsync());
+        Assert.Equal(initialRevision, await verify.Set<TournamentAggregate>().Where(item => item.Id == tournament.Id)
+            .Select(item => item.LeaderboardRevision).SingleAsync());
+    }
+
+    [Fact]
     public async Task RecordAttempt_WhenLinkedProfileHasNoPublicUsername_StoresGenericLabel()
     {
         await using var database = PostgresTestDatabase.Create();

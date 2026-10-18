@@ -141,8 +141,6 @@ internal sealed class LeaderboardService(
             dbContext.LeaderboardParticipants.Add(participant);
         dbContext.LeaderboardAttempts.Add(attempt);
         tournament.IncrementRevision();
-        await SaveMutationAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
         var response = ToAdminParticipantDto(participant);
         if (response.LinkedUserId.HasValue)
         {
@@ -150,6 +148,9 @@ internal sealed class LeaderboardService(
             if (pictures.TryGetValue(response.LinkedUserId.Value, out var pictureUrl))
                 response.ProfilePictureUrl = pictureUrl;
         }
+
+        await SaveMutationAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return response;
     }
 

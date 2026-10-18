@@ -1016,6 +1016,48 @@ public class UserTests
         Assert.Equal([newUrl], media.DeletedUrls);
     }
 
+    [Theory]
+    [InlineData("current")]
+    [InlineData("username")]
+    [InlineData("id")]
+    public async Task UserDeletion_RetiresPictureWhenRealtimeRevocationFails(string entrypoint)
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser($"auth0|revoke-{entrypoint}", $"revoke-{entrypoint}@example.com");
+        user.ProfilePictureUrl = $"/images/{entrypoint}.webp";
+        var pictureUrl = user.ProfilePictureUrl;
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var media = new RecordingMediaModule();
+        var service = CreateDecoratedUserService(
+            dbContext,
+            new NoopModuleEventPublisher(),
+            media,
+            new NoopRealtimeConnectionManager(throwOnRevoke: true));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            switch (entrypoint)
+            {
+                case "current":
+                    await service.AnonymizeCurrentUserAsync(user.Auth0UserId);
+                    break;
+                case "username":
+                    await service.DeleteUserAsync(user.Username!);
+                    break;
+                case "id":
+                    await service.DeleteUserByIdAsync(user.Id);
+                    break;
+            }
+        });
+
+        Assert.Equal("Realtime revocation failed.", error.Message);
+        var persisted = await dbContext.Users.AsNoTracking().SingleAsync(candidate => candidate.Id == user.Id);
+        Assert.True(persisted.IsDeleted);
+        Assert.Null(persisted.ProfilePictureUrl);
+        Assert.Equal([pictureUrl], media.DeletedUrls);
+    }
+
     [Fact]
     public async Task OverlappingPictureReplacementAndRemovalPublishFreshPicturesAndRetireBothAssets()
     {
@@ -1393,7 +1435,8 @@ public class UserTests
     private static IUserService CreateDecoratedUserService(
         MercuriusDBContext dbContext,
         IModuleEventPublisher publisher,
-        IMediaModule media)
+        IMediaModule media,
+        IRealtimeConnectionManager? realtimeConnectionManager = null)
     {
         var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
         var inner = new UserService(
@@ -1406,7 +1449,7 @@ public class UserTests
             inner,
             identityDbContext,
             publisher,
-            new NoopRealtimeConnectionManager(),
+            realtimeConnectionManager ?? new NoopRealtimeConnectionManager(),
             media);
     }
 
@@ -1635,6 +1678,11 @@ public class UserTests
             throw new IOException("outbox publication failed");
     }
 
+    private sealed class NoopModuleEventPublisher : IModuleEventPublisher
+    {
+        public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null) where TPayload : notnull => Guid.NewGuid();
+    }
+
     private sealed class BlockingModuleEventPublisher : IModuleEventPublisher
     {
         private int _publishCount;
@@ -1656,7 +1704,7 @@ public class UserTests
         public void ReleaseFirstPublication() => ReleaseFirst.TrySetResult();
     }
 
-    private sealed class NoopRealtimeConnectionManager : IRealtimeConnectionManager
+    private sealed class NoopRealtimeConnectionManager(bool throwOnRevoke = false) : IRealtimeConnectionManager
     {
         public Task ExecuteWithAccessGateAsync(Func<CancellationToken, Task> action, Guid? userId, string? groupName = null, string? connectionId = null, CancellationToken cancellationToken = default) => action(cancellationToken);
         public void RegisterConnection(Guid userId, string connectionId, string personalGroup) { }
@@ -1665,7 +1713,8 @@ public class UserTests
         public void UnregisterConnection(string connectionId) { }
         public Task RevokeUserFromGroupAsync(Guid userId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task RevokeGroupAsync(string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RevokeUserAsync(Guid userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RevokeUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            throwOnRevoke ? Task.FromException(new InvalidOperationException("Realtime revocation failed.")) : Task.CompletedTask;
     }
 
     private sealed class RecordingIdentityModule : IIdentityModule

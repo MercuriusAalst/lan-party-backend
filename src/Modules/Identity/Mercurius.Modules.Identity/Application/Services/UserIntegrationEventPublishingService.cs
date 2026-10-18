@@ -196,9 +196,15 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
         await PublishEventsAsync(deletionEvents);
         await CommitIfStartedAsync(transaction);
-        if (deletionEvents.Count > 0)
-            await _realtimeConnectionManager.RevokeUserAsync(after!.Id, CancellationToken.None);
-        await RetirePictureIfUnreferencedAsync(before?.ProfilePictureUrl, after?.ProfilePictureUrl);
+        try
+        {
+            if (deletionEvents.Count > 0)
+                await _realtimeConnectionManager.RevokeUserAsync(after!.Id, CancellationToken.None);
+        }
+        finally
+        {
+            await RetirePictureIfUnreferencedAsync(before?.ProfilePictureUrl, after?.ProfilePictureUrl);
+        }
         return response;
     }
 
@@ -212,9 +218,15 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
         await PublishEventsAsync(deletionEvents);
         await CommitIfStartedAsync(transaction);
-        if (deletionEvents.Count > 0)
-            await _realtimeConnectionManager.RevokeUserAsync(after!.Id, CancellationToken.None);
-        await RetirePictureIfUnreferencedAsync(before?.ProfilePictureUrl, after?.ProfilePictureUrl);
+        try
+        {
+            if (deletionEvents.Count > 0)
+                await _realtimeConnectionManager.RevokeUserAsync(after!.Id, CancellationToken.None);
+        }
+        finally
+        {
+            await RetirePictureIfUnreferencedAsync(before?.ProfilePictureUrl, after?.ProfilePictureUrl);
+        }
     }
 
     public async Task DeleteUserByIdAsync(Guid id)
@@ -228,9 +240,15 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
         await PublishEventsAsync(deletionEvents);
         await CommitIfStartedAsync(transaction);
-        if (deletionEvents.Count > 0)
-            await _realtimeConnectionManager.RevokeUserAsync(after!.Id, CancellationToken.None);
-        await RetirePictureIfUnreferencedAsync(before?.ProfilePictureUrl, after?.ProfilePictureUrl);
+        try
+        {
+            if (deletionEvents.Count > 0)
+                await _realtimeConnectionManager.RevokeUserAsync(after!.Id, CancellationToken.None);
+        }
+        finally
+        {
+            await RetirePictureIfUnreferencedAsync(before?.ProfilePictureUrl, after?.ProfilePictureUrl);
+        }
     }
 
     public Task<IReadOnlyList<GetUserDTO>> GetAllUsersAsync(int page, int pageSize, CancellationToken cancellationToken = default)
