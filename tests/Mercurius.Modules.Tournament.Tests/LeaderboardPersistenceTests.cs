@@ -269,6 +269,81 @@ public sealed class LeaderboardPersistenceTests
             await CreateLeaderboardService(deleteDb).RemoveAttemptAsync(tournament.Id, attemptId, currentRowVersion);
 
         Assert.Equal(0, await CountAsync(database.ConnectionString, "tournament.leaderboard_attempts"));
+        Assert.Equal(0, await CountAsync(database.ConnectionString, "tournament.leaderboard_participants"));
+        await using var finalVerify = new MercuriusDBContext(options);
+        Assert.Empty((await CreateLeaderboardService(finalVerify).GetAdminLeaderboardAsync(tournament.Id)).Participants);
+        Assert.Empty((await CreateLeaderboardService(finalVerify).GetPublicLeaderboardAsync(tournament.Id)).Rows);
+    }
+
+    [Fact]
+    public async Task RemovingNonFinalAttempt_PreservesParticipantAndRemainingHistory()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        LeaderboardParticipant seeded = null!;
+        var tournament = await SeedInProgressLeaderboardAsync(
+            options,
+            aggregate => seeded = AddGuestParticipant(aggregate, "Recorded", 10m, 20m));
+
+        await using (var mutationDb = new MercuriusDBContext(options))
+            await CreateLeaderboardService(mutationDb).RemoveAttemptAsync(
+                tournament.Id,
+                seeded.Attempts[0].Id,
+                seeded.Attempts[0].RowVersion);
+
+        Assert.Equal(1, await CountAsync(database.ConnectionString, "tournament.leaderboard_participants"));
+        Assert.Equal(1, await CountAsync(database.ConnectionString, "tournament.leaderboard_attempts"));
+        await using var verify = new MercuriusDBContext(options);
+        var adminParticipant = Assert.Single((await CreateLeaderboardService(verify).GetAdminLeaderboardAsync(tournament.Id)).Participants);
+        Assert.Equal(seeded.Id, adminParticipant.Id);
+        Assert.Equal(20m, Assert.Single(adminParticipant.Attempts).Score);
+        Assert.Equal(seeded.Id, Assert.Single((await CreateLeaderboardService(verify).GetPublicLeaderboardAsync(tournament.Id)).Rows).ParticipantId);
+    }
+
+    [Fact]
+    public async Task RemovingFinalLinkedUserAttempt_AllowsRecordingTheUserAgain()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        var linkedUser = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "runner",
+            NormalizedUsername = "RUNNER",
+            Firstname = "Ada",
+            Lastname = "Lovelace"
+        };
+        LeaderboardParticipant seeded = null!;
+        var tournament = await SeedInProgressLeaderboardAsync(
+            options,
+            aggregate => seeded = AddLinkedParticipant(aggregate, linkedUser.Id, 10m));
+
+        await using (var deleteDb = new MercuriusDBContext(options))
+            await CreateLeaderboardService(deleteDb, [linkedUser]).RemoveAttemptAsync(
+                tournament.Id,
+                seeded.Attempts.Single().Id,
+                seeded.Attempts.Single().RowVersion);
+
+        Assert.Equal(0, await CountAsync(database.ConnectionString, "tournament.leaderboard_participants"));
+        Assert.Equal(0, await CountAsync(database.ConnectionString, "tournament.leaderboard_attempts"));
+        await using (var verify = new MercuriusDBContext(options))
+        {
+            Assert.Empty((await CreateLeaderboardService(verify).GetAdminLeaderboardAsync(tournament.Id)).Participants);
+            Assert.Empty((await CreateLeaderboardService(verify).GetPublicLeaderboardAsync(tournament.Id)).Rows);
+        }
+
+        await using (var recordDb = new MercuriusDBContext(options))
+        {
+            var recreated = await CreateLeaderboardService(recordDb, [linkedUser]).RecordAttemptAsync(
+                tournament.Id,
+                new RecordLeaderboardAttemptDTO { LinkedUserId = linkedUser.Id, Score = 15m });
+            Assert.NotEqual(seeded.Id, recreated.Id);
+            Assert.Equal(linkedUser.Id, recreated.LinkedUserId);
+            Assert.Equal(15m, Assert.Single(recreated.Attempts).Score);
+        }
+
+        Assert.Equal(1, await CountAsync(database.ConnectionString, "tournament.leaderboard_participants"));
+        Assert.Equal(1, await CountAsync(database.ConnectionString, "tournament.leaderboard_attempts"));
     }
 
     [Fact]

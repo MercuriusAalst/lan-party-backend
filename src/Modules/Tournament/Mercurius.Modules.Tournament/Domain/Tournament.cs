@@ -309,6 +309,8 @@ internal sealed class Tournament
         var attempt = participant.Attempts.Single(item => item.Id == attemptId);
         attempt.EnsureRowVersion(rowVersion);
         participant.Attempts.Remove(attempt);
+        if (participant.Attempts.Count == 0)
+            LeaderboardParticipants.Remove(participant);
     }
 
     private void EnsureLeaderboardAttemptsEditable()
