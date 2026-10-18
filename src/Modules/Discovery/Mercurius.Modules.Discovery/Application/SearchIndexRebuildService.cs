@@ -216,7 +216,7 @@ internal sealed class SearchIndexRebuildService
                     user.UserId.Value.ToString(),
                     user.Username,
                     "User",
-                    ImageUrl: null,
+                    ImageUrl: user.ProfilePictureUrl,
                     $"/users/{Uri.EscapeDataString(user.Username)}")).ToArray(),
                 sourceVersion,
                 updatedAtUtc,

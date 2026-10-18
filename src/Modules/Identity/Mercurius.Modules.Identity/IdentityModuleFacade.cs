@@ -67,7 +67,8 @@ internal sealed class IdentityModuleFacade : IIdentityModule
                 user.Lastname!,
                 user.DiscordId,
                 user.SteamId,
-                user.RiotId))
+                user.RiotId,
+                user.ProfilePictureUrl))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -90,7 +91,8 @@ internal sealed class IdentityModuleFacade : IIdentityModule
                 user.Lastname!,
                 user.DiscordId,
                 user.SteamId,
-                user.RiotId))
+                user.RiotId,
+                user.ProfilePictureUrl))
             .FirstOrDefaultAsync(cancellationToken);
     }
 
@@ -153,7 +155,8 @@ internal sealed class IdentityModuleFacade : IIdentityModule
             .OrderBy(user => user.Id)
             .Select(user => new PublicUserSearchDocument(
                 new UserId(user.Id),
-                user.Username!))
+                user.Username!,
+                user.ProfilePictureUrl))
             .Take(Math.Clamp(pageSize, 1, 1000))
             .ToListAsync(cancellationToken);
     }
@@ -211,6 +214,7 @@ internal sealed class IdentityModuleFacade : IIdentityModule
             user.IsDeleted,
             user.DiscordId,
             user.SteamId,
-            user.RiotId);
+            user.RiotId,
+            user.ProfilePictureUrl);
     }
 }

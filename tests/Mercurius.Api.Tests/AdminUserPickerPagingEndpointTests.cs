@@ -1,10 +1,12 @@
 using System.Text;
 using System.Text.Json;
+using System.Security.Claims;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity.Application.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Platform.Extensions;
@@ -14,6 +16,54 @@ namespace Mercurius.Api.Tests;
 public class AdminUserPickerPagingEndpointTests
 {
     private const string AdminPickerRoute = "v{version:apiVersion}/lan/users/admins";
+    private const string CurrentUserPictureRoute = "v{version:apiVersion}/lan/users/me/picture";
+
+    [Fact]
+    public async Task CurrentUserPictureUpload_BindsMultipartFileAndUsesAuthenticatedSubject()
+    {
+        var userService = new RecordingUserService();
+        await using var app = CreateApp(userService);
+        var endpoint = GetEndpoint(app, CurrentUserPictureRoute, "PUT");
+
+        Assert.Contains(endpoint.Metadata, metadata => metadata is Microsoft.AspNetCore.Authorization.IAuthorizeData);
+        Assert.Contains(endpoint.Metadata, metadata => metadata.GetType().Name.Contains("Accepts", StringComparison.Ordinal));
+
+        var file = new FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "avatar.png")
+        {
+            Headers = new HeaderDictionary { ["Content-Type"] = "image/png" }
+        };
+        var context = new DefaultHttpContext { RequestServices = app.Services };
+        context.Request.Method = "PUT";
+        context.Request.ContentType = "multipart/form-data; boundary=test";
+        context.Features.Set<IFormFeature>(new FormFeature(new FormCollection([], new FormFileCollection { file })));
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "auth0|picture-owner")], "test"));
+        context.Response.Body = new MemoryStream();
+
+        await endpoint.RequestDelegate!(context);
+
+        Assert.Equal("auth0|picture-owner", userService.LastPictureAuth0UserId);
+        Assert.Equal("picture", userService.LastPicture?.Name);
+        Assert.Equal("avatar.png", userService.LastPicture?.FileName);
+        Assert.Equal(3, userService.LastPicture?.Length);
+    }
+
+    [Fact]
+    public async Task CurrentUserPictureDelete_UsesAuthenticatedSubjectAndRequiresAuthorization()
+    {
+        var userService = new RecordingUserService();
+        await using var app = CreateApp(userService);
+        var endpoint = GetEndpoint(app, CurrentUserPictureRoute, "DELETE");
+        var context = new DefaultHttpContext { RequestServices = app.Services };
+        context.Request.Method = "DELETE";
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "auth0|picture-owner")], "test"));
+        context.Response.Body = new MemoryStream();
+
+        await endpoint.RequestDelegate!(context);
+
+        Assert.Contains(endpoint.Metadata, metadata => metadata is Microsoft.AspNetCore.Authorization.IAuthorizeData);
+        Assert.Equal("auth0|picture-owner", userService.LastPictureAuth0UserId);
+        Assert.Equal(1, userService.RemovePictureCallCount);
+    }
 
     [Theory]
     [InlineData("", null, null, null)]
@@ -114,6 +164,12 @@ public class AdminUserPickerPagingEndpointTests
         return (context.Response.StatusCode, await reader.ReadToEndAsync());
     }
 
+    private static RouteEndpoint GetEndpoint(WebApplication app, string route, string method) => ((IEndpointRouteBuilder)app).DataSources
+        .SelectMany(source => source.Endpoints)
+        .OfType<RouteEndpoint>()
+        .Single(endpoint => endpoint.RoutePattern.RawText == route &&
+            endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains(method, StringComparer.OrdinalIgnoreCase) == true);
+
     private sealed class RecordingUserService : IUserService
     {
         public int CallCount { get; private set; }
@@ -121,6 +177,9 @@ public class AdminUserPickerPagingEndpointTests
         public int? LastPage { get; private set; }
         public int? LastPageSize { get; private set; }
         public IReadOnlyList<AdminUserOptionDTO> Options { get; init; } = [];
+        public string? LastPictureAuth0UserId { get; private set; }
+        public IFormFile? LastPicture { get; private set; }
+        public int RemovePictureCallCount { get; private set; }
 
         public Task<IReadOnlyList<AdminUserOptionDTO>> GetAdminUsersAsync(
             string? query,
@@ -143,6 +202,18 @@ public class AdminUserPickerPagingEndpointTests
         public Task<GetUserDTO> GetUserByUsernameAsync(string username) => throw new NotSupportedException();
         public Task<UserSearchResponseDTO> SearchUsersAsync(string? query, string? cursor, int pageSize, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<GetUserDTO> UpdateCurrentUserAsync(string auth0UserId, UpdateUserProfileRequest request) => throw new NotSupportedException();
+        public Task<CurrentUserProfileResponse> UploadCurrentUserPictureAsync(string auth0UserId, IFormFile picture, CancellationToken cancellationToken = default)
+        {
+            LastPictureAuth0UserId = auth0UserId;
+            LastPicture = picture;
+            return Task.FromResult<CurrentUserProfileResponse>(null!);
+        }
+        public Task<CurrentUserProfileResponse> RemoveCurrentUserPictureAsync(string auth0UserId, CancellationToken cancellationToken = default)
+        {
+            LastPictureAuth0UserId = auth0UserId;
+            RemovePictureCallCount++;
+            return Task.FromResult<CurrentUserProfileResponse>(null!);
+        }
         public Task<UsernameAvailabilityResponse> CheckUsernameAvailabilityAsync(string auth0UserId, string username) => throw new NotSupportedException();
         public Task<UserActionResponse> ResendVerificationEmailAsync(string auth0UserId) => throw new NotSupportedException();
         public Task<UserActionResponse> SendPasswordResetEmailAsync(string auth0UserId) => throw new NotSupportedException();

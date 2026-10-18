@@ -6,4 +6,5 @@ internal sealed record OpponentUserProfileDTO(
     string Lastname,
     string? DiscordId,
     string? SteamId,
-    string? RiotId);
+    string? RiotId,
+    string? ProfilePictureUrl = null);

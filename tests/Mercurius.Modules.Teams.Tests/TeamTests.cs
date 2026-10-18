@@ -43,6 +43,84 @@ public class TeamTests
         Assert.Contains(managementMemberType.GetProperties(), property => property.Name == "DiscordId");
         Assert.Contains(managementMemberType.GetProperties(), property => property.Name == "SteamId");
         Assert.Contains(managementMemberType.GetProperties(), property => property.Name == "RiotId");
+        Assert.Contains(publicMemberType.GetProperties(), property => property.Name == "ProfilePictureUrl");
+        Assert.Contains(managementMemberType.GetProperties(), property => property.Name == "ProfilePictureUrl");
+    }
+
+    [Fact]
+    public async Task CurrentUserTeamSummary_ManagementMembersIncludeCurrentProfilePictures()
+    {
+        const string pictureUrl = "/images/member.webp";
+        var sourceSummary = new CurrentUserTeamSummaryDTO
+        {
+            CaptainedTeams =
+            [
+                new TeamManagementSummaryDTO
+                {
+                    Members =
+                    [
+                        new TeamPublicUserDTO
+                        {
+                            Id = Guid.NewGuid(),
+                            Username = "member",
+                            DisplayName = "Member One",
+                            ProfilePictureUrl = pictureUrl
+                        }
+                    ]
+                }
+            ]
+        };
+        var endpointService = new TeamEndpointService(null!, null!, new StubTeamInviteWorkflows(sourceSummary), null!);
+
+        var summary = await endpointService.GetCurrentUserTeamSummaryAsync("auth0|captain");
+
+        Assert.Equal(pictureUrl, Assert.Single(Assert.Single(summary.CaptainedTeams).Members).ProfilePictureUrl);
+    }
+
+    [Fact]
+    public async Task PublicTeamEndpointsIncludePicturesWithoutExposingPrivateMemberFields()
+    {
+        const string pictureUrl = "/images/member.webp";
+        var member = new TeamPublicUserDTO
+        {
+            Id = Guid.NewGuid(),
+            Username = "member",
+            DisplayName = "Member One",
+            DiscordId = "private-discord",
+            ProfilePictureUrl = pictureUrl
+        };
+        var team = new GetTeamDTO { Id = Guid.NewGuid(), Name = "Team", Members = [member] };
+        var profile = new PublicTeamProfileDTO
+        {
+            TeamName = "Team",
+            Members = [new PublicTeamMemberDTO(member.Username, pictureUrl)]
+        };
+        var endpointService = new TeamEndpointService(new StubTeamQueries(team, profile), null!, null!, null!);
+
+        var ordinaryResponse = await endpointService.GetTeamByIdAsync(team.Id);
+        var profileResponse = await endpointService.GetPublicTeamProfileAsync("Team");
+
+        Assert.Equal(pictureUrl, Assert.Single(ordinaryResponse.Members).ProfilePictureUrl);
+        Assert.Equal(pictureUrl, Assert.Single(profileResponse.Members).ProfilePictureUrl);
+        Assert.Null(typeof(TeamParticipantResponseDTO).GetProperty("DiscordId"));
+        Assert.Null(typeof(PublicTeamMemberResponseDTO).GetProperty("DiscordId"));
+    }
+
+    private sealed class StubTeamInviteWorkflows(CurrentUserTeamSummaryDTO summary) : ITeamInviteWorkflows
+    {
+        public Task<CurrentUserTeamSummaryDTO> GetCurrentUserTeamSummaryAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.FromResult(summary);
+        public Task<IEnumerable<TeamInviteSummaryDTO>> GetCurrentUserInvitesAsync(string auth0UserId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IEnumerable<TeamInviteSummaryDTO>> GetCurrentUserSentInvitesAsync(string auth0UserId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TeamInviteDTO> InviteUserAsync(string auth0UserId, Guid teamId, Guid userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TeamInviteDTO> CancelInviteAsync(string auth0UserId, Guid teamId, Guid inviteId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TeamInviteDTO> RespondToInviteAsync(string auth0UserId, Guid inviteId, bool accept, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class StubTeamQueries(GetTeamDTO team, PublicTeamProfileDTO profile) : ITeamQueries
+    {
+        public Task<IReadOnlyList<GetTeamDTO>> GetAllTeamsAsync(int page, int pageSize, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<GetTeamDTO>>([team]);
+        public Task<GetTeamDTO> GetTeamByIdAsync(Guid teamId, CancellationToken cancellationToken = default) => Task.FromResult(team);
+        public Task<PublicTeamProfileDTO> GetPublicTeamProfileAsync(string teamName, CancellationToken cancellationToken = default) => Task.FromResult(profile);
     }
 
     [Fact]

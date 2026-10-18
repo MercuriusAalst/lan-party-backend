@@ -109,7 +109,7 @@ internal static class TournamentTestSupport
             .GetResult();
     }
 
-    public static IIdentityModule CreateIdentityModule(
+    public static StubIdentityModule CreateIdentityModule(
         IReadOnlyCollection<User>? users = null,
         bool throwOnPublicUsernameLookup = false,
         IReadOnlyCollection<Guid>? adminUserIds = null,
@@ -226,14 +226,17 @@ internal static class TournamentTestSupport
         public Task DeleteImageAsync(string? imageUrl, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class StubIdentityModule(
+    internal sealed class StubIdentityModule(
         IReadOnlyCollection<User> users,
         bool throwOnPublicUsernameLookup = false,
         IReadOnlyCollection<Guid>? adminUserIds = null,
-        Exception? adminLookupFailure = null) : IIdentityModule
+        Exception? adminLookupFailure = null,
+        Exception? usersByIdsFailure = null) : IIdentityModule
     {
         private readonly Dictionary<Guid, User> _users = users.ToDictionary(user => user.Id);
         private readonly HashSet<Guid> _adminUserIds = adminUserIds?.ToHashSet() ?? [];
+        public int GetUsersByIdsCallCount { get; private set; }
+        public Action? BeforeGetUsersByIds { get; set; }
 
         public Task<bool> IsAdminUserAsync(UserId userId, CancellationToken cancellationToken = default)
         {
@@ -278,15 +281,19 @@ internal static class TournamentTestSupport
                     user.RiotId));
         }
 
-        public Task<IReadOnlyDictionary<UserId, UserProfileSummary>> GetUsersByIdsAsync(
+        public async Task<IReadOnlyDictionary<UserId, UserProfileSummary>> GetUsersByIdsAsync(
             IReadOnlyCollection<UserId> userIds,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult<IReadOnlyDictionary<UserId, UserProfileSummary>>(
-                userIds
-                    .Where(userId => _users.ContainsKey(userId.Value))
-                    .Select(userId => ToSummary(_users[userId.Value])!)
-                    .ToDictionary(summary => summary.Id));
+            GetUsersByIdsCallCount++;
+            BeforeGetUsersByIds?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (usersByIdsFailure is not null)
+                throw usersByIdsFailure;
+            return userIds
+                .Where(userId => _users.ContainsKey(userId.Value))
+                .Select(userId => ToSummary(_users[userId.Value])!)
+                .ToDictionary(summary => summary.Id);
         }
 
         public Task<IReadOnlyDictionary<UserId, string>> GetPublicUsernamesByIdsAsync(
@@ -330,7 +337,8 @@ internal static class TournamentTestSupport
                     user.IsDeleted,
                     user.DiscordId,
                     user.SteamId,
-                    user.RiotId);
+                    user.RiotId,
+                    user.ProfilePictureUrl);
         }
     }
 

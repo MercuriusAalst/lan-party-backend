@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Mercurius.Modules.Identity.Contracts\Mercurius.Modules.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\..\Media\Mercurius.Modules.Media.Contracts\Mercurius.Modules.Media.Contracts.csproj" />
     <ProjectReference Include="..\..\..\Modules.Shared\Modules.Shared.csproj" />
     <ProjectReference Include="..\..\..\Platform\Platform.csproj" />
   </ItemGroup>

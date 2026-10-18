@@ -390,6 +390,41 @@ public sealed class LeaderboardPersistenceTests
     }
 
     [Fact]
+    public async Task Leaderboards_BatchCurrentPicturesForLinkedUsersAndLeaveGuestsNull()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        var linkedUser = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "runner",
+            NormalizedUsername = "RUNNER",
+            Firstname = "Ada",
+            Lastname = "Lovelace",
+            ProfilePictureUrl = "/images/runner.webp"
+        };
+        var tournament = await SeedInProgressLeaderboardAsync(options, aggregate =>
+        {
+            AddLinkedParticipant(aggregate, linkedUser.Id, 100m);
+            AddGuestParticipant(aggregate, "Guest", 80m);
+        });
+
+        await using var db = new MercuriusDBContext(options);
+        var identity = TournamentTestSupport.CreateIdentityModule([linkedUser]);
+        var service = new LeaderboardService(new TournamentDbContextAdapter<MercuriusDBContext>(db), identity, TimeProvider.System);
+
+        var publicResponse = await service.GetPublicLeaderboardAsync(tournament.Id);
+        Assert.Equal(1, identity.GetUsersByIdsCallCount);
+        Assert.Equal("/images/runner.webp", publicResponse.Rows.Single(row => row.LinkedUserId == linkedUser.Id).ProfilePictureUrl);
+        Assert.Null(publicResponse.Rows.Single(row => row.ParticipantKind == Contracts.LeaderboardParticipantKind.Guest).ProfilePictureUrl);
+
+        var adminResponse = await service.GetAdminLeaderboardAsync(tournament.Id);
+        Assert.Equal(2, identity.GetUsersByIdsCallCount);
+        Assert.Equal("/images/runner.webp", adminResponse.Participants.Single(row => row.LinkedUserId == linkedUser.Id).ProfilePictureUrl);
+        Assert.Null(adminResponse.Participants.Single(row => row.ParticipantKind == Contracts.LeaderboardParticipantKind.Guest).ProfilePictureUrl);
+    }
+
+    [Fact]
     public async Task AdminLeaderboard_ReturnsFullAttemptHistoryAfterCorrection()
     {
         await using var database = PostgresTestDatabase.Create();
@@ -476,6 +511,73 @@ public sealed class LeaderboardPersistenceTests
     }
 
     [Fact]
+    public async Task RecordAttempt_WhenPictureLookupFails_DoesNotCommitAttemptOrRevision()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        var linkedUser = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "runner",
+            NormalizedUsername = "RUNNER",
+            ProfilePictureUrl = "/images/runner.webp"
+        };
+        var tournament = await SeedInProgressLeaderboardAsync(options);
+        var initialRevision = tournament.LeaderboardRevision;
+
+        await using var db = new MercuriusDBContext(options);
+        var identity = new TournamentTestSupport.StubIdentityModule([linkedUser], usersByIdsFailure: new IOException("identity unavailable"));
+        var service = new LeaderboardService(new TournamentDbContextAdapter<MercuriusDBContext>(db), identity, TimeProvider.System);
+
+        await Assert.ThrowsAsync<IOException>(() => service.RecordAttemptAsync(
+            tournament.Id,
+            new RecordLeaderboardAttemptDTO { LinkedUserId = linkedUser.Id, Score = 12m }));
+
+        await using var verify = new MercuriusDBContext(options);
+        Assert.Equal(0, await verify.Set<LeaderboardAttempt>().CountAsync());
+        Assert.Equal(initialRevision, await verify.Set<TournamentAggregate>().Where(item => item.Id == tournament.Id)
+            .Select(item => item.LeaderboardRevision).SingleAsync());
+
+        var success = await CreateLeaderboardService(verify, [linkedUser]).RecordAttemptAsync(
+            tournament.Id,
+            new RecordLeaderboardAttemptDTO { LinkedUserId = linkedUser.Id, Score = 12m });
+        Assert.Equal("/images/runner.webp", success.ProfilePictureUrl);
+        var persistedAttempt = await verify.Set<LeaderboardAttempt>().AsNoTracking().SingleAsync();
+        Assert.Equal(persistedAttempt.RowVersion, Assert.Single(success.Attempts).RowVersion);
+    }
+
+    [Fact]
+    public async Task RecordAttempt_WhenPictureLookupIsCancelled_DoesNotCommitAttemptOrRevision()
+    {
+        await using var database = PostgresTestDatabase.Create();
+        var options = CreateOptions(database);
+        var linkedUser = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "runner",
+            NormalizedUsername = "RUNNER",
+            ProfilePictureUrl = "/images/runner.webp"
+        };
+        var tournament = await SeedInProgressLeaderboardAsync(options);
+        var initialRevision = tournament.LeaderboardRevision;
+        using var cancellation = new CancellationTokenSource();
+
+        await using var db = new MercuriusDBContext(options);
+        var identity = new TournamentTestSupport.StubIdentityModule([linkedUser]);
+        identity.BeforeGetUsersByIds = cancellation.Cancel;
+        var service = new LeaderboardService(new TournamentDbContextAdapter<MercuriusDBContext>(db), identity, TimeProvider.System);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RecordAttemptAsync(
+            tournament.Id,
+            new RecordLeaderboardAttemptDTO { LinkedUserId = linkedUser.Id, Score = 12m }, cancellation.Token));
+
+        await using var verify = new MercuriusDBContext(options);
+        Assert.Equal(0, await verify.Set<LeaderboardAttempt>().CountAsync());
+        Assert.Equal(initialRevision, await verify.Set<TournamentAggregate>().Where(item => item.Id == tournament.Id)
+            .Select(item => item.LeaderboardRevision).SingleAsync());
+    }
+
+    [Fact]
     public async Task RecordAttempt_WhenLinkedProfileHasNoPublicUsername_StoresGenericLabel()
     {
         await using var database = PostgresTestDatabase.Create();
@@ -519,7 +621,8 @@ public sealed class LeaderboardPersistenceTests
             Username = "runner",
             NormalizedUsername = "RUNNER",
             Firstname = "Ada",
-            Lastname = "Lovelace"
+            Lastname = "Lovelace",
+            ProfilePictureUrl = "/images/runner.webp"
         };
         LeaderboardParticipant guest = null!;
         LeaderboardParticipant linked = null!;
@@ -531,7 +634,7 @@ public sealed class LeaderboardPersistenceTests
 
         IReadOnlyList<GetPlacementDTO> placements;
         await using (var completionDb = new MercuriusDBContext(options))
-            placements = (await CreateTournamentService(completionDb).CompleteTournamentAsync(tournament.Id)).ToList();
+            placements = (await CreateTournamentService(completionDb, [linkedUser]).CompleteTournamentAsync(tournament.Id)).ToList();
 
         Assert.Equal([1, 2], placements.Select(item => item.Place));
 
@@ -546,6 +649,7 @@ public sealed class LeaderboardPersistenceTests
         Assert.Equal("runner", runnerUp.DisplayName);
         Assert.Equal(Contracts.LeaderboardParticipantKind.LinkedUser, runnerUp.ParticipantKind);
         Assert.Equal(linkedUser.Id, runnerUp.LinkedUserId);
+        Assert.Equal("/images/runner.webp", runnerUp.ProfilePictureUrl);
 
         await using var db = new MercuriusDBContext(options);
         var publicResponse = await CreateLeaderboardService(db).GetPublicLeaderboardAsync(tournament.Id);
@@ -636,13 +740,13 @@ public sealed class LeaderboardPersistenceTests
         TournamentTestSupport.CreateIdentityModule(users, throwOnPublicUsernameLookup),
         TimeProvider.System);
 
-    private static TournamentService CreateTournamentService(MercuriusDBContext db) => new(
+    private static TournamentService CreateTournamentService(MercuriusDBContext db, IReadOnlyCollection<User>? users = null) => new(
         new TournamentDbContextAdapter<MercuriusDBContext>(db),
         new LeaderboardModeratorFactory(),
         new UnsupportedMediaModule(),
-        TournamentTestSupport.CreateIdentityModule(),
+        TournamentTestSupport.CreateIdentityModule(users),
         TournamentTestSupport.CreateSponsorshipModule(),
-        TournamentTestSupport.CreateMapper(),
+        TournamentTestSupport.CreateMapper(users),
         TournamentTestSupport.CreateModuleEventPublisher(),
         NullLogger<TournamentService>.Instance,
         TimeProvider.System);

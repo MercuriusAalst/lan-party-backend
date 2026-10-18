@@ -1,5 +1,7 @@
 using Mercurius.Modules.Tournament.Contracts;
 using System.ComponentModel.DataAnnotations;
+using Mercurius.Modules.Identity.Contracts;
+using Mercurius.Modules.Shared;
 using LeaderboardRankingEntry = Mercurius.Modules.Tournament.Domain.LeaderboardRankingEntry;
 
 namespace Mercurius.Modules.Tournament.Application.DTOs.Leaderboards;
@@ -18,21 +20,31 @@ internal sealed class LeaderboardRowDTO
     public string DisplayName { get; set; } = null!;
     public LeaderboardParticipantKind ParticipantKind { get; set; }
     public Guid? LinkedUserId { get; set; }
+    public string? ProfilePictureUrl { get; set; }
     public decimal? Score { get; set; }
     public long? DurationMilliseconds { get; set; }
 
-    public static LeaderboardRowDTO From(LeaderboardRankingEntry entry) => new()
-    {
-        Rank = entry.Rank,
-        ParticipantId = entry.Participant.Id,
-        DisplayName = entry.Participant.DisplayName,
-        ParticipantKind = entry.Participant.LinkedUserId.HasValue
+    public static LeaderboardRowDTO From(
+        LeaderboardRankingEntry entry,
+        IReadOnlyDictionary<UserId, UserProfileSummary>? users = null) => new()
+        {
+            Rank = entry.Rank,
+            ParticipantId = entry.Participant.Id,
+            DisplayName = entry.Participant.DisplayName,
+            ParticipantKind = entry.Participant.LinkedUserId.HasValue
             ? LeaderboardParticipantKind.LinkedUser
             : LeaderboardParticipantKind.Guest,
-        LinkedUserId = entry.Participant.LinkedUserId,
-        Score = entry.Score,
-        DurationMilliseconds = entry.DurationMilliseconds
-    };
+            LinkedUserId = entry.Participant.LinkedUserId,
+            ProfilePictureUrl = entry.Participant.LinkedUserId is Guid linkedUserId &&
+                            users is not null &&
+                            users.TryGetValue(new UserId(linkedUserId), out var user) &&
+                            !user.IsDeleted &&
+                            !string.IsNullOrWhiteSpace(user.Username)
+            ? user.ProfilePictureUrl
+            : null,
+            Score = entry.Score,
+            DurationMilliseconds = entry.DurationMilliseconds
+        };
 }
 
 internal sealed class AdminLeaderboardResponseDTO
@@ -48,6 +60,7 @@ internal sealed class AdminLeaderboardParticipantDTO
     public string DisplayName { get; set; } = null!;
     public LeaderboardParticipantKind ParticipantKind { get; set; }
     public Guid? LinkedUserId { get; set; }
+    public string? ProfilePictureUrl { get; set; }
     public IReadOnlyList<LeaderboardAttemptDTO> Attempts { get; set; } = [];
 }
 

@@ -6,4 +6,5 @@ public sealed record TeamMemberSnapshot(
     UserId UserId,
     string? Username,
     string DisplayName,
-    bool IsCaptain);
+    bool IsCaptain,
+    string? ProfilePictureUrl = null);

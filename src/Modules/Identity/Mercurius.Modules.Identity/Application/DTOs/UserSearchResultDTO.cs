@@ -7,4 +7,5 @@ internal sealed class UserSearchResultDTO
     public required string Username { get; init; }
     public required string DisplayLabel { get; init; }
     public string? SupportingText { get; init; }
+    public string? ProfilePictureUrl { get; init; }
 }

@@ -223,12 +223,11 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         var tournaments = await _tournamentReadService.GetPublicTeamTournamentsAsync(team.Id, cancellationToken);
 
         var members = team.MemberUserIds
-            .Select(userId => users.GetValueOrDefault(new UserId(userId))?.Username)
-            .Where(IsValidPublicUsername)
-            .Select(username => username!)
-            .OrderBy(username => username, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(username => username, StringComparer.Ordinal)
-            .Select(username => new PublicTeamMemberDTO(username))
+            .Select(userId => users.GetValueOrDefault(new UserId(userId)))
+            .Where(user => user is not null && IsValidPublicUsername(user.Username))
+            .OrderBy(user => user!.Username, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(user => user!.Username, StringComparer.Ordinal)
+            .Select(user => new PublicTeamMemberDTO(user!.Username!, user.ProfilePictureUrl))
             .ToList();
 
         var captainUsername = team.CaptainUserId.HasValue

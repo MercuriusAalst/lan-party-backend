@@ -20,6 +20,10 @@ internal sealed class RegistrationMappingContextBuilder(
                 registration.RosterMembers.Select(member => member.UserId)
                     .Concat(registration.UserId.HasValue ? [registration.UserId.Value] : []))
             .Concat(placements.SelectMany(placement => placement.Users.Select(user => user.UserId)))
+            .Concat(placements.SelectMany(placement => placement.LeaderboardParticipants
+                .Select(link => link.LeaderboardParticipant.LinkedUserId)
+                .Where(userId => userId.HasValue)
+                .Select(userId => userId!.Value)))
             .Concat(additionalUserIds ?? [])
             .Distinct()
             .Select(userId => new UserId(userId))

@@ -21,6 +21,7 @@ public class TeamServicePublicProfileTests
         var captain = CreateUser("CaptainMerc");
         var zetaMember = CreateUser("zeta");
         var alphaMember = CreateUser("Alpha");
+        alphaMember.ProfilePictureUrl = "/images/alpha.webp";
         var team = new Team("Mercury Wolves", captain.Id) { Id = Guid.NewGuid() };
         team.AddMember(captain.Id);
         team.AddMember(zetaMember.Id);
@@ -40,6 +41,7 @@ public class TeamServicePublicProfileTests
         Assert.Equal("Mercury Wolves", profile.TeamName);
         Assert.Equal("CaptainMerc", profile.CaptainUsername);
         Assert.Equal(["Alpha", "CaptainMerc", "zeta"], profile.Members.Select(member => member.Username).ToList());
+        Assert.Equal("/images/alpha.webp", profile.Members.Single(member => member.Username == "Alpha").ProfilePictureUrl);
     }
 
     [Fact]
@@ -67,6 +69,7 @@ public class TeamServicePublicProfileTests
         await using var dbContext = CreateDbContext();
         var captain = CreateUser("CaptainOne");
         var bravoMember = CreateUser("Bravo");
+        bravoMember.ProfilePictureUrl = "/images/bravo.webp";
         var unnamedMember = CreateUser(null);
         var blankMember = CreateUser(" ");
         var invitedUser = CreateUser("Invited");
@@ -89,8 +92,9 @@ public class TeamServicePublicProfileTests
         var profile = await service.GetPublicTeamProfileAsync("privacy squad");
 
         Assert.Equal(["Bravo", "CaptainOne"], profile.Members.Select(member => member.Username).ToList());
+        Assert.Equal("/images/bravo.webp", profile.Members.Single(member => member.Username == "Bravo").ProfilePictureUrl);
         Assert.Null(typeof(PublicTeamProfileDTO).GetProperty("TeamInvites"));
-        Assert.Equal(["Username"], typeof(PublicTeamMemberDTO).GetProperties().Select(property => property.Name).ToArray());
+        Assert.Equal(["ProfilePictureUrl", "Username"], typeof(PublicTeamMemberDTO).GetProperties().Select(property => property.Name).Order().ToArray());
         Assert.Null(typeof(PublicTeamMemberDTO).GetProperty("Email"));
     }
 

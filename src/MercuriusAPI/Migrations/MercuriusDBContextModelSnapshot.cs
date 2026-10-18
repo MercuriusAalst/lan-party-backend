@@ -251,6 +251,10 @@ namespace Mercurius.LAN.API.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("ProfilePictureUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
                     b.Property<string>("RiotId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");

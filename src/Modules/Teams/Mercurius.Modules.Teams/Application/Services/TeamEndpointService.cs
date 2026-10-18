@@ -171,7 +171,8 @@ internal sealed class TeamEndpointService : ITeamEndpointService
             LogoUrl = profile.LogoUrl,
             Members = profile.Members.Select(member => new PublicTeamMemberResponseDTO
             {
-                Username = member.Username
+                Username = member.Username,
+                ProfilePictureUrl = member.ProfilePictureUrl
             }).ToList(),
             Tournaments = profile.Tournaments.Select(tournament => new PublicTeamTournamentResponseDTO
             {
@@ -244,7 +245,8 @@ internal sealed class TeamEndpointService : ITeamEndpointService
         {
             Id = user.Id,
             Username = user.Username,
-            DisplayName = user.DisplayName
+            DisplayName = user.DisplayName,
+            ProfilePictureUrl = user.ProfilePictureUrl
         };
     }
 
@@ -257,7 +259,8 @@ internal sealed class TeamEndpointService : ITeamEndpointService
             DisplayName = user.DisplayName,
             DiscordId = user.DiscordId,
             SteamId = user.SteamId,
-            RiotId = user.RiotId
+            RiotId = user.RiotId,
+            ProfilePictureUrl = user.ProfilePictureUrl
         };
     }
 }

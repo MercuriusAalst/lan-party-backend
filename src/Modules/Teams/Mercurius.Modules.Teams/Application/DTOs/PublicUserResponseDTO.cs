@@ -8,4 +8,5 @@ internal sealed class PublicUserResponseDTO
     public string? DiscordId { get; set; }
     public string? SteamId { get; set; }
     public string? RiotId { get; set; }
+    public string? ProfilePictureUrl { get; set; }
 }
