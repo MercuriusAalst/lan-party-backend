@@ -490,6 +490,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         _ = string.IsNullOrWhiteSpace(adminAuth0UserId)
             ? (Guid?)null
             : await GetCurrentUserIdAsync(adminAuth0UserId, cancellationToken);
+        _ = await GetTournamentForAdminRemovalAsync(tournamentId, cancellationToken);
         var registration = await _dbContext.TournamentRegistrations.FirstOrDefaultAsync(registration =>
             registration.TournamentId == tournamentId &&
             registration.UserId == userId &&
@@ -499,7 +500,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
             throw new NotFoundException("Individual registration not found.");
 
         _dbContext.TournamentRegistrations.Remove(registration);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _persistenceCoordinator.SaveChangesAsync("Tournament registration changed concurrently.", cancellationToken);
         if (transaction is not null)
             await transaction.CommitAsync(cancellationToken);
     }
@@ -515,11 +516,29 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         _ = string.IsNullOrWhiteSpace(adminAuth0UserId)
             ? (Guid?)null
             : await GetCurrentUserIdAsync(adminAuth0UserId, cancellationToken);
+        _ = await GetTournamentForAdminRemovalAsync(tournamentId, cancellationToken);
         var registration = await GetTeamRegistrationForMutationAsync(tournamentId, teamId, cancellationToken);
         DeleteTransientTeamRegistration(registration);
         await _persistenceCoordinator.SaveChangesAsync("Tournament registration changed concurrently.", cancellationToken);
         if (transaction is not null)
             await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task<TournamentAggregate> GetTournamentForAdminRemovalAsync(
+        Guid tournamentId,
+        CancellationToken cancellationToken)
+    {
+        var tournament = await _dbContext.Tournaments.FindAsync([tournamentId], cancellationToken);
+        if (tournament is null)
+            throw new NotFoundException("Tournament not found");
+
+        if (tournament.BracketType is BracketType.SingleElimination or BracketType.DoubleElimination)
+        {
+            EnsureScheduled(tournament);
+            tournament.IncrementRevision();
+        }
+
+        return tournament;
     }
 
     private async Task<List<string>> GetTeamEligibilityFailuresAsync(
