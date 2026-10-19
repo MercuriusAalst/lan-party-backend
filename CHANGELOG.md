@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.7.0...backend-v0.8.0) (2026-10-19)
+
+
+### Features
+
+* Add User Profile Picture Management ([#155](https://github.com/MercuriusAalst/lan-party-backend/issues/155)) ([f1c85be](https://github.com/MercuriusAalst/lan-party-backend/commit/f1c85beee827f274bc022e967a3e143410544ce9))
+* Require Assigned Admin And Route Match Resolution To Them ([#153](https://github.com/MercuriusAalst/lan-party-backend/issues/153)) ([ca7b6cc](https://github.com/MercuriusAalst/lan-party-backend/commit/ca7b6cc57e9376210c0132e8ba1d35602e801ed0))
+
+
+### Bug Fixes
+
+* Lock Started Elimination Participants ([#158](https://github.com/MercuriusAalst/lan-party-backend/issues/158)) ([4f11b78](https://github.com/MercuriusAalst/lan-party-backend/commit/4f11b784b9baaef5cec3a1be049a43ee2eb2b378))
+* Remove Empty Leaderboard Participants ([#157](https://github.com/MercuriusAalst/lan-party-backend/issues/157)) ([d9615a6](https://github.com/MercuriusAalst/lan-party-backend/commit/d9615a66d6892fd9cdb1ed03c4984bdfb73cfb72))
+
 ## [0.7.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.6.0...backend-v0.7.0) (2026-10-15)
 
 
