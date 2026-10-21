@@ -16,7 +16,7 @@ namespace Mercurius.Modules.Teams.Application.Services;
 
 internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeamInviteWorkflows, ITeamLogoCommands
 {
-    private const int MaxCaptainedTeams = 2;
+    internal const int MaxCaptainedTeams = 2;
     private const int MaxTeamSearchResults = 25;
     private readonly ITeamsDbContext _dbContext;
     private readonly IMediaModule _mediaModule;

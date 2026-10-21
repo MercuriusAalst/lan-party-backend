@@ -7,6 +7,9 @@ using Mercurius.Modules.Teams.Infrastructure;
 using Mercurius.Modules.Teams.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Mercurius.Modules.Identity.Contracts;
+using Mercurius.Modules.Teams.Application;
+using Platform.Extensions;
 
 namespace Mercurius.Modules.Teams;
 
@@ -41,6 +44,8 @@ public static class TeamsModuleConfiguration
         services.AddTransient<ITeamEndpointService, TeamEndpointService>();
         services.AddTransient<ITeamEventPublisher, RealtimeTeamEventPublisher>();
         services.AddTransient<Contracts.ITeamRealtimeAuthorizer, EfTeamRealtimeAuthorizer>();
+        services.AddScoped<DeletedUserTeamCleanupService>();
+        services.AddModuleEventHandler<UserDeletedIntegrationEvent, UserDeletedTeamCleanupHandler>();
 
         return services;
     }

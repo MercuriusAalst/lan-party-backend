@@ -7,6 +7,7 @@ using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Platform.Eventing;
 
@@ -59,6 +60,21 @@ internal static class TeamsTestHarness
             NullLogger<TeamService>.Instance,
             clock ?? TimeProvider.System);
     }
+
+    public static DeletedUserTeamCleanupService CreateCleanupService(
+        MercuriusDBContext dbContext,
+        IModuleEventPublisher? moduleEventPublisher = null,
+        ITeamEventPublisher? eventPublisher = null,
+        ILogger<DeletedUserTeamCleanupService>? logger = null,
+        IIdentityModule? identityModule = null) =>
+        new(
+            new TeamsDbContextAdapter<MercuriusDBContext>(dbContext),
+            identityModule ?? new DbContextIdentityModule(dbContext),
+            moduleEventPublisher ?? new NoopModuleEventPublisher(),
+            eventPublisher ?? new NoopTeamEventPublisher(),
+            new NoopRealtimeConnectionManager(),
+            TimeProvider.System,
+            logger ?? NullLogger<DeletedUserTeamCleanupService>.Instance);
 
     // The production identity facade, which takes the real identity mutation lock.
     public static IIdentityModule CreateIdentityFacade(MercuriusDBContext dbContext) =>
@@ -126,6 +142,30 @@ internal static class TeamsTestHarness
     {
         public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null)
             where TPayload : notnull => Guid.NewGuid();
+    }
+
+    internal sealed class RecordingModuleEventPublisher : IModuleEventPublisher
+    {
+        public List<object> Events { get; } = [];
+
+        public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null)
+            where TPayload : notnull
+        {
+            Events.Add(payload);
+            return Guid.NewGuid();
+        }
+    }
+
+    internal sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
     }
 }
 
