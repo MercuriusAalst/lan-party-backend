@@ -50,6 +50,47 @@ public class DeletedUserTeamConcurrencyTests
     }
 
     [Fact]
+    public async Task Succession_WaitsForInFlightCandidateDeletion_ThenSkipsThatCandidate()
+    {
+        await using var database = PostgresTestDatabase.CreateMigrated();
+        var options = new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(database.ConnectionString).Options;
+        var captain = TeamTestUsers.Create();
+        var senior = TeamTestUsers.Create();
+        var junior = TeamTestUsers.Create();
+        var team = TeamsTestHarness.CreateTeam("Alpha", captain, DateTime.UtcNow.AddDays(-10));
+        team.AddMember(senior.Id, DateTime.UtcNow.AddDays(-5));
+        team.AddMember(junior.Id, DateTime.UtcNow.AddDays(-1));
+        await using (var setup = new MercuriusDBContext(options))
+        {
+            setup.Users.AddRange(captain, senior, junior);
+            setup.Teams.Add(team);
+            await setup.SaveChangesAsync();
+            (await setup.Users.SingleAsync(user => user.Id == captain.Id)).Anonymize(DateTime.UtcNow);
+            await setup.SaveChangesAsync();
+        }
+
+        await using var deletionContext = new MercuriusDBContext(options);
+        await using var deletion = await deletionContext.Database.BeginTransactionAsync();
+        await TeamsTestHarness.CreateIdentityFacade(deletionContext).GetUserProfileForUpdateAsync(new UserId(senior.Id));
+        (await deletionContext.Users.SingleAsync(user => user.Id == senior.Id)).Anonymize(DateTime.UtcNow);
+        await deletionContext.SaveChangesAsync();
+
+        await using var cleanupContext = new MercuriusDBContext(options);
+        var cleanup = TeamsTestHarness.CreateCleanupService(
+            cleanupContext,
+            identityModule: TeamsTestHarness.CreateIdentityFacade(cleanupContext));
+        var succession = cleanup.RemoveDeletedUserAsync(captain.Id);
+
+        var completedEarly = await Task.WhenAny(succession, Task.Delay(TimeSpan.FromMilliseconds(500))) == succession;
+        await deletion.CommitAsync();
+        await succession;
+
+        Assert.False(completedEarly, "Succession must wait for the in-flight deletion of its candidate.");
+        await using var verify = new MercuriusDBContext(options);
+        Assert.Equal(junior.Id, (await verify.Teams.SingleAsync(candidate => candidate.Id == team.Id)).CaptainUserId);
+    }
+
+    [Fact]
     public async Task AcceptInvite_WaitsForInFlightDeletion_ThenRejectsWithoutMembership()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();

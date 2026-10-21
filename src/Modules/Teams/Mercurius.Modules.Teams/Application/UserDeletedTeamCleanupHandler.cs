@@ -186,6 +186,12 @@ internal sealed class UserDeletedTeamCleanupHandler : IModuleEventHandler<UserDe
 
         foreach (var candidate in candidates)
         {
+            // Team lock, then the candidate's identity lock (the order TeamService uses): a concurrent deletion of the
+            // candidate or a concurrent captain transfer to the candidate is serialized with this choice.
+            var lockedProfile = await _identityModule.GetUserProfileForUpdateAsync(new UserId(candidate.UserId), cancellationToken);
+            if (lockedProfile is not { IsDeleted: false })
+                continue;
+
             var captainedTeams = await _dbContext.Teams.CountAsync(
                 other => !other.IsDeleted && other.CaptainUserId == candidate.UserId && other.Id != team.Id,
                 cancellationToken);
