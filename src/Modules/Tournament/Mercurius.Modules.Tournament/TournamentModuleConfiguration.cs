@@ -38,7 +38,6 @@ public static class TournamentModuleConfiguration
         services.AddTransient<MatchBracketImpactAnalyzer>();
         services.AddTransient<IMatchService, MatchService>();
         services.AddModuleEventHandler<MatchResolutionRequiredIntegrationEvent, MatchResolutionNotificationHandler>();
-        services.AddTransient<DeletedUserTournamentCleanupService>();
         services.AddModuleEventHandler<UserDeletedIntegrationEvent, DeletedUserTournamentCleanupHandler>();
         services.AddModuleEventHandler<TeamCaptainSucceededIntegrationEvent, DeletedUserTournamentCleanupHandler>();
         services.AddHostedService<MatchDeadlineProcessor>();

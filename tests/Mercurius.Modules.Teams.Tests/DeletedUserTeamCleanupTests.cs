@@ -209,7 +209,7 @@ public class DeletedUserTeamCleanupTests
         await dbContext.SaveChangesAsync();
         await DeleteAsync(dbContext, captain);
         var events = new TeamsTestHarness.RecordingModuleEventPublisher();
-        var logger = new TeamsTestHarness.RecordingLogger<DeletedUserTeamCleanupService>();
+        var logger = new TeamsTestHarness.RecordingLogger<UserDeletedTeamCleanupHandler>();
 
         await TeamsTestHarness.CreateCleanupService(dbContext, events, logger: logger).RemoveDeletedUserAsync(captain.Id);
 
@@ -344,7 +344,7 @@ public class DeletedUserTeamCleanupTests
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
         await DeleteAsync(dbContext, member);
-        var handler = new UserDeletedTeamCleanupHandler(TeamsTestHarness.CreateCleanupService(dbContext));
+        var handler = TeamsTestHarness.CreateCleanupService(dbContext);
 
         await handler.HandleAsync(
             new UserDeletedIntegrationEvent(new UserId(member.Id), DateTime.UtcNow),

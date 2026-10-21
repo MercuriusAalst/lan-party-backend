@@ -95,17 +95,17 @@ Live team projections MUST exclude deleted members, deleted captains and pending
 - **WHEN** a deleted user requests team registration eligibility or a captained-team lookup
 - **THEN** the deleted user MUST NOT be treated as the captain of any team
 
-### Requirement: Deleted-user reconciliation
-The system MUST run an idempotent reconciliation at startup that finds deleted users still referenced by live team memberships, captainships, pending invites or scheduled tournament registrations and applies the same cleanup as the deletion event. Only one instance MAY run the reconciliation at a time; a concurrent instance MUST skip it. Repeated runs MUST NOT change already reconciled data.
+### Requirement: Legacy deleted-user repair
+The schema migration that introduces membership join times MUST replay the durable user-deleted event for every deleted user who is still a member or captain of a non-deleted team, the recipient of a pending invite, or a participant of a Scheduled or InProgress tournament, so the same idempotent cleanup handlers repair the data. The replay MUST NOT enqueue a second undelivered event for a user who already has one, and its first delivery attempt SHOULD be delayed so an instance from the previous release cannot acknowledge it without the cleanup handlers during a rolling deployment.
 
 #### Scenario: Legacy corrupt data is repaired
-- **WHEN** a deleted user is still a member or captain of a team when the application starts
-- **THEN** the reconciliation MUST remove the user and run captain succession
+- **WHEN** a deleted user is still a member or captain of a team when the migration runs
+- **THEN** the replayed event MUST remove the user and run captain succession through the regular event dispatch
 
-#### Scenario: Two instances start together
-- **WHEN** two instances start the reconciliation at the same time
-- **THEN** only one MUST run it
+#### Scenario: Replay runs twice
+- **WHEN** the replay step runs again before the events are delivered
+- **THEN** no additional event MUST be enqueued
 
-#### Scenario: Reconciliation runs twice
-- **WHEN** the reconciliation runs again on reconciled data
-- **THEN** no data MUST change
+#### Scenario: Historical-only references are not replayed
+- **WHEN** a deleted user is referenced only by completed or canceled tournaments
+- **THEN** no event MUST be enqueued for that user

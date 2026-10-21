@@ -11,7 +11,7 @@ Issue #159. Deleting (anonymizing) a user account leaves the anonymized user in 
 - Live team projections, Teams contract snapshots and eligibility exclude deleted members and deleted captains. Historical tournament, match and placement views keep the anonymized "Deleted user" placeholder.
 - Tournament policy: Scheduled tournaments drop the deleted user's individual registration and roster rows; a roster led by the deleted captain is re-pointed to the successor (registration back to pending confirmation) or removed when the team has no successor. In-progress tournaments keep registrations, rosters and matches for bracket integrity. Completed and canceled tournaments are untouched.
 - The team realtime authorizer denies deleted members and captains.
-- An idempotent, single-claim startup reconciliation repairs data left behind by deletions that happened before this change.
+- The additive migration replays `UserDeletedIntegrationEvent` through the outbox for deleted users that still have live team or Scheduled/InProgress tournament references, so the same handlers repair legacy data. No background job or lock is added.
 
 ## Non-goals
 
@@ -19,4 +19,4 @@ Issue #159. Deleting (anonymizing) a user account leaves the anonymized user in 
 
 ## Rolling deployment and migration
 
-The migration only adds a nullable column (`teams.team_members.JoinedAtUtc`). Route and DTO shapes are unchanged. Cleanup is driven by the existing outbox and is idempotent, so an old instance that does not consume the event is harmless; the reconciliation repairs anything an old instance writes during the rollout. The reconciliation takes a PostgreSQL advisory lock, so only one replica runs it at a time.
+The migration adds a nullable column (`teams.team_members.JoinedAtUtc`) and inserts outbox rows for the legacy replay; it does not change existing rows. Route and DTO shapes are unchanged. Cleanup is driven by the existing outbox and is idempotent. The replayed rows wait ten minutes before their first delivery attempt so an instance from the previous release, which has no Teams or Tournament handler for the event, cannot acknowledge them during the rollout. A user deleted on an old instance during the rollout is hidden by the read-time filters and write-time guards, but is only removed from team data if the new instance delivers that event.

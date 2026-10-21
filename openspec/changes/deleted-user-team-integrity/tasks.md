@@ -15,10 +15,10 @@
 - [x] Re-read identity state under the user's identity mutation lock in individual registration, roster submission and roster confirmation.
 - [x] Add the Tournament `UserDeletedIntegrationEvent` and `TeamCaptainSucceededIntegrationEvent` handlers that apply the scheduled/in-progress/completed policy under tournament revision concurrency.
 
-## Realtime and reconciliation
+## Realtime and legacy repair
 
-- [ ] Deny team realtime subscriptions to deleted members and captains.
-- [ ] Add the single-claim, idempotent startup reconciliation for Teams and Tournament with structured logging of teams left without an eligible successor.
+- [x] Deny team realtime subscriptions to deleted members and captains.
+- [x] Replay `UserDeletedIntegrationEvent` for legacy deleted users through an idempotent, delayed outbox insert in the additive migration.
 
 ## Verification
 

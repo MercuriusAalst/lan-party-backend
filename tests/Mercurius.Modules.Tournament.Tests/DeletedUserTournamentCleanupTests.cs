@@ -251,7 +251,7 @@ public class DeletedUserTournamentCleanupTests
         AddIndividualRegistration(dbContext, tournament, user);
         await dbContext.SaveChangesAsync();
         await DeleteAsync(dbContext, user);
-        var handler = new DeletedUserTournamentCleanupHandler(CreateService(dbContext));
+        var handler = CreateService(dbContext);
 
         await handler.HandleAsync(
             new UserDeletedIntegrationEvent(new UserId(user.Id), DateTime.UtcNow),
@@ -264,18 +264,18 @@ public class DeletedUserTournamentCleanupTests
         Assert.False(await dbContext.Set<TournamentRegistration>().AnyAsync());
     }
 
-    private static DeletedUserTournamentCleanupService CreateService(
+    private static DeletedUserTournamentCleanupHandler CreateService(
         MercuriusDBContext dbContext,
         ITournamentRealtimePublisher? publisher = null)
     {
         var identity = CreateIdentity(dbContext);
-        return new DeletedUserTournamentCleanupService(
+        return new DeletedUserTournamentCleanupHandler(
             new TournamentDbContextAdapter<MercuriusDBContext>(dbContext),
             identity,
             new TeamsModuleFacade(new TeamsDbContextAdapter<MercuriusDBContext>(dbContext), identity, new TournamentTeamReadService(new TournamentDbContextAdapter<MercuriusDBContext>(dbContext))),
             publisher ?? TournamentTestSupport.CreateRealtimePublisher(),
             TimeProvider.System,
-            NullLogger<DeletedUserTournamentCleanupService>.Instance);
+            NullLogger<DeletedUserTournamentCleanupHandler>.Instance);
     }
 
     private static IIdentityModule CreateIdentity(MercuriusDBContext dbContext) =>

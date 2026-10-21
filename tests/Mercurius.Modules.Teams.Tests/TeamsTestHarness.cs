@@ -3,6 +3,7 @@ using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Media.Contracts;
+using Mercurius.Modules.Teams.Application;
 using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Teams.Contracts;
 using Mercurius.Modules.Teams.Infrastructure;
@@ -61,11 +62,11 @@ internal static class TeamsTestHarness
             clock ?? TimeProvider.System);
     }
 
-    public static DeletedUserTeamCleanupService CreateCleanupService(
+    public static UserDeletedTeamCleanupHandler CreateCleanupService(
         MercuriusDBContext dbContext,
         IModuleEventPublisher? moduleEventPublisher = null,
         ITeamEventPublisher? eventPublisher = null,
-        ILogger<DeletedUserTeamCleanupService>? logger = null,
+        ILogger<UserDeletedTeamCleanupHandler>? logger = null,
         IIdentityModule? identityModule = null) =>
         new(
             new TeamsDbContextAdapter<MercuriusDBContext>(dbContext),
@@ -74,7 +75,7 @@ internal static class TeamsTestHarness
             eventPublisher ?? new NoopTeamEventPublisher(),
             new NoopRealtimeConnectionManager(),
             TimeProvider.System,
-            logger ?? NullLogger<DeletedUserTeamCleanupService>.Instance);
+            logger ?? NullLogger<UserDeletedTeamCleanupHandler>.Instance);
 
     // The production identity facade, which takes the real identity mutation lock.
     public static IIdentityModule CreateIdentityFacade(MercuriusDBContext dbContext) =>

@@ -1989,19 +1989,29 @@ public class TeamTests
         var member = CreateUser();
         var outsider = CreateUser();
         var deletedCaptain = CreateUser();
+        var deletedMember = CreateUser();
+        var deletedAccountCaptain = CreateUser();
         var team = CreateTeam("Alpha", captain);
         var deletedTeam = CreateTeam("Deleted", deletedCaptain);
+        var orphanedTeam = CreateTeam("Orphaned", deletedAccountCaptain);
         team.AddMember(member.Id);
+        team.AddMember(deletedMember.Id);
         deletedTeam.Delete(DateTime.UtcNow);
-        dbContext.Users.AddRange(captain, member, outsider, deletedCaptain);
-        dbContext.Teams.AddRange(team, deletedTeam);
+        deletedMember.Anonymize(DateTime.UtcNow);
+        deletedAccountCaptain.Anonymize(DateTime.UtcNow);
+        dbContext.Users.AddRange(captain, member, outsider, deletedCaptain, deletedMember, deletedAccountCaptain);
+        dbContext.Teams.AddRange(team, deletedTeam, orphanedTeam);
         await dbContext.SaveChangesAsync();
-        var authorizer = new EfTeamRealtimeAuthorizer(new TeamsDbContextAdapter<MercuriusDBContext>(dbContext));
+        var authorizer = new EfTeamRealtimeAuthorizer(
+            new TeamsDbContextAdapter<MercuriusDBContext>(dbContext),
+            new DbContextIdentityModule(dbContext));
 
         Assert.True(await authorizer.CanSubscribeToTeamAsync(new TeamId(team.Id), new UserId(captain.Id)));
         Assert.True(await authorizer.CanSubscribeToTeamAsync(new TeamId(team.Id), new UserId(member.Id)));
         Assert.False(await authorizer.CanSubscribeToTeamAsync(new TeamId(team.Id), new UserId(outsider.Id)));
         Assert.False(await authorizer.CanSubscribeToTeamAsync(new TeamId(deletedTeam.Id), new UserId(deletedCaptain.Id)));
+        Assert.False(await authorizer.CanSubscribeToTeamAsync(new TeamId(team.Id), new UserId(deletedMember.Id)));
+        Assert.False(await authorizer.CanSubscribeToTeamAsync(new TeamId(orphanedTeam.Id), new UserId(deletedAccountCaptain.Id)));
     }
 
     [Fact]

@@ -44,7 +44,6 @@ public static class TeamsModuleConfiguration
         services.AddTransient<ITeamEndpointService, TeamEndpointService>();
         services.AddTransient<ITeamEventPublisher, RealtimeTeamEventPublisher>();
         services.AddTransient<Contracts.ITeamRealtimeAuthorizer, EfTeamRealtimeAuthorizer>();
-        services.AddScoped<DeletedUserTeamCleanupService>();
         services.AddModuleEventHandler<UserDeletedIntegrationEvent, UserDeletedTeamCleanupHandler>();
 
         return services;
