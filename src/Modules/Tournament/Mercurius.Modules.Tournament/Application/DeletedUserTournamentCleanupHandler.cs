@@ -167,13 +167,14 @@ internal sealed class DeletedUserTournamentCleanupHandler :
                 {
                     // Only rosters still led by the deleted captain are re-pointed; others are left untouched.
                     var (removed, _) = RemoveRosterRows(registration, deletedCaptainUserId, withdrawn);
-                    if (!removed && registration.TeamCaptainUserIdAtRegistration != deletedCaptainUserId)
+                    var rePointed = registration.TeamCaptainUserIdAtRegistration == deletedCaptainUserId &&
+                        await RePointCaptainAsync(registration, currentCaptainUserId.Value, now, cancellationToken);
+                    if (!removed && !rePointed)
                         continue;
 
                     registration.Tournament.IncrementRevision();
                     if (removed)
                         MarkPendingConfirmation(registration, now);
-                    await RePointCaptainAsync(registration, currentCaptainUserId.Value, now, cancellationToken);
                     changedRegistrations++;
                 }
                 else if (!newCaptainUserId.HasValue)
@@ -232,12 +233,17 @@ internal sealed class DeletedUserTournamentCleanupHandler :
         registration.UpdatedAtUtc = now;
     }
 
-    private async Task RePointCaptainAsync(
+    // Re-points the registration's captain fields only when the new captain is on the roster. Otherwise the roster is
+    // left without a captain and the new captain repairs it by submitting the roster again.
+    private async Task<bool> RePointCaptainAsync(
         TournamentRegistration registration,
         Guid captainUserId,
         DateTime now,
         CancellationToken cancellationToken)
     {
+        if (registration.RosterMembers.All(member => member.UserId != captainUserId))
+            return false;
+
         var captain = await _identityModule.GetUserProfileAsync(new UserId(captainUserId), cancellationToken);
         registration.TeamCaptainUserIdAtRegistration = captainUserId;
         registration.RegisteredByUserId = captainUserId;
@@ -257,6 +263,8 @@ internal sealed class DeletedUserTournamentCleanupHandler :
                 member.ConfirmedAtUtc = now;
             }
         }
+
+        return true;
     }
 
     private async Task PublishWithdrawnAsync(

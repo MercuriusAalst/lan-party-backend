@@ -154,6 +154,37 @@ public class DeletedUserTournamentCleanupTests
     }
 
     [Fact]
+    public async Task ScheduledRosterCaptain_SuccessorNotOnRoster_LeavesRosterWithoutCaptain()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var captain = CreateUser();
+        var rosterMember = CreateUser();
+        var successor = CreateUser();
+        var team = CreateTeam(captain, rosterMember, successor);
+        var tournament = CreateTournament(ParticipationMode.Team, TournamentStatus.Scheduled);
+        dbContext.Users.AddRange(captain, rosterMember, successor);
+        dbContext.Teams.Add(team);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        var registration = AddTeamRegistration(dbContext, tournament, team, captain, [captain, rosterMember]);
+        await dbContext.SaveChangesAsync();
+        await DeleteAsync(dbContext, captain);
+        await SetTeamCaptainAsync(dbContext, team.Id, successor.Id, removeMember: captain.Id);
+        var service = CreateService(dbContext);
+
+        await service.RemoveDeletedUserAsync(captain.Id);
+        var replayed = await service.ApplyCaptainSuccessionAsync(team.Id, captain.Id, successor.Id);
+
+        var persisted = await LoadRegistrationAsync(dbContext, registration.Id);
+        Assert.NotNull(persisted);
+        Assert.Equal(0, replayed);
+        Assert.Equal(TournamentRegistrationStatus.PendingConfirmation, persisted.Status);
+        Assert.Equal(captain.Id, persisted.TeamCaptainUserIdAtRegistration);
+        var remaining = Assert.Single(persisted.RosterMembers);
+        Assert.Equal(rosterMember.Id, remaining.UserId);
+        Assert.False(remaining.IsCaptain);
+    }
+
+    [Fact]
     public async Task ScheduledRosterCaptain_WithoutSuccessor_RemovesTeamRegistration()
     {
         await using var dbContext = PostgresTestDatabase.CreateDbContext();
