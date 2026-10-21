@@ -53,7 +53,7 @@ public class TeamsModuleFacadeTests
             Id = Guid.NewGuid(),
             LogoUrl = "https://example.test/logo.png"
         };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         dbContext.Users.Add(captain);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -80,23 +80,23 @@ public class TeamsModuleFacadeTests
         {
             Id = Guid.Parse("00000000-0000-0000-0000-000000000002")
         };
-        laterTeam.AddMember(captain.Id);
+        laterTeam.AddMember(captain.Id, DateTime.UtcNow);
         var earlierTeam = new Team("Earlier Team", captain.Id)
         {
             Id = Guid.Parse("00000000-0000-0000-0000-000000000001")
         };
-        earlierTeam.AddMember(captain.Id);
+        earlierTeam.AddMember(captain.Id, DateTime.UtcNow);
         var unrelatedTeam = new Team("Unrelated Team", otherCaptain.Id)
         {
             Id = Guid.Parse("00000000-0000-0000-0000-000000000003")
         };
-        unrelatedTeam.AddMember(otherCaptain.Id);
+        unrelatedTeam.AddMember(otherCaptain.Id, DateTime.UtcNow);
         var deletedTeam = new Team("Deleted Team", captain.Id)
         {
             Id = Guid.Parse("00000000-0000-0000-0000-000000000004"),
             IsDeleted = true
         };
-        deletedTeam.AddMember(captain.Id);
+        deletedTeam.AddMember(captain.Id, DateTime.UtcNow);
 
         dbContext.Users.AddRange(captain, otherCaptain);
         dbContext.Teams.AddRange(laterTeam, earlierTeam, unrelatedTeam, deletedTeam);
@@ -125,9 +125,9 @@ public class TeamsModuleFacadeTests
         var zeta = CreateUser("zeta", null, null);
         var alpha = CreateUser("alpha", "Alpha", "Member");
         var team = new Team("Roster Team", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
-        team.AddMember(zeta.Id);
-        team.AddMember(alpha.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(zeta.Id, DateTime.UtcNow);
+        team.AddMember(alpha.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, zeta, alpha);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -168,10 +168,10 @@ public class TeamsModuleFacadeTests
             Id = Guid.NewGuid(),
             LogoUrl = "https://example.test/wolves.png"
         };
-        team.AddMember(captain.Id);
-        team.AddMember(zeta.Id);
-        team.AddMember(alpha.Id);
-        team.AddMember(hidden.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(zeta.Id, DateTime.UtcNow);
+        team.AddMember(alpha.Id, DateTime.UtcNow);
+        team.AddMember(hidden.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, zeta, alpha, hidden);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -243,9 +243,9 @@ public class TeamsModuleFacadeTests
         var captain = CreateUser("captain", "Captain", "Player");
         var outsider = CreateUser("outsider", "Outside", "Player");
         var team = new Team("Guard Team", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         var deletedTeam = new Team("Deleted Team", captain.Id) { Id = Guid.NewGuid() };
-        deletedTeam.AddMember(captain.Id);
+        deletedTeam.AddMember(captain.Id, DateTime.UtcNow);
         deletedTeam.Delete(DateTime.UtcNow);
         dbContext.Users.AddRange(captain, outsider);
         dbContext.Teams.AddRange(team, deletedTeam);
@@ -279,10 +279,10 @@ public class TeamsModuleFacadeTests
         var firstMember = CreateUser("member-one", "Member", "One");
         var secondCaptain = CreateUser("captain-two", "Captain", "Two");
         var firstTeam = new Team("First Team", firstCaptain.Id) { Id = Guid.NewGuid() };
-        firstTeam.AddMember(firstCaptain.Id);
-        firstTeam.AddMember(firstMember.Id);
+        firstTeam.AddMember(firstCaptain.Id, DateTime.UtcNow);
+        firstTeam.AddMember(firstMember.Id, DateTime.UtcNow);
         var secondTeam = new Team("Second Team", secondCaptain.Id) { Id = Guid.NewGuid() };
-        secondTeam.AddMember(secondCaptain.Id);
+        secondTeam.AddMember(secondCaptain.Id, DateTime.UtcNow);
 
         dbContext.Users.AddRange(firstCaptain, firstMember, secondCaptain);
         dbContext.Teams.AddRange(firstTeam, secondTeam);

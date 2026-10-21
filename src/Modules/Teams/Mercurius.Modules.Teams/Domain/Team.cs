@@ -89,7 +89,7 @@ public class Team
         Version++;
     }
 
-    internal void AddMember(Guid userId, DateTime? joinedAtUtc = null)
+    internal void AddMember(Guid userId, DateTime joinedAtUtc)
     {
         Members.Add(new TeamMember
         {

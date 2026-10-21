@@ -23,7 +23,7 @@ public class TeamInviteMaintenanceTests
             .Select(index => CreateUser($"recipient-{index}"))
             .ToList();
         var team = new Team("Maintenance team", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         var dueInvites = Enumerable.Range(0, 4)
             .Select(index => new TeamInvite
             {
@@ -101,7 +101,7 @@ public class TeamInviteMaintenanceTests
         var captain = CreateUser("captain");
         var recipient = CreateUser("recipient");
         var team = new Team("Cancellation team", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         var invite = new TeamInvite
         {
             Id = Guid.NewGuid(),

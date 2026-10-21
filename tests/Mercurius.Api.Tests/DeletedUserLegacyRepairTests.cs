@@ -112,8 +112,9 @@ public sealed class DeletedUserLegacyRepairTests
         var deletedHistoricalOnly = CreateUser();
         var activeOnly = CreateUser();
         var team = new Team("Legacy", deletedCaptain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(deletedCaptain.Id);
-        team.AddMember(member.Id);
+        // Pre-migration memberships have no join time.
+        team.Members.Add(new TeamMember { Team = team, TeamId = team.Id, UserId = deletedCaptain.Id });
+        team.Members.Add(new TeamMember { Team = team, TeamId = team.Id, UserId = member.Id });
         var teamTournament = CreateTournament(ParticipationMode.Team, TournamentStatus.Scheduled, 2);
         var soloTournament = CreateTournament(ParticipationMode.Individual, TournamentStatus.Scheduled, null);
         var completedTournament = CreateTournament(ParticipationMode.Individual, TournamentStatus.Completed, null);

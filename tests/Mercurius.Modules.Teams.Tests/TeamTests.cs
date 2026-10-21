@@ -390,7 +390,7 @@ public class TeamTests
     {
         var team = CreateTeam();
         var newCaptain = CreateUser();
-        team.AddMember(newCaptain.Id);
+        team.AddMember(newCaptain.Id, DateTime.UtcNow);
 
         team.ChangeCaptain(newCaptain.Id);
 
@@ -412,7 +412,7 @@ public class TeamTests
         // Arrange
         var team = CreateTeam();
         var memberToRemove = CreateUser();
-        team.AddMember(memberToRemove.Id);
+        team.AddMember(memberToRemove.Id, DateTime.UtcNow);
         // Act
         team.RemoveMember(memberToRemove.Id);
         // Assert
@@ -444,7 +444,7 @@ public class TeamTests
         // Arrange
         var team = CreateTeam();
         var userToInvite = CreateUser();
-        team.AddMember(userToInvite.Id);
+        team.AddMember(userToInvite.Id, DateTime.UtcNow);
         // Act & Assert
         Assert.Throws<ValidationException>(() => team.InviteUser(userToInvite.Id, DateTime.UtcNow, 7));
     }
@@ -663,7 +663,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, (TournamentStatus)status);
@@ -686,7 +686,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -708,7 +708,7 @@ public class TeamTests
         var member = CreateUser();
         var outsider = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member, outsider);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -744,7 +744,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.InProgress);
@@ -770,7 +770,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, (TournamentStatus)status);
@@ -838,7 +838,7 @@ public class TeamTests
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
         team.LogoUrl = "/images/alpha.webp";
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var tournament = new TournamentAggregate("Completed Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10)
             .Set(x => x.Id, Guid.NewGuid())
             .Set(x => x.Status, TournamentStatus.Completed);
@@ -939,7 +939,7 @@ public class TeamTests
         var captain = CreateUser();
         var target = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(target.Id);
+        team.AddMember(target.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, target);
         dbContext.Teams.AddRange(
             team,
@@ -1084,7 +1084,7 @@ public class TeamTests
         var otherCaptain = CreateUser();
         var captainedTeam = CreateTeam("Captained", captain);
         var memberTeam = CreateTeam("Member", otherCaptain);
-        memberTeam.AddMember(member.Id);
+        memberTeam.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member, otherCaptain);
         dbContext.Teams.AddRange(captainedTeam, memberTeam);
         await dbContext.SaveChangesAsync();
@@ -1105,7 +1105,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Tournament Team", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var tournament = new TournamentAggregate("Team Cup", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10).Set(x => x.Id, Guid.NewGuid());
         var rosterMember = new TournamentRegistrationRosterMember
         {
@@ -1261,7 +1261,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         dbContext.Set<TeamInvite>().Add(new TeamInvite
@@ -1291,7 +1291,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -1324,7 +1324,7 @@ public class TeamTests
         var member = CreateUser();
         var leavingTeam = CreateTeam("Leaving", captain);
         var deletedTeam = CreateTeam("Deleted", captain);
-        leavingTeam.AddMember(member.Id);
+        leavingTeam.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.AddRange(leavingTeam, deletedTeam);
         await dbContext.SaveChangesAsync();
@@ -1360,7 +1360,7 @@ public class TeamTests
         var member = CreateUser();
         var invitee = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var invite = new TeamInvite
         {
             Id = Guid.NewGuid(),
@@ -1412,7 +1412,7 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         TeamInvite? invite = null;
         if (operation is "remove" or "leave")
-            team.AddMember(affectedUser.Id);
+            team.AddMember(affectedUser.Id, DateTime.UtcNow);
         else
         {
             invite = new TeamInvite
@@ -1491,8 +1491,8 @@ public class TeamTests
         var firstInvitee = CreateUser();
         var secondInvitee = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(firstMember.Id);
-        team.AddMember(secondMember.Id);
+        team.AddMember(firstMember.Id, DateTime.UtcNow);
+        team.AddMember(secondMember.Id, DateTime.UtcNow);
         var invites = new[]
         {
             CreatePendingInvite(team, firstInvitee),
@@ -1932,7 +1932,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -1994,8 +1994,8 @@ public class TeamTests
         var team = CreateTeam("Alpha", captain);
         var deletedTeam = CreateTeam("Deleted", deletedCaptain);
         var orphanedTeam = CreateTeam("Orphaned", deletedAccountCaptain);
-        team.AddMember(member.Id);
-        team.AddMember(deletedMember.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
+        team.AddMember(deletedMember.Id, DateTime.UtcNow);
         deletedTeam.Delete(DateTime.UtcNow);
         deletedMember.Anonymize(DateTime.UtcNow);
         deletedAccountCaptain.Anonymize(DateTime.UtcNow);
@@ -2081,7 +2081,7 @@ public class TeamTests
         var captain = CreateUser();
         var member = CreateUser();
         var team = CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var otherTeam = CreateTeam("Bravo", captain);
         var tournament = new TournamentAggregate("Tournament", BracketType.SingleElimination, GameFormat.BestOf1, GameFormat.BestOf1, ParticipationMode.Team, 2, DateTime.UtcNow, 30, 10).Set(x => x.Id, Guid.NewGuid());
         dbContext.Users.AddRange(captain, member);
@@ -2125,7 +2125,7 @@ public class TeamTests
     private static Team CreateTeam(string name, User captain)
     {
         var team = new Team(name, captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         return team;
     }
 

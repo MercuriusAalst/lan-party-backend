@@ -120,9 +120,9 @@ public sealed class MatchOpponentProfileTests
     private static Team CreateTeam(string name, User captain, User? member = null)
     {
         var team = new Team(name, captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         if (member is not null)
-            team.AddMember(member.Id);
+            team.AddMember(member.Id, DateTime.UtcNow);
         return team;
     }
 

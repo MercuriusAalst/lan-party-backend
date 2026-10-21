@@ -19,7 +19,7 @@ public class DeletedUserTeamGuardTests
         var captain = TeamTestUsers.Create();
         var deletedMember = TeamTestUsers.CreateDeleted();
         var team = TeamsTestHarness.CreateTeam("Alpha", captain);
-        team.AddMember(deletedMember.Id);
+        team.AddMember(deletedMember.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, deletedMember);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -42,7 +42,7 @@ public class DeletedUserTeamGuardTests
         var captain = TeamTestUsers.Create();
         var member = TeamTestUsers.Create();
         var team = TeamsTestHarness.CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, member);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -105,7 +105,7 @@ public class DeletedUserTeamGuardTests
         var captain = TeamTestUsers.Create();
         var deletedMember = TeamTestUsers.CreateDeleted();
         var team = TeamsTestHarness.CreateTeam("Alpha", captain);
-        team.AddMember(deletedMember.Id);
+        team.AddMember(deletedMember.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, deletedMember);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
@@ -143,7 +143,7 @@ public class DeletedUserTeamGuardTests
         var member = TeamTestUsers.Create();
         var deletedInvitee = TeamTestUsers.CreateDeleted();
         var team = TeamsTestHarness.CreateTeam("Alpha", deletedCaptain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var otherCaptain = TeamTestUsers.Create();
         var otherTeam = TeamsTestHarness.CreateTeam("Bravo", otherCaptain);
         dbContext.Users.AddRange(deletedCaptain, member, deletedInvitee, otherCaptain);
@@ -179,7 +179,7 @@ public class DeletedUserTeamGuardTests
         var deletedCaptain = TeamTestUsers.CreateDeleted();
         var member = TeamTestUsers.Create();
         var team = TeamsTestHarness.CreateTeam("Alpha", deletedCaptain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(deletedCaptain, member);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();

@@ -244,8 +244,8 @@ public sealed class TournamentRegistrationConfigurationConcurrencyTests
             Email = "team-member@example.test"
         };
         var team = new Team("Concurrent Team", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
-        team.AddMember(member.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(member.Id, DateTime.UtcNow);
         db.Set<TournamentAggregate>().Add(tournament);
         db.Users.AddRange(captain, member);
         db.Teams.Add(team);

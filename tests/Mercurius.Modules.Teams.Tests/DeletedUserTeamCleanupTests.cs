@@ -123,8 +123,8 @@ public class DeletedUserTeamCleanupTests
         var legacyOlderAccount = TeamTestUsers.Create(T0.AddDays(-10));
         var team = TeamsTestHarness.CreateTeam("Alpha", captain);
         team.AddMember(recordedEarly.Id, T0.AddYears(-1));
-        team.AddMember(legacyNewerAccount.Id);
-        team.AddMember(legacyOlderAccount.Id);
+        TeamsTestHarness.AddLegacyMember(team, legacyNewerAccount.Id);
+        TeamsTestHarness.AddLegacyMember(team, legacyOlderAccount.Id);
         dbContext.Users.AddRange(captain, recordedEarly, legacyNewerAccount, legacyOlderAccount);
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();

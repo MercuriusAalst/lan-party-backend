@@ -303,7 +303,7 @@ public class TournamentTests
         {
             Id = Guid.NewGuid()
         };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         return team;
     }
 }

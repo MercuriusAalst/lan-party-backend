@@ -90,9 +90,13 @@ internal static class TeamsTestHarness
     public static Team CreateTeam(string name, User captain, DateTime? captainJoinedAtUtc = null)
     {
         var team = new Team(name, captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id, captainJoinedAtUtc);
+        team.AddMember(captain.Id, captainJoinedAtUtc ?? DateTime.UtcNow);
         return team;
     }
+
+    // A membership created before join times were recorded (null join time), as the migration leaves them.
+    public static void AddLegacyMember(Team team, Guid userId) =>
+        team.Members.Add(new TeamMember { Team = team, TeamId = team.Id, UserId = userId, JoinedAtUtc = null });
 
     public static TeamInvite CreatePendingInvite(Team team, User user, DateTime? nowUtc = null)
     {

@@ -17,7 +17,7 @@ public class DeletedUserTeamConcurrencyTests
         var captain = TeamTestUsers.Create();
         var member = TeamTestUsers.Create();
         var team = TeamsTestHarness.CreateTeam("Alpha", captain);
-        team.AddMember(member.Id);
+        team.AddMember(member.Id, DateTime.UtcNow);
         await using (var setup = new MercuriusDBContext(options))
         {
             setup.Users.AddRange(captain, member);
