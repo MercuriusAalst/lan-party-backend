@@ -13,7 +13,7 @@
 ## Tournament
 
 - [x] Re-read identity state under the user's identity mutation lock in individual registration, roster submission and roster confirmation.
-- [ ] Add the Tournament `UserDeletedIntegrationEvent` and `TeamCaptainSucceededIntegrationEvent` handlers that apply the scheduled/in-progress/completed policy under tournament revision concurrency.
+- [x] Add the Tournament `UserDeletedIntegrationEvent` and `TeamCaptainSucceededIntegrationEvent` handlers that apply the scheduled/in-progress/completed policy under tournament revision concurrency.
 
 ## Realtime and reconciliation
 
