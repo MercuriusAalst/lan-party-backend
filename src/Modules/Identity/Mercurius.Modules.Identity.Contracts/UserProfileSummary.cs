@@ -10,4 +10,5 @@ public sealed record UserProfileSummary(
     string? DiscordId,
     string? SteamId,
     string? RiotId,
-    string? ProfilePictureUrl = null);
+    string? ProfilePictureUrl = null,
+    DateTime? CreatedAtUtc = null);

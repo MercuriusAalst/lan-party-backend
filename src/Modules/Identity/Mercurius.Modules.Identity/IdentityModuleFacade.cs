@@ -33,6 +33,14 @@ internal sealed class IdentityModuleFacade : IIdentityModule
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<UserProfileSummary?> GetUserProfileForUpdateAsync(
+        UserId userId,
+        CancellationToken cancellationToken = default)
+    {
+        await UserMutationLock.AcquireAsync(_dbContext, userId.Value, cancellationToken);
+        return await GetUserProfileAsync(userId, cancellationToken);
+    }
+
     public Task<UserProfileSummary?> GetUserProfileByAuth0IdAsync(
         string auth0UserId,
         CancellationToken cancellationToken = default)
@@ -215,6 +223,7 @@ internal sealed class IdentityModuleFacade : IIdentityModule
             user.DiscordId,
             user.SteamId,
             user.RiotId,
-            user.ProfilePictureUrl);
+            user.ProfilePictureUrl,
+            user.CreatedAtUtc);
     }
 }

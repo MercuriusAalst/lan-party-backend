@@ -54,7 +54,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         var normalizedTeamName = Team.NormalizeName(teamDTO.Name);
         if (await CheckIfTeamNameExistsAsync(normalizedTeamName, cancellationToken: cancellationToken))
             throw new ValidationException($"Teamname {teamDTO.Name} already in use");
-        var captain = await GetUserProfileAsync(teamDTO.CaptainUserId, cancellationToken);
+        var captain = await GetUserProfileForUpdateAsync(teamDTO.CaptainUserId, cancellationToken);
         if (captain is null || captain.IsDeleted)
             throw new NotFoundException("User not found");
         var team = new Team(teamDTO.Name, captain.Id.Value);
@@ -66,7 +66,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
 
     public async Task<TeamManagementSummaryDTO> CreateCurrentUserTeamAsync(string auth0UserId, CreateTeamDTO teamDTO, CancellationToken cancellationToken = default)
     {
-        var currentUser = await GetCurrentUserAsync(auth0UserId, cancellationToken);
+        var currentUser = await GetCurrentUserForUpdateAsync(auth0UserId, cancellationToken);
         await EnsureCaptainLimitAsync(currentUser.Id.Value, cancellationToken: cancellationToken);
 
         var normalizedTeamName = Team.NormalizeName(teamDTO.Name);
@@ -179,7 +179,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             .Take(pageSize)
             .ToListAsync(cancellationToken);
         var users = await GetUserProfilesAsync(
-            teams.SelectMany(team => team.MemberUserIds),
+            teams.SelectMany(GetReferencedUserIds),
             cancellationToken);
 
         return teams.Select(team => MapTeam(team, users)).ToList();
@@ -191,7 +191,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             .FirstOrDefaultAsync(cancellationToken);
         if (team is null)
             throw new NotFoundException($"{nameof(Team)} not found");
-        var users = await GetUserProfilesAsync(team.MemberUserIds, cancellationToken);
+        var users = await GetUserProfilesAsync(GetReferencedUserIds(team), cancellationToken);
         return MapTeam(team, users);
     }
 
@@ -224,15 +224,13 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
 
         var members = team.MemberUserIds
             .Select(userId => users.GetValueOrDefault(new UserId(userId)))
-            .Where(user => user is not null && IsValidPublicUsername(user.Username))
+            .Where(user => user is not null && !user.IsDeleted && IsValidPublicUsername(user.Username))
             .OrderBy(user => user!.Username, StringComparer.OrdinalIgnoreCase)
             .ThenBy(user => user!.Username, StringComparer.Ordinal)
             .Select(user => new PublicTeamMemberDTO(user!.Username!, user.ProfilePictureUrl))
             .ToList();
 
-        var captainUsername = team.CaptainUserId.HasValue
-            ? users.GetValueOrDefault(new UserId(team.CaptainUserId.Value))?.Username
-            : null;
+        var captainUsername = GetUsername(team.CaptainUserId, users);
 
         return new PublicTeamProfileDTO
         {
@@ -257,7 +255,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             .FirstOrDefaultAsync(cancellationToken);
         if (team is null)
             throw new NotFoundException($"{nameof(Team)} not found");
-        var users = await GetUserProfilesAsync(team.MemberUserIds, cancellationToken);
+        var users = await GetUserProfilesAsync(GetReferencedUserIds(team), cancellationToken);
         return MapTeam(team, users);
     }
 
@@ -269,7 +267,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         team.RemoveMember(userId);
         await _dbContext.SaveChangesAsync(cancellationToken);
         var users = await GetUserProfilesAsync(
-            team.Members.Select(member => member.UserId),
+            team.Members.Select(member => member.UserId).Append(team.CaptainUserId ?? Guid.Empty),
             cancellationToken);
         return MapTeam(team, users);
     }
@@ -315,13 +313,15 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
 
         if (teamDTO.CaptainUserId.HasValue && teamDTO.CaptainUserId.Value != team.CaptainUserId)
         {
+            await EnsureActiveCaptainCandidateAsync(teamDTO.CaptainUserId.Value, cancellationToken);
             team.ChangeCaptain(teamDTO.CaptainUserId.Value);
+            team.Version++;
         }
 
         _dbContext.Teams.Update(team);
         await SaveTeamChangesAsync(team.Name, cancellationToken);
         var users = await GetUserProfilesAsync(
-            team.Members.Select(member => member.UserId),
+            team.Members.Select(member => member.UserId).Append(team.CaptainUserId ?? Guid.Empty),
             cancellationToken);
         return MapTeam(team, users);
     }
@@ -339,7 +339,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             .Take(resultLimit)
             .ToListAsync(cancellationToken);
         var users = await GetUserProfilesAsync(
-            teams.SelectMany(team => team.MemberUserIds),
+            teams.SelectMany(GetReferencedUserIds),
             cancellationToken);
 
         return teams.Select(team => MapTeam(team, users)).ToList();
@@ -348,7 +348,8 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
     public async Task<TeamInviteDTO> InviteUserAsync(Guid teamId, Guid userId, CancellationToken cancellationToken = default)
     {
         var team = await GetTeamForInviteMutationAsync(teamId, cancellationToken);
-        if (await GetUserProfileAsync(userId, cancellationToken) is null)
+        var invitedUser = await GetUserProfileForUpdateAsync(userId, cancellationToken);
+        if (invitedUser is null || invitedUser.IsDeleted)
             throw new NotFoundException("User not found");
         await ExpirePendingInviteAsync(teamId, userId, cancellationToken);
         var invite = team.InviteUser(userId, UtcNow(), _inviteResendCooldownDays, _inviteExpirationDays, _declinedInviteResendLimit);
@@ -362,7 +363,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         var team = await GetTeamForInviteMutationAsync(teamId, cancellationToken);
         EnsureCaptain(team, currentUser.Id.Value);
 
-        var invitedUser = await GetUserProfileAsync(userId, cancellationToken);
+        var invitedUser = await GetUserProfileForUpdateAsync(userId, cancellationToken);
         if (invitedUser is null || invitedUser.IsDeleted)
             throw new NotFoundException("User not found");
 
@@ -399,6 +400,12 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             throw new NotFoundException("No pending invite found");
         if (invite.Team.IsDeleted)
             throw new NotFoundException("No pending invite found");
+        if (accept)
+        {
+            var invitedUser = await GetUserProfileForUpdateAsync(userId, cancellationToken);
+            if (invitedUser is null || invitedUser.IsDeleted)
+                throw new NotFoundException("User not found");
+        }
         invite.Respond(accept, UtcNow());
         await _dbContext.SaveChangesAsync(cancellationToken);
         return new TeamInviteDTO(invite);
@@ -415,6 +422,8 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             throw new NotFoundException("No pending invite found");
         if (invite.Team.IsDeleted)
             throw new NotFoundException("No pending invite found");
+        if (accept)
+            await EnsureActiveUserForUpdateAsync(currentUser.Id.Value, cancellationToken);
 
         invite.Respond(accept, UtcNow());
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -424,6 +433,10 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
 
     public async Task<IEnumerable<TeamInviteDTO>> GetUserInvitesAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        var user = await GetUserProfileAsync(userId, cancellationToken);
+        if (user is null || user.IsDeleted)
+            return [];
+
         var now = UtcNow();
         var invites = await TeamInvites
             .AsNoTracking()
@@ -481,7 +494,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
                 .Select(invite => MapInviteSummary(invite, users))
                 .ToList(),
             SentPendingInvites = invites
-                .Where(invite => invite.CaptainUserId == currentUser.Id.Value)
+                .Where(invite => invite.CaptainUserId == currentUser.Id.Value && IsActiveUser(invite.UserId, users))
                 .Select(invite => MapInviteSummary(invite, users))
                 .ToList()
         };
@@ -506,7 +519,10 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             .OrderBy(invite => invite.CreatedAt)
             .ToListAsync(cancellationToken);
         var users = await GetUserProfilesAsync(invites.Select(invite => invite.UserId), cancellationToken);
-        return invites.Select(invite => MapInviteSummary(invite, users)).ToList();
+        return invites
+            .Where(invite => IsActiveUser(invite.UserId, users))
+            .Select(invite => MapInviteSummary(invite, users))
+            .ToList();
     }
 
     public async Task<TeamManagementSummaryDTO> LeaveTeamAsync(string auth0UserId, Guid teamId, CancellationToken cancellationToken = default)
@@ -539,8 +555,10 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
             throw new NotFoundException($"{nameof(Team)} not found");
 
         EnsureCaptain(team, currentUser.Id.Value);
+        await EnsureActiveCaptainCandidateAsync(newCaptainUserId, cancellationToken);
         await EnsureCaptainLimitAsync(newCaptainUserId, teamId, cancellationToken);
         team.ChangeCaptain(newCaptainUserId);
+        team.Version++;
         await _dbContext.SaveChangesAsync(cancellationToken);
         var users = await GetUserProfilesAsync(
             team.Members.Select(member => member.UserId).Append(newCaptainUserId),
@@ -681,6 +699,33 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         return await _identityModule.GetUserProfileAsync(new UserId(userId), cancellationToken);
     }
 
+    // Serialized with account deletion through the identity mutation lock; requires the caller's team transaction.
+    private async Task<UserProfileSummary?> GetUserProfileForUpdateAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        return await _identityModule.GetUserProfileForUpdateAsync(new UserId(userId), cancellationToken);
+    }
+
+    private async Task<UserProfileSummary> GetCurrentUserForUpdateAsync(string auth0UserId, CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentUserAsync(auth0UserId, cancellationToken);
+        await EnsureActiveUserForUpdateAsync(currentUser.Id.Value, cancellationToken);
+        return currentUser;
+    }
+
+    private async Task EnsureActiveUserForUpdateAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await GetUserProfileForUpdateAsync(userId, cancellationToken);
+        if (user is null || user.IsDeleted)
+            throw new NotFoundException("Current user profile was not found.");
+    }
+
+    private async Task EnsureActiveCaptainCandidateAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var user = await GetUserProfileForUpdateAsync(userId, cancellationToken);
+        if (user is null || user.IsDeleted)
+            throw new ValidationException("New captain must be an active team member.");
+    }
+
     private async Task<IReadOnlyDictionary<UserId, UserProfileSummary>> GetUserProfilesAsync(
         IEnumerable<Guid> userIds,
         CancellationToken cancellationToken)
@@ -797,7 +842,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         {
             Id = team.Id,
             Name = team.Name,
-            CaptainUserId = team.CaptainUserId ?? Guid.Empty,
+            CaptainUserId = GetActiveCaptainUserId(team.CaptainUserId, users),
             LogoUrl = team.LogoUrl,
             Members = MapMembers(team.Members.Select(member => member.UserId), users)
         };
@@ -811,7 +856,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         {
             Id = team.Id,
             Name = team.Name,
-            CaptainUserId = team.CaptainUserId ?? Guid.Empty,
+            CaptainUserId = GetActiveCaptainUserId(team.CaptainUserId, users),
             LogoUrl = team.LogoUrl,
             Members = MapMembers(team.MemberUserIds, users)
         };
@@ -825,7 +870,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         {
             Id = team.Id,
             Name = team.Name,
-            CaptainUserId = team.CaptainUserId ?? Guid.Empty,
+            CaptainUserId = GetActiveCaptainUserId(team.CaptainUserId, users),
             CaptainUsername = GetUsername(team.CaptainUserId, users),
             LogoUrl = team.LogoUrl,
             Members = MapMembers(team.Members.Select(member => member.UserId), users)
@@ -840,7 +885,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         {
             Id = team.Id,
             Name = team.Name,
-            CaptainUserId = team.CaptainUserId ?? Guid.Empty,
+            CaptainUserId = GetActiveCaptainUserId(team.CaptainUserId, users),
             CaptainUsername = GetUsername(team.CaptainUserId, users),
             LogoUrl = team.LogoUrl,
             Members = MapMembers(team.MemberUserIds, users)
@@ -853,7 +898,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
     {
         return memberUserIds
             .Select(userId => users.GetValueOrDefault(new UserId(userId)))
-            .Where(user => user is not null)
+            .Where(user => user is not null && !user.IsDeleted)
             .Select(user => new TeamPublicUserDTO(user!))
             .ToList();
     }
@@ -862,9 +907,28 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         Guid? userId,
         IReadOnlyDictionary<UserId, UserProfileSummary> users)
     {
-        return userId.HasValue
-            ? users.GetValueOrDefault(new UserId(userId.Value))?.Username
-            : null;
+        if (!userId.HasValue)
+            return null;
+
+        var user = users.GetValueOrDefault(new UserId(userId.Value));
+        return user is null || user.IsDeleted ? null : user.Username;
+    }
+
+    // Live projections never report a deleted account as captain, even before deletion cleanup has run.
+    private static Guid GetActiveCaptainUserId(
+        Guid? captainUserId,
+        IReadOnlyDictionary<UserId, UserProfileSummary> users)
+    {
+        return captainUserId.HasValue && IsActiveUser(captainUserId.Value, users)
+            ? captainUserId.Value
+            : Guid.Empty;
+    }
+
+    private static bool IsActiveUser(
+        Guid userId,
+        IReadOnlyDictionary<UserId, UserProfileSummary> users)
+    {
+        return users.TryGetValue(new UserId(userId), out var user) && !user.IsDeleted;
     }
 
     private IQueryable<Team> GetActiveTeamsQuery()
@@ -952,6 +1016,13 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         }
 
         return false;
+    }
+
+    private static IEnumerable<Guid> GetReferencedUserIds(TeamReadRow team)
+    {
+        return team.CaptainUserId.HasValue
+            ? team.MemberUserIds.Append(team.CaptainUserId.Value)
+            : team.MemberUserIds;
     }
 
     private sealed class TeamReadRow

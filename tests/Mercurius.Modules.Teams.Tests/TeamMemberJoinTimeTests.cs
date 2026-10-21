@@ -1,14 +1,9 @@
 using Mercurius.LAN.API.Data;
-using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Teams.Application.DTOs;
 using Mercurius.Modules.Teams.Application.Services;
 using Mercurius.Modules.Teams.Contracts;
-using Mercurius.Modules.Teams.Infrastructure;
 using Mercurius.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
-using Platform.Eventing;
 
 namespace Mercurius.Modules.Teams.Tests;
 
@@ -101,97 +96,6 @@ public class TeamMemberJoinTimeTests
             .SingleAsync();
     }
 
-    private static TeamEventPublishingDecorator CreateTeamService(MercuriusDBContext dbContext, TimeProvider clock)
-    {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["TeamInvite:ResendCooldownDays"] = "7",
-                ["TeamInvite:ExpirationDays"] = "14",
-                ["TeamInvite:DeclinedResendLimit"] = "3"
-            })
-            .Build();
-        var identityModule = new DbContextIdentityModule(dbContext);
-        var teamsDbContext = new TeamsDbContextAdapter<MercuriusDBContext>(dbContext);
-
-        return new TeamEventPublishingDecorator(
-            new TeamService(
-                teamsDbContext,
-                configuration,
-                identityModule,
-                new NoopMediaModule(),
-                new NoopTeamTournamentReadService(),
-                NullLogger<TeamService>.Instance,
-                clock),
-            teamsDbContext,
-            identityModule,
-            new NoopTeamEventPublisher(),
-            new NoopModuleEventPublisher(),
-            new NoopRealtimeConnectionManager(),
-            clock);
-    }
-
-    private sealed class NoopMediaModule : IMediaModule
-    {
-        public Task<StoredMediaAsset> SaveImageAsync(MediaUpload upload, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new StoredMediaAsset("https://example.test/logo.webp"));
-
-        public Task DeleteImageAsync(string? imageUrl, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
-
-    private sealed class NoopTeamTournamentReadService : ITeamTournamentReadService
-    {
-        public Task<IReadOnlyList<PublicTeamTournamentSummary>> GetPublicTeamTournamentsAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<PublicTeamTournamentSummary>>([]);
-
-        public Task<bool> IsUserInProtectedTournamentRosterAsync(Guid teamId, Guid userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(false);
-
-        public Task<bool> IsTeamInDeleteBlockingTournamentAsync(Guid teamId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(false);
-
-        public Task<bool> IsTeamLogoReferencedAsync(string logoUrl, CancellationToken cancellationToken = default) =>
-            Task.FromResult(false);
-    }
-
-    private sealed class NoopTeamEventPublisher : ITeamEventPublisher
-    {
-        public Task InviteChangedAsync(Guid teamId, Guid inviteId, Guid affectedUserId, string status, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task MembershipChangedAsync(Guid teamId, Guid affectedUserId, string action, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task CaptainTransferredAsync(Guid teamId, Guid newCaptainUserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
-
-    private sealed class NoopModuleEventPublisher : IModuleEventPublisher
-    {
-        public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null)
-            where TPayload : notnull => Guid.NewGuid();
-    }
-}
-
-internal sealed class MutableTimeProvider(DateTime utcNow) : TimeProvider
-{
-    public DateTime UtcNow { get; set; } = utcNow;
-
-    public override DateTimeOffset GetUtcNow() => new(UtcNow, TimeSpan.Zero);
-}
-
-internal static class TeamTestUsers
-{
-    private static int _nextId;
-
-    public static User Create(DateTime? createdAtUtc = null)
-    {
-        var id = Interlocked.Increment(ref _nextId);
-        return new User
-        {
-            Id = Guid.NewGuid(),
-            Auth0UserId = $"auth0|join-user{id}",
-            Username = $"joinuser{id}",
-            NormalizedUsername = $"joinuser{id}",
-            Firstname = $"First{id}",
-            Lastname = $"Last{id}",
-            Email = $"join-user{id}@example.com",
-            CreatedAtUtc = createdAtUtc ?? DateTime.UtcNow
-        };
-    }
+    private static TeamEventPublishingDecorator CreateTeamService(MercuriusDBContext dbContext, TimeProvider clock) =>
+        TeamsTestHarness.CreateTeamService(dbContext, clock);
 }

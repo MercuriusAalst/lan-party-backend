@@ -690,6 +690,30 @@ public class TournamentRegistrationServiceTests
     }
 
     [Fact]
+    public async Task SubmitTeamRosterAsync_RejectsDeletedTeamMemberWithoutChangingRegistration()
+    {
+        await using var dbContext = CreateDbContext();
+        var captain = CreateUser("captain");
+        var member = CreateUser("member");
+        var team = CreateTeam(captain, member);
+        var tournament = CreateTeamTournament(teamSize: 2);
+        dbContext.Users.AddRange(captain, member);
+        dbContext.Teams.Add(team);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+        member.Anonymize(DateTime.UtcNow);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            service.SubmitTeamRosterAsync(captain.Auth0UserId, tournament.Id, new SubmitTeamRosterDTO(team.Id, [captain.Id, member.Id])));
+
+        Assert.Contains("user_not_found", exception.Message);
+        Assert.False(await dbContext.Set<TournamentRegistration>().AnyAsync());
+        Assert.False(await dbContext.Set<TournamentRegistrationRosterMember>().AnyAsync());
+    }
+
+    [Fact]
     public async Task ConfirmRosterAsync_OnlyAllowsSelectedMember()
     {
         await using var dbContext = CreateDbContext();

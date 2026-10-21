@@ -8,6 +8,13 @@ public interface IIdentityModule
         UserId userId,
         CancellationToken cancellationToken = default);
 
+    // Takes the account's mutation lock inside the caller's active database transaction before reading it,
+    // so a write that depends on the account being active is serialized with account deletion.
+    Task<UserProfileSummary?> GetUserProfileForUpdateAsync(
+        UserId userId,
+        CancellationToken cancellationToken = default) =>
+        GetUserProfileAsync(userId, cancellationToken);
+
     Task<UserProfileSummary?> GetUserProfileByAuth0IdAsync(
         string auth0UserId,
         CancellationToken cancellationToken = default);
