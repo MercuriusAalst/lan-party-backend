@@ -22,5 +22,5 @@
 
 ## Verification
 
-- [ ] Add regression tests for the issue acceptance list.
+- [x] Add regression tests for the issue acceptance list.
 - [ ] Run strict OpenSpec validation, synchronize the live specs and archive this change.
