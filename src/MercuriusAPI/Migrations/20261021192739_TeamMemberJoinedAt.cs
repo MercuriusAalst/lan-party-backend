@@ -24,9 +24,11 @@ namespace Mercurius.LAN.API.Migrations
         // Accounts deleted before Teams and Tournament consumed the user-deleted event may still be members,
         // captains, pending invitees or Scheduled/InProgress participants. Replay the event through the outbox (the
         // same row shape ModuleEventPublisher writes) so the idempotent, inbox-deduplicated handlers repair them.
-        // Users that already have an undelivered replay are skipped, so running the step again adds nothing. The
-        // first attempt is delayed so an instance from the previous release cannot acknowledge the rows without
-        // the new handlers during a rolling deployment.
+        // A replay row is always inserted for a qualifying user; the handlers are idempotent, so a duplicate event is
+        // harmless. The first attempt is delayed ten minutes so a previous-release pod that is still running cannot
+        // acknowledge the replay without the new handlers. This does not make an overlapping rollout fully safe: a
+        // deletion whose original event a previous-release pod processed during the overlap is not replayed here.
+        // The Helm chart deploys the back end with the Recreate strategy, so pods do not normally overlap.
         public const string EnqueueLegacyDeletedUserCleanupSql = """
             INSERT INTO platform.outbox_messages (id, event_type, payload, occurred_at_utc, retry_count, next_attempt_at_utc)
             SELECT
@@ -59,13 +61,7 @@ namespace Mercurius.LAN.API.Migrations
                   OR EXISTS (
                       SELECT 1 FROM tournament.tournament_registrations reg
                       JOIN tournament.tournaments g ON g."Id" = reg."TournamentId"
-                      WHERE reg."UserId" = u."Id" AND g."Status" IN (0, 1)))
-              AND NOT EXISTS (
-                  SELECT 1 FROM platform.outbox_messages o
-                  WHERE o.event_type = 'Mercurius.Modules.Identity.Contracts.UserDeletedIntegrationEvent'
-                    AND o.processed_at_utc IS NULL
-                    AND o.dead_lettered_at_utc IS NULL
-                    AND (o.payload::jsonb -> 'userId' ->> 'value') = u."Id"::text);
+                      WHERE reg."UserId" = u."Id" AND g."Status" IN (0, 1)));
             """;
 
         /// <inheritdoc />

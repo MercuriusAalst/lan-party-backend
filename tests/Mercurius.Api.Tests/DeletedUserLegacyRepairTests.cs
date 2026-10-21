@@ -23,7 +23,7 @@ public sealed class DeletedUserLegacyRepairTests
     private static readonly string StorageLocation = Path.Combine(Path.GetTempPath(), "mercurius-host-tests");
 
     [Fact]
-    public async Task LegacyReplay_EnqueuesOneDelayedEventPerAffectedDeletedUser_AndIsIdempotent()
+    public async Task LegacyReplay_EnqueuesDelayedEventPerAffectedDeletedUser_EvenWhenOneIsPending()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
         await using var dbContext = CreateDbContext(database.ConnectionString);
@@ -36,10 +36,11 @@ public sealed class DeletedUserLegacyRepairTests
         var payloads = rows
             .Select(row => JsonSerializer.Deserialize<UserDeletedIntegrationEvent>(row.Payload, new JsonSerializerOptions(JsonSerializerDefaults.Web))!)
             .ToList();
+        var affected = new[] { seed.DeletedCaptain.Id, seed.DeletedInvitee.Id, seed.DeletedIndividual.Id };
         Assert.Equal(3, inserted);
-        Assert.Equal(0, insertedAgain);
+        Assert.Equal(3, insertedAgain);
         Assert.Equal(
-            new[] { seed.DeletedCaptain.Id, seed.DeletedInvitee.Id, seed.DeletedIndividual.Id }.Order(),
+            affected.Concat(affected).Order(),
             payloads.Select(payload => payload.UserId.Value).Order());
         Assert.DoesNotContain(payloads, payload => payload.UserId.Value == seed.DeletedHistoricalOnly.Id);
         Assert.All(rows, row => Assert.True(row.NextAttemptAtUtc > row.OccurredAtUtc));
@@ -54,6 +55,8 @@ public sealed class DeletedUserLegacyRepairTests
         await using (var seedContext = CreateDbContext(database.ConnectionString))
         {
             seed = await SeedLegacyCorruptionAsync(seedContext);
+            // Twice: duplicate replays must be harmless because the handlers are idempotent.
+            await seedContext.Database.ExecuteSqlRawAsync(TeamMemberJoinedAt.EnqueueLegacyDeletedUserCleanupSql);
             await seedContext.Database.ExecuteSqlRawAsync(TeamMemberJoinedAt.EnqueueLegacyDeletedUserCleanupSql);
             await seedContext.Database.ExecuteSqlRawAsync("UPDATE platform.outbox_messages SET next_attempt_at_utc = now() - interval '1 second'");
         }

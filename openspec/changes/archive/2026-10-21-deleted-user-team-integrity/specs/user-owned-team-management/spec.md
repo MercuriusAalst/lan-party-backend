@@ -96,15 +96,15 @@ Live team projections MUST exclude deleted members, deleted captains and pending
 - **THEN** the deleted user MUST NOT be treated as the captain of any team
 
 ### Requirement: Legacy deleted-user repair
-The schema migration that introduces membership join times MUST replay the durable user-deleted event for every deleted user who is still a member or captain of a non-deleted team, the recipient of a pending invite, or a participant of a Scheduled or InProgress tournament, so the same idempotent cleanup handlers repair the data. The replay MUST NOT enqueue a second undelivered event for a user who already has one, and its first delivery attempt SHOULD be delayed so an instance from the previous release cannot acknowledge it without the cleanup handlers during a rolling deployment.
+The schema migration that introduces membership join times MUST replay the durable user-deleted event for every deleted user who is still a member or captain of a non-deleted team, the recipient of a pending invite, or a participant of a Scheduled or InProgress tournament, so the same idempotent cleanup handlers repair the data. The replay MUST enqueue the event for every qualifying user even when an earlier event for that user is still undelivered, because the handlers are idempotent. Its first delivery attempt SHOULD be delayed so an instance from the previous release cannot acknowledge it without the cleanup handlers. A deletion whose original event an instance from the previous release processed while old and new instances overlapped is not replayed.
 
 #### Scenario: Legacy corrupt data is repaired
 - **WHEN** a deleted user is still a member or captain of a team when the migration runs
 - **THEN** the replayed event MUST remove the user and run captain succession through the regular event dispatch
 
-#### Scenario: Replay runs twice
-- **WHEN** the replay step runs again before the events are delivered
-- **THEN** no additional event MUST be enqueued
+#### Scenario: Replayed event is delivered twice
+- **WHEN** the same deleted user is replayed more than once
+- **THEN** the second delivery MUST NOT change any team, invite or registration
 
 #### Scenario: Historical-only references are not replayed
 - **WHEN** a deleted user is referenced only by completed or canceled tournaments
