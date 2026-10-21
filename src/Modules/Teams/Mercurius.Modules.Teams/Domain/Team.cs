@@ -72,13 +72,14 @@ public class Team
         Members.Remove(member);
     }
 
-    internal void AddMember(Guid userId)
+    internal void AddMember(Guid userId, DateTime? joinedAtUtc = null)
     {
         Members.Add(new TeamMember
         {
             Team = this,
             TeamId = Id,
-            UserId = userId
+            UserId = userId,
+            JoinedAtUtc = joinedAtUtc
         });
     }
 

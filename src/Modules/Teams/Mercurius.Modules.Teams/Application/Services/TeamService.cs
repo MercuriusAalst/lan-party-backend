@@ -58,7 +58,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         if (captain is null || captain.IsDeleted)
             throw new NotFoundException("User not found");
         var team = new Team(teamDTO.Name, captain.Id.Value);
-        team.AddMember(captain.Id.Value);
+        team.AddMember(captain.Id.Value, UtcNow());
         _dbContext.Teams.Add(team);
         await SaveTeamChangesAsync(teamDTO.Name, cancellationToken);
         return MapTeam(team, CreateUserLookup(captain));
@@ -77,7 +77,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         {
             Id = Guid.NewGuid()
         };
-        team.AddMember(currentUser.Id.Value);
+        team.AddMember(currentUser.Id.Value, UtcNow());
         _dbContext.Teams.Add(team);
         await SaveTeamChangesAsync(teamDTO.Name, cancellationToken);
 
