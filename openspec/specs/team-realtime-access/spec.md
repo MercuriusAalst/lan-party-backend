@@ -112,3 +112,10 @@ The API MUST publish a membership-change event to the affected user's authentica
 - **AND** the API MUST NOT restore or retain any deleted team's group subscription
 - **AND** the API MUST notify every user with an unexpired pending invite through that user's authenticated personal group using the existing invite-change event with a cancelled status
 
+### Requirement: Deleted users cannot subscribe to team events
+The team realtime authorizer MUST deny a subscription for a user whose account is deleted, even when team cleanup has not yet removed the user as member or captain.
+
+#### Scenario: Deleted captain joins the team group
+- **WHEN** a team's deleted captain or deleted member is checked for a team subscription
+- **THEN** the authorizer MUST deny the subscription
+
