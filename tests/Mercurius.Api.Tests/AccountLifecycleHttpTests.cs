@@ -55,7 +55,7 @@ public sealed class AccountLifecycleHttpTests
         using var deleteResponse = await SendAsync(client, HttpMethod.Delete, "v1/lan/users/me", subject, "100");
         Assert.Equal(HttpStatusCode.Accepted, deleteResponse.StatusCode);
         using var deleteJson = JsonDocument.Parse(await deleteResponse.Content.ReadAsStringAsync());
-        Assert.Equal("Account deleted.", deleteJson.RootElement.GetProperty("message").GetString());
+        Assert.Equal("Account deletion requested.", deleteJson.RootElement.GetProperty("message").GetString());
         Assert.True(deleteJson.RootElement.GetProperty("deletionPending").GetBoolean());
 
         using (var read = CreateDbContext(database.ConnectionString))
