@@ -630,6 +630,61 @@ public class UserTests
     }
 
     [Fact]
+    public async Task DeleteUserAsync_RenameAndReclaimWhileWaiting_DeletesResolvedUserAndQueuesItsSideEffects()
+    {
+        await using var dbContext = CreateDbContext();
+        var original = CreateStoredUser("auth0|delete-original", "original@example.com", "Alice");
+        var laterUser = CreateStoredUser("auth0|delete-later", "later@example.com", "Bob");
+        dbContext.Users.AddRange(original, laterUser);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await using var lockContext = CreatePeerDbContext(dbContext);
+        await using var subjectLockTransaction = await lockContext.Database.BeginTransactionAsync();
+        await UserMutationLock.AcquireSubjectAsync(
+            new IdentityDbContextAdapter<MercuriusDBContext>(lockContext),
+            original.Auth0UserId);
+
+        var publisher = new RecordingModuleEventPublisher();
+        var service = CreateDecoratedUserService(dbContext, publisher, new RecordingMediaModule());
+        var deletion = Task.Run(() => service.DeleteUserAsync("alice"));
+        await WaitForAdvisoryLockWaiterAsync(lockContext);
+
+        await using (var renameContext = CreatePeerDbContext(dbContext))
+        {
+            var renamed = await renameContext.Users.SingleAsync(user => user.Id == original.Id);
+            renamed.Username = "RenamedAlice";
+            renamed.NormalizedUsername = "renamedalice";
+            var reclaimed = await renameContext.Users.SingleAsync(user => user.Id == laterUser.Id);
+            reclaimed.Username = "Alice";
+            reclaimed.NormalizedUsername = "alice";
+            await renameContext.SaveChangesAsync();
+        }
+
+        await subjectLockTransaction.CommitAsync();
+        await deletion.WaitAsync(TimeSpan.FromSeconds(10));
+
+        dbContext.ChangeTracker.Clear();
+        var deletedOriginal = await dbContext.Users.AsNoTracking().SingleAsync(user => user.Id == original.Id);
+        var stillActiveLaterUser = await dbContext.Users.AsNoTracking().SingleAsync(user => user.Id == laterUser.Id);
+        var cleanup = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(job => job.UserId == original.Id);
+        var fence = await dbContext.Set<Auth0SubjectFence>().SingleAsync(candidate => candidate.SubjectHash == Auth0SubjectCryptography.Hash(original.Auth0UserId));
+        Assert.True(deletedOriginal.IsDeleted);
+        Assert.StartsWith("tombstone:", deletedOriginal.Auth0UserId, StringComparison.Ordinal);
+        Assert.False(stillActiveLaterUser.IsDeleted);
+        Assert.Equal("auth0|delete-later", stillActiveLaterUser.Auth0UserId);
+        Assert.Equal(cleanup.Id, fence.PendingCleanupJobId);
+
+        var cleanupEvent = Assert.Single(publisher.Events.OfType<Auth0AccountCleanupRequestedIntegrationEvent>());
+        var deletionEvent = Assert.Single(publisher.Events.OfType<UserDeletedIntegrationEvent>());
+        Assert.Equal(original.Id, cleanupEvent.UserId);
+        Assert.Equal(new UserId(original.Id), deletionEvent.UserId);
+        Assert.Empty(await dbContext.Set<Auth0SubjectFence>().AsNoTracking()
+            .Where(candidate => candidate.SubjectHash == Auth0SubjectCryptography.Hash(stillActiveLaterUser.Auth0UserId))
+            .ToListAsync());
+    }
+
+    [Fact]
     public async Task DeleteUserAsync_ThrowsNotFound_WhenUsernameDoesNotExist()
     {
         await using var dbContext = CreateDbContext();
@@ -1726,6 +1781,19 @@ public class UserTests
     private sealed class NoopModuleEventPublisher : IModuleEventPublisher
     {
         public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null) where TPayload : notnull => Guid.NewGuid();
+    }
+
+    private sealed class RecordingModuleEventPublisher : IModuleEventPublisher
+    {
+        private readonly List<object> _events = [];
+
+        public IReadOnlyList<object> Events => _events;
+
+        public Guid Publish<TPayload>(TPayload payload, DateTime? occurredAtUtc = null) where TPayload : notnull
+        {
+            _events.Add(payload);
+            return Guid.NewGuid();
+        }
     }
 
     private sealed class BlockingModuleEventPublisher : IModuleEventPublisher

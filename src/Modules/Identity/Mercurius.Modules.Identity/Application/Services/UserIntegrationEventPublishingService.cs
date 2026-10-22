@@ -3,6 +3,7 @@ using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Shared;
+using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
@@ -201,7 +202,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         await using var transaction = await BeginTransactionIfSupportedAsync();
         var before = await GetUserByAuth0IdForMutationAsync(auth0UserId);
         var response = await _inner.AnonymizeCurrentUserAsync(auth0UserId);
-        var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
+        var after = await GetUserEventStateByIdAsync(before.Id);
         await QueueDeletionCleanupAsync(before, after);
         var deletionEvents = BuildDeletionEvents(before, after);
 
@@ -223,7 +224,10 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
         var before = await GetUserByNormalizedUsernameForMutationAsync(username);
-        await _inner.DeleteUserAsync(username);
+        if (before is null)
+            throw new NotFoundException($"User '{username}' not found.");
+
+        await _inner.DeleteUserByIdAsync(before.Id);
         var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
         await QueueDeletionCleanupAsync(before, after);
         var deletionEvents = BuildDeletionEvents(before, after);

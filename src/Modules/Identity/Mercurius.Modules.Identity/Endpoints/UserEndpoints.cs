@@ -183,7 +183,7 @@ internal static class UserEndpoints
         adminGroup.MapDelete("/{username:nonguid}", async (string username, IUserService userService, [Microsoft.AspNetCore.Mvc.FromServices] Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
         {
             var target = await userService.GetUserByUsernameAsync(username);
-            await userService.DeleteUserAsync(username);
+            await userService.DeleteUserByIdAsync(target.Id);
             var deletionPending = await cleanupOperations.IsDeletionPendingAsync(target.Id, cancellationToken);
             return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
@@ -191,7 +191,7 @@ internal static class UserEndpoints
         adminGroup.MapDelete("/{username}/account", async (string username, IUserService userService, [Microsoft.AspNetCore.Mvc.FromServices] Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
         {
             var target = await userService.GetUserByUsernameAsync(username);
-            await userService.DeleteUserAsync(username);
+            await userService.DeleteUserByIdAsync(target.Id);
             var deletionPending = await cleanupOperations.IsDeletionPendingAsync(target.Id, cancellationToken);
             return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
