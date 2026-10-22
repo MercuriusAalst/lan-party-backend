@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.8.0...backend-v0.8.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* Remove Deleted Users From Teams ([#160](https://github.com/MercuriusAalst/lan-party-backend/issues/160)) ([aa965e9](https://github.com/MercuriusAalst/lan-party-backend/commit/aa965e9fc485eeef57e9f85f61462479aae94b56)), closes [#159](https://github.com/MercuriusAalst/lan-party-backend/issues/159)
+
 ## [0.8.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.7.0...backend-v0.8.0) (2026-10-19)
 
 
