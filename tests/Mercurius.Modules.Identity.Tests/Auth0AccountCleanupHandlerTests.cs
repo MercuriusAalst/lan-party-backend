@@ -79,7 +79,7 @@ public sealed class Auth0AccountCleanupHandlerTests
         var completed = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
         var persistedFence = await dbContext.Set<Auth0SubjectFence>().SingleAsync(candidate => candidate.SubjectHash == fence.SubjectHash);
         Assert.Equal(0, management.DeleteCalls);
-        Assert.Equal(TruncateToPostgresPrecision(providerCreatedAt), completed.ProviderCreatedAtUtc);
+        Assert.Null(completed.ProviderCreatedAtUtc);
         Assert.Equal("replacement-preserved", completed.SanitizedOutcome);
         Assert.Empty(completed.EncryptedSubject);
         Assert.Null(persistedFence.PendingCleanupJobId);
