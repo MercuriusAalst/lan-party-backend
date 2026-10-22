@@ -52,7 +52,8 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
                          : providerCreatedAt.Value > cleanup.RequestedAtUtc)
             {
                 // A recreated provider account is a different incarnation. Keep it intact.
-                await RecordProviderGenerationAsync(cleanup.Id, providerCreatedAt.Value, attemptToken);
+                // Do not save the replacement timestamp as the target generation: a retry after
+                // completion fails must still compare it with the original deletion request.
                 outcome = "replacement-preserved";
             }
             else

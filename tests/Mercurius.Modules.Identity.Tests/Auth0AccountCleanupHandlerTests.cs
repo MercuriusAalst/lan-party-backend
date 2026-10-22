@@ -86,6 +86,64 @@ public sealed class Auth0AccountCleanupHandlerTests
         Assert.NotNull(persistedFence.RejectTokensBeforeUnixSeconds);
     }
 
+    [Fact]
+    public async Task HandleAsync_RetryAfterReplacementCompletionFailureNeverDeletesReplacement()
+    {
+        await using var database = PostgresTestDatabase.CreateMigrated();
+        await using var dbContext = CreateDbContext(database.ConnectionString);
+        var subject = $"auth0|replacement-retry-{Guid.NewGuid():N}";
+        var requestedAt = DateTime.UtcNow.AddMinutes(-10);
+        var replacementCreatedAt = requestedAt.AddMinutes(1);
+        var (job, _, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
+        var management = new RecordingManagementService(replacementCreatedAt);
+        var handler = new Auth0AccountCleanupHandler(
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
+            management,
+            crypto,
+            TimeProvider.System);
+
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            CREATE FUNCTION identity.fail_auth0_cleanup_completion() RETURNS trigger
+            LANGUAGE plpgsql AS $trigger$
+            BEGIN
+                IF NEW."CompletedAtUtc" IS NOT NULL AND OLD."CompletedAtUtc" IS NULL THEN
+                    RAISE EXCEPTION 'simulated cleanup completion failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $trigger$;
+            """);
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            CREATE TRIGGER fail_auth0_cleanup_completion
+            BEFORE UPDATE ON identity.auth0_account_cleanups
+            FOR EACH ROW EXECUTE FUNCTION identity.fail_auth0_cleanup_completion();
+            """);
+
+        var failedAttempt = await Record.ExceptionAsync(() => handler.HandleAsync(
+            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt)));
+
+        Assert.Equal("Auth0 account cleanup is temporarily unavailable.", failedAttempt?.Message);
+        dbContext.ChangeTracker.Clear();
+        await using (var triggerCleanup = CreateDbContext(database.ConnectionString))
+        {
+            await triggerCleanup.Database.ExecuteSqlRawAsync("DROP TRIGGER fail_auth0_cleanup_completion ON identity.auth0_account_cleanups;");
+            await triggerCleanup.Database.ExecuteSqlRawAsync("DROP FUNCTION identity.fail_auth0_cleanup_completion();");
+        }
+
+        await handler.HandleAsync(
+            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt));
+
+        dbContext.ChangeTracker.Clear();
+        var completed = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
+        Assert.Equal(0, management.DeleteCalls);
+        Assert.Null(completed.ProviderCreatedAtUtc);
+        Assert.Equal("replacement-preserved", completed.SanitizedOutcome);
+        Assert.NotNull(completed.CompletedAtUtc);
+        Assert.Empty(completed.EncryptedSubject);
+    }
+
     [Theory]
     [InlineData("429")]
     [InlineData("503")]
