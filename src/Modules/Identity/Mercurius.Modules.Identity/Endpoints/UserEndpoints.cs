@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using System.Security.Claims;
 using Platform.Extensions;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 
 namespace Mercurius.Modules.Identity.Endpoints;
 
@@ -116,12 +117,21 @@ internal static class UserEndpoints
 
         group.MapDelete("/me", async (ClaimsPrincipal user, IUserService userService) =>
         {
-            return await userService.AnonymizeCurrentUserAsync(user.GetAuth0UserId());
+            var response = await userService.AnonymizeCurrentUserAsync(user.GetAuth0UserId());
+            return Results.Accepted(value: new { message = response.Message, deletionPending = true });
         })
         .RequireAuthorization();
 
         var adminGroup = group.MapGroup("")
             .RequireAuthorization(new AuthorizeAttribute { Roles = "admin" });
+
+        adminGroup.MapGet("/auth0-cleanups", async (int? page, int? pageSize, [Microsoft.AspNetCore.Mvc.FromServices] Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
+            Results.Ok(await cleanupOperations.GetStatusAsync(page ?? 1, pageSize ?? 50, cancellationToken)));
+
+        adminGroup.MapPost("/auth0-cleanups/{cleanupId:guid}/retry", async (Guid cleanupId, [Microsoft.AspNetCore.Mvc.FromServices] Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
+            await cleanupOperations.RetryAsync(cleanupId, cancellationToken)
+                ? Results.Accepted()
+                : Results.NotFound());
 
         adminGroup.MapGet("/admins", async Task<IResult> (string? query, int? page, int? pageSize, IUserService userService, CancellationToken cancellationToken) =>
         {
@@ -158,16 +168,19 @@ internal static class UserEndpoints
         adminGroup.MapDelete("/{id:guid}", async (Guid id, IUserService userService) =>
         {
             await userService.DeleteUserByIdAsync(id);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending = true });
         });
 
         adminGroup.MapDelete("/{username:nonguid}", async (string username, IUserService userService) =>
         {
             await userService.DeleteUserAsync(username);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending = true });
         });
 
         adminGroup.MapDelete("/{username}/account", async (string username, IUserService userService) =>
         {
             await userService.DeleteUserAsync(username);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending = true });
         });
 
         return group;

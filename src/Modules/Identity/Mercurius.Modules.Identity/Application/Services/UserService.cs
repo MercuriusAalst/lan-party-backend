@@ -551,8 +551,11 @@ internal class UserService : IUserService
             if (user is null)
                 throw new NotFoundException($"User '{username}' not found.");
             var oldUrl = user.ProfilePictureUrl;
-            user.Anonymize(UtcNow());
-            await _dbContext.SaveChangesAsync();
+            if (!user.IsDeleted)
+            {
+                user.Anonymize(UtcNow());
+                await _dbContext.SaveChangesAsync();
+            }
             if (transaction is not null)
                 await transaction.CommitAsync();
             if (transaction is not null)
@@ -586,8 +589,11 @@ internal class UserService : IUserService
             if (user is null)
                 throw new NotFoundException($"User with ID {id} not found.");
             var oldUrl = user.ProfilePictureUrl;
-            user.Anonymize(UtcNow());
-            await _dbContext.SaveChangesAsync();
+            if (!user.IsDeleted)
+            {
+                user.Anonymize(UtcNow());
+                await _dbContext.SaveChangesAsync();
+            }
             if (transaction is not null)
                 await transaction.CommitAsync();
             if (transaction is not null)

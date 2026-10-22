@@ -10,6 +10,7 @@ using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Identity.Options;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Tournament.Contracts;
 using Mercurius.Modules.Teams.Contracts;
@@ -563,11 +564,19 @@ public class ModuleEventingTests
         IModuleEventPublisher? moduleEventPublisher = null,
         IRealtimeConnectionManager? realtimeConnectionManager = null)
     {
+        var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
+        var publisher = moduleEventPublisher ?? new ModuleEventPublisher(dbContext);
+        var cryptography = new Auth0SubjectCryptography(Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions
+        {
+            AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+        }));
+        var lifecycle = new Auth0AccountLifecycleService(identityDbContext, publisher, cryptography, TimeProvider.System);
         return new UserIntegrationEventPublishingService(
-            new UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService()), TimeProvider.System),
-            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
-            moduleEventPublisher ?? new ModuleEventPublisher(dbContext),
-            realtimeConnectionManager ?? new NoopRealtimeConnectionManager());
+            new UserService(identityDbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(identityDbContext, new NoopAuth0ManagementService()), TimeProvider.System),
+            identityDbContext,
+            publisher,
+            realtimeConnectionManager ?? new NoopRealtimeConnectionManager(),
+            lifecycle);
     }
 
     private static User CreateUser()

@@ -11,4 +11,6 @@ internal interface IAuth0ManagementService
         Task.FromResult<IReadOnlyList<string>>([]);
     Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default);
     Task SendPasswordResetEmailAsync(string email, CancellationToken cancellationToken = default);
+    Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default);
+    Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default);
 }

@@ -29,6 +29,8 @@ internal sealed class Auth0SubjectCryptography
     public static string Hash(string subject) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(subject))).ToLowerInvariant();
 
+    public bool IsConfigured => _key is { Length: 32 };
+
     public string Encrypt(string subject, Guid jobId)
     {
         var key = _key ?? throw new InvalidOperationException("Auth0 account cleanup encryption key is missing or invalid.");

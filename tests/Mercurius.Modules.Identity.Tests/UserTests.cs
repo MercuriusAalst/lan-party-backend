@@ -1,5 +1,6 @@
 using Mercurius.TestInfrastructure;
 using Mercurius.Modules.Identity.Infrastructure;
+using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Contracts;
@@ -10,6 +11,7 @@ using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Shared.Search;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Identity.Application.Services;
+using Mercurius.Modules.Identity.Options;
 using Mercurius.Modules.Media.Contracts;
 using Platform.Eventing;
 using Platform.Realtime;
@@ -997,11 +999,13 @@ public class UserTests
             new RecordingIdentityModule(),
             TimeProvider.System,
             media);
+        var publisher = new ThrowingModuleEventPublisher();
         var service = new UserIntegrationEventPublishingService(
             innerService,
             identityDbContext,
-            new ThrowingModuleEventPublisher(),
+            publisher,
             new NoopRealtimeConnectionManager(),
+            CreateLifecycleService(identityDbContext, publisher),
             media);
         var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
         {
@@ -1056,6 +1060,9 @@ public class UserTests
         Assert.True(persisted.IsDeleted);
         Assert.Null(persisted.ProfilePictureUrl);
         Assert.Equal([pictureUrl], media.DeletedUrls);
+        Assert.StartsWith("tombstone:", persisted.Auth0UserId, StringComparison.Ordinal);
+        Assert.Single(await dbContext.Set<Auth0AccountCleanup>().AsNoTracking().Where(job => job.UserId == user.Id).ToListAsync());
+        Assert.Single(await dbContext.Set<Auth0SubjectFence>().AsNoTracking().ToListAsync());
     }
 
     [Fact]
@@ -1450,7 +1457,17 @@ public class UserTests
             identityDbContext,
             publisher,
             realtimeConnectionManager ?? new NoopRealtimeConnectionManager(),
+            CreateLifecycleService(identityDbContext, publisher),
             media);
+    }
+
+    private static Auth0AccountLifecycleService CreateLifecycleService(IIdentityDbContext dbContext, IModuleEventPublisher publisher)
+    {
+        var cryptography = new Auth0SubjectCryptography(Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions
+        {
+            AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+        }));
+        return new Auth0AccountLifecycleService(dbContext, publisher, cryptography, TimeProvider.System);
     }
 
     private static Microsoft.AspNetCore.Http.FormFile CreatePictureUpload() =>
@@ -1790,5 +1807,8 @@ public class UserTests
             LastPasswordResetEmail = email;
             return Task.CompletedTask;
         }
+
+        public Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
+        public Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

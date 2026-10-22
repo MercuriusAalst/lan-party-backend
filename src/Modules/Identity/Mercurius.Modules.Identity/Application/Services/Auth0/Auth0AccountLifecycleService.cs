@@ -4,6 +4,7 @@ using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Infrastructure;
 using Platform.Eventing;
 using Microsoft.EntityFrameworkCore;
+using Mercurius.Modules.Shared.Exceptions;
 
 namespace Mercurius.Modules.Identity.Application.Services.Auth0;
 
@@ -59,4 +60,13 @@ internal sealed class Auth0AccountLifecycleService
     }
 
     public DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+
+    public async Task EnsureSubjectCanRegisterAsync(string subject, CancellationToken cancellationToken = default)
+    {
+        var subjectHash = Auth0SubjectCryptography.Hash(subject.Trim());
+        var fence = await _dbContext.Auth0SubjectFences.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.SubjectHash == subjectHash, cancellationToken);
+        if (fence?.PendingCleanupJobId is not null)
+            throw new ConflictException("account_cleanup_pending", "This account is still being removed from the identity provider.");
+    }
 }

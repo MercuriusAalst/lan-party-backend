@@ -9,6 +9,8 @@ using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Platform.Eventing;
+using Platform.Extensions;
 
 namespace Mercurius.Modules.Identity;
 
@@ -24,9 +26,12 @@ public static class IdentityModuleConfiguration
         services.Configure<Auth0ManagementOptions>(configuration.GetSection(Auth0ManagementOptions.SectionName));
         services.AddSingleton<Auth0SubjectCryptography>();
         services.AddScoped<Auth0AccountLifecycleService>();
+        services.AddScoped<Auth0CleanupOperations>();
         services.AddHostedService<Auth0LegacyAccountBackfill>();
+        services.AddModuleEventHandler<Auth0AccountCleanupRequestedIntegrationEvent, Auth0AccountCleanupHandler>();
         services.AddTransient<IIdentityModule, IdentityModuleFacade>();
-        services.AddHttpClient<IAuth0ManagementService, Auth0ManagementService>();
+        services.AddHttpClient<IAuth0ManagementService, Auth0ManagementService>()
+            .RemoveAllLoggers();
         services.AddTransient<IUserService, UserService>();
         services.Decorate<IUserService, UserIntegrationEventPublishingService>();
         services.Decorate<IUserService, UserValidationService>();

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Http;
 using System.Runtime.ExceptionServices;
 using Platform.Eventing;
 using Platform.Realtime;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
 
 namespace Mercurius.Modules.Identity.Application.Services;
 
@@ -19,6 +20,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     private readonly IIdentityDbContext _dbContext;
     private readonly IModuleEventPublisher _moduleEventPublisher;
     private readonly IRealtimeConnectionManager _realtimeConnectionManager;
+    private readonly Auth0AccountLifecycleService _accountLifecycle;
     private readonly IMediaModule? _mediaModule;
     private readonly ILogger<UserIntegrationEventPublishingService>? _logger;
 
@@ -27,6 +29,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         IIdentityDbContext dbContext,
         IModuleEventPublisher moduleEventPublisher,
         IRealtimeConnectionManager realtimeConnectionManager,
+        Auth0AccountLifecycleService accountLifecycle,
         IMediaModule? mediaModule = null,
         ILogger<UserIntegrationEventPublishingService>? logger = null)
     {
@@ -34,6 +37,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         _dbContext = dbContext;
         _moduleEventPublisher = moduleEventPublisher;
         _realtimeConnectionManager = realtimeConnectionManager;
+        _accountLifecycle = accountLifecycle;
         _mediaModule = mediaModule;
         _logger = logger;
     }
@@ -42,7 +46,8 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     {
         return await ExecuteProfileMutationAsync(
             () => _inner.CreateUserAsync(request),
-            before: null);
+            before: null,
+            auth0Subject: request.EffectiveAuth0UserId);
     }
 
     public async Task<GetUserDTO> CreateCurrentUserAsync(string auth0UserId, CompleteUserProfileRequest request)
@@ -53,12 +58,14 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
             return await ExecuteProfileMutationAsync(
                 () => userService.CreateCurrentUserAsync(auth0UserId, request, auth0Profile),
-                before: null);
+                before: null,
+                auth0Subject: auth0UserId);
         }
 
         return await ExecuteProfileMutationAsync(
             () => _inner.CreateCurrentUserAsync(auth0UserId, request),
-            before: null);
+            before: null,
+            auth0Subject: auth0UserId);
     }
 
     public async Task<GetUserDTO> CompleteProfileAsync(string auth0UserId, CompleteUserProfileRequest request)
@@ -192,6 +199,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         var before = await GetUserByAuth0IdForMutationAsync(auth0UserId);
         var response = await _inner.AnonymizeCurrentUserAsync(auth0UserId);
         var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
+        await QueueDeletionCleanupAsync(before, after);
         var deletionEvents = BuildDeletionEvents(before, after);
 
         await PublishEventsAsync(deletionEvents);
@@ -214,6 +222,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         var before = await GetUserByNormalizedUsernameForMutationAsync(username);
         await _inner.DeleteUserAsync(username);
         var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
+        await QueueDeletionCleanupAsync(before, after);
         var deletionEvents = BuildDeletionEvents(before, after);
 
         await PublishEventsAsync(deletionEvents);
@@ -232,10 +241,16 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     public async Task DeleteUserByIdAsync(Guid id)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
-        await UserMutationLock.AcquireAsync(_dbContext, id);
         var before = await GetUserEventStateByIdAsync(id);
+        if (before is not null)
+        {
+            await UserMutationLock.AcquireSubjectAsync(_dbContext, before.Auth0UserId);
+            await UserMutationLock.AcquireAsync(_dbContext, id);
+            before = await GetUserEventStateByIdAsync(id);
+        }
         await _inner.DeleteUserByIdAsync(id);
         var after = before is null ? null : await GetUserEventStateByIdAsync(before.Id);
+        await QueueDeletionCleanupAsync(before, after);
         var deletionEvents = BuildDeletionEvents(before, after);
 
         await PublishEventsAsync(deletionEvents);
@@ -284,9 +299,16 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
     private async Task<GetUserDTO> ExecuteProfileMutationAsync(
         Func<Task<GetUserDTO>> mutation,
-        UserEventState? before)
+        UserEventState? before,
+        string? auth0Subject = null)
     {
         await using var transaction = await BeginTransactionIfSupportedAsync();
+        if (!string.IsNullOrWhiteSpace(auth0Subject))
+        {
+            auth0Subject = auth0Subject.Trim();
+            await UserMutationLock.AcquireSubjectAsync(_dbContext, auth0Subject);
+            await _accountLifecycle.EnsureSubjectCanRegisterAsync(auth0Subject);
+        }
         var user = await mutation();
 
         await PublishEventsAsync(BuildProfileEvents(user, before));
@@ -383,6 +405,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     private async Task<UserEventState?> GetUserByAuth0IdForMutationAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         var normalizedAuth0UserId = auth0UserId.Trim();
+        await UserMutationLock.AcquireSubjectAsync(_dbContext, normalizedAuth0UserId, cancellationToken);
         var userId = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.Auth0UserId == normalizedAuth0UserId)
@@ -397,15 +420,16 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     private async Task<UserEventState?> GetUserByNormalizedUsernameForMutationAsync(string username)
     {
         var normalizedUsername = UserProfileValidationHelper.NormalizeUsername(username);
-        var userId = await _dbContext.Users
+        var state = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.NormalizedUsername == normalizedUsername)
-            .Select(user => (Guid?)user.Id)
+            .Select(user => new { user.Id, user.Auth0UserId })
             .FirstOrDefaultAsync();
-        if (userId is null)
+        if (state is null)
             return null;
-        await UserMutationLock.AcquireAsync(_dbContext, userId.Value);
-        return await GetUserEventStateByIdAsync(userId.Value);
+        await UserMutationLock.AcquireSubjectAsync(_dbContext, state.Auth0UserId);
+        await UserMutationLock.AcquireAsync(_dbContext, state.Id);
+        return await GetUserEventStateByIdAsync(state.Id);
     }
 
     private Task<UserEventState?> GetUserEventStateByIdAsync(Guid id)
@@ -415,6 +439,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
             .Where(user => user.Id == id)
             .Select(user => new UserEventState(
                 user.Id,
+                user.Auth0UserId,
                 user.Username,
                 user.DisplayName,
                 user.IsDeleted,
@@ -422,6 +447,16 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
                 user.UpdatedAtUtc,
                 user.ProfilePictureUrl))
             .FirstOrDefaultAsync();
+    }
+
+    private async Task QueueDeletionCleanupAsync(UserEventState? before, UserEventState? after)
+    {
+        if (before is null || before.IsDeleted || after is null || !after.IsDeleted)
+            return;
+        await _accountLifecycle.QueueCleanupAsync(
+            before.Auth0UserId,
+            before.Id,
+            after.DeletedAtUtc ?? after.UpdatedAtUtc);
     }
 
     private async Task<IDbContextTransaction?> BeginTransactionIfSupportedAsync()
@@ -464,6 +499,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
 
     private sealed record UserEventState(
         Guid Id,
+        string Auth0UserId,
         string? Username,
         string DisplayName,
         bool IsDeleted,

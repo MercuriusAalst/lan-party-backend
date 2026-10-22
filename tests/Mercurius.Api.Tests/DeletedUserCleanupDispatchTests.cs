@@ -41,6 +41,7 @@ public sealed class DeletedUserCleanupDispatchTests
             "--Logging:LogLevel:Default=Warning",
             $"--ConnectionStrings:MercuriusDB={database.ConnectionString}",
             $"--FileStorage:Location={StorageLocation}",
+            "--Auth0:AccountCleanupEncryptionKey=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
             "--Auth0:Audience=https://api.example.test",
             "--Database:ApplyMigrationsOnStartup=false"
         ]);
@@ -73,7 +74,9 @@ public sealed class DeletedUserCleanupDispatchTests
         var persisted = await dbContext.Teams.Include(candidate => candidate.Members).SingleAsync(candidate => candidate.Id == team.Id);
         Assert.Equal(member.Id, persisted.CaptainUserId);
         Assert.Equal([member.Id], persisted.Members.Select(teamMember => teamMember.UserId));
-        Assert.All(await dbContext.OutboxMessages.AsNoTracking().ToListAsync(), message => Assert.True(
+        Assert.All(await dbContext.OutboxMessages.AsNoTracking()
+            .Where(message => !message.EventType.Contains(nameof(Mercurius.Modules.Identity.Contracts.Auth0AccountCleanupRequestedIntegrationEvent)))
+            .ToListAsync(), message => Assert.True(
             message.ProcessedAtUtc is not null,
             $"{message.EventType} was not delivered: {message.LastError}"));
     }
