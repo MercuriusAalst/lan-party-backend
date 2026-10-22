@@ -22,6 +22,9 @@ public static class IdentityModuleConfiguration
         services.TryAddScoped<IIdentityDbContext, IdentityDbContextAdapter<TDbContext>>();
         services.TryAddSingleton(TimeProvider.System);
         services.Configure<Auth0ManagementOptions>(configuration.GetSection(Auth0ManagementOptions.SectionName));
+        services.AddSingleton<Auth0SubjectCryptography>();
+        services.AddScoped<Auth0AccountLifecycleService>();
+        services.AddHostedService<Auth0LegacyAccountBackfill>();
         services.AddTransient<IIdentityModule, IdentityModuleFacade>();
         services.AddHttpClient<IAuth0ManagementService, Auth0ManagementService>();
         services.AddTransient<IUserService, UserService>();
@@ -34,6 +37,8 @@ public static class IdentityModuleConfiguration
     public static ModelBuilder ApplyIdentityModelConfiguration(this ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new UserConfiguration());
+        modelBuilder.ApplyConfiguration(new Auth0AccountCleanupConfiguration());
+        modelBuilder.ApplyConfiguration(new Auth0SubjectFenceConfiguration());
 
         return modelBuilder;
     }

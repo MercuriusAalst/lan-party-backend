@@ -396,7 +396,7 @@ public class UserTests
         user.Anonymize(deletedAtUtc);
 
         Assert.True(user.IsDeleted);
-        Assert.Equal("auth0|123", user.Auth0UserId);
+        Assert.Equal($"tombstone:{user.Id:N}", user.Auth0UserId);
         Assert.StartsWith("deleted-user-", user.Username);
         Assert.Equal(user.Username, user.NormalizedUsername);
         Assert.Null(user.Firstname);

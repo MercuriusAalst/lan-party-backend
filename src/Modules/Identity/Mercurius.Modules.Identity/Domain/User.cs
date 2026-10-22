@@ -85,6 +85,7 @@ public class User
     {
         var deletedUsername = $"deleted-user-{Id:N}"[..21];
 
+        Auth0UserId = $"tombstone:{Id:N}";
         Username = deletedUsername;
         NormalizedUsername = deletedUsername;
         Firstname = null;

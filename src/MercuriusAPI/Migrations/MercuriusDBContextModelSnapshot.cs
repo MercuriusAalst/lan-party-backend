@@ -208,6 +208,70 @@ namespace Mercurius.LAN.API.Migrations
                     b.ToTable("search_index_rebuild_jobs", "discovery");
                 });
 
+            modelBuilder.Entity("Mercurius.Modules.Identity.Domain.Auth0AccountCleanup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedSubject")
+                        .IsRequired()
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)");
+
+                    b.Property<Guid>("OutboxMessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ProviderCreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("RequestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SanitizedOutcome")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SubjectHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OutboxMessageId")
+                        .IsUnique();
+
+                    b.HasIndex("SubjectHash");
+
+                    b.HasIndex("UserId", "RequestedAtUtc");
+
+                    b.ToTable("auth0_account_cleanups", "identity");
+                });
+
+            modelBuilder.Entity("Mercurius.Modules.Identity.Domain.Auth0SubjectFence", b =>
+                {
+                    b.Property<string>("SubjectHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("PendingCleanupJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("RejectTokensBeforeUnixSeconds")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("SubjectHash");
+
+                    b.ToTable("auth0_subject_fences", "identity");
+                });
+
             modelBuilder.Entity("Mercurius.Modules.Identity.Domain.User", b =>
                 {
                     b.Property<Guid>("Id")
