@@ -474,6 +474,9 @@ namespace Mercurius.LAN.API.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("JoinedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("TeamId", "UserId")
                         .HasName("PK_team_members");
 

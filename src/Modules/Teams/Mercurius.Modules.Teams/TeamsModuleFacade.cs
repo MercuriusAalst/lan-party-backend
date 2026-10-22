@@ -22,11 +22,11 @@ internal sealed class TeamsModuleFacade : ITeamsModule
         _tournamentReadService = tournamentReadService;
     }
 
-    public Task<TeamSummary?> GetTeamSummaryAsync(
+    public async Task<TeamSummary?> GetTeamSummaryAsync(
         TeamId teamId,
         CancellationToken cancellationToken = default)
     {
-        return _dbContext.Teams
+        var team = await _dbContext.Teams
             .AsNoTracking()
             .Where(team => team.Id == teamId.Value)
             .Select(team => new TeamSummary(
@@ -36,12 +36,19 @@ internal sealed class TeamsModuleFacade : ITeamsModule
                 team.LogoUrl,
                 team.IsDeleted))
             .SingleOrDefaultAsync(cancellationToken);
+        if (team?.CaptainUserId is not { } captainUserId || await IsActiveUserAsync(captainUserId, cancellationToken))
+            return team;
+
+        return team with { CaptainUserId = null };
     }
 
     public async Task<IReadOnlyList<TeamId>> GetCaptainedTeamIdsAsync(
         UserId userId,
         CancellationToken cancellationToken = default)
     {
+        if (!await IsActiveUserAsync(userId, cancellationToken))
+            return [];
+
         return await _dbContext.Teams
             .AsNoTracking()
             .Where(team => !team.IsDeleted && team.CaptainUserId == userId.Value)
@@ -83,7 +90,9 @@ internal sealed class TeamsModuleFacade : ITeamsModule
             .ToListAsync(cancellationToken);
 
         var users = await GetUserProfilesAsync(
-            teams.SelectMany(team => team.MemberUserIds),
+            teams.SelectMany(team => team.CaptainUserId.HasValue
+                ? team.MemberUserIds.Append(team.CaptainUserId.Value)
+                : team.MemberUserIds),
             cancellationToken);
 
         return teams.ToDictionary(
@@ -91,12 +100,12 @@ internal sealed class TeamsModuleFacade : ITeamsModule
             team => new TeamRosterSnapshot(
                 new TeamId(team.Id),
                 team.Name,
-                team.CaptainUserId.HasValue ? new UserId(team.CaptainUserId.Value) : null,
+                GetActiveCaptainUserId(team.CaptainUserId, users),
                 team.LogoUrl,
                 team.IsDeleted,
                 team.MemberUserIds
                     .Select(userId => users.GetValueOrDefault(new UserId(userId)))
-                    .Where(user => user is not null)
+                    .Where(user => user is not null && !user.IsDeleted)
                     .OrderBy(user => user!.Username, StringComparer.Ordinal)
                     .Select(user => new TeamMemberSnapshot(
                         user!.Id,
@@ -158,7 +167,9 @@ internal sealed class TeamsModuleFacade : ITeamsModule
         var tournaments = await _tournamentReadService.GetPublicTeamTournamentsAsync(team.Id, cancellationToken);
 
         var members = team.MemberUserIds
-            .Select(userId => users.GetValueOrDefault(new UserId(userId))?.Username)
+            .Select(userId => users.GetValueOrDefault(new UserId(userId)))
+            .Where(user => user is not null && !user.IsDeleted)
+            .Select(user => user!.Username)
             .Where(IsValidPublicUsername)
             .Select(username => username!)
             .OrderBy(username => username, StringComparer.OrdinalIgnoreCase)
@@ -166,8 +177,9 @@ internal sealed class TeamsModuleFacade : ITeamsModule
             .Select(username => new PublicTeamMemberSummary(username))
             .ToList();
 
-        var captainUsername = team.CaptainUserId.HasValue
-            ? users.GetValueOrDefault(new UserId(team.CaptainUserId.Value))?.Username
+        var captainUserId = GetActiveCaptainUserId(team.CaptainUserId, users);
+        var captainUsername = captainUserId.HasValue
+            ? users[captainUserId.Value].Username
             : null;
 
         return new PublicTeamProfile(
@@ -217,7 +229,7 @@ internal sealed class TeamsModuleFacade : ITeamsModule
         var reasons = new List<string>();
         if (team.IsDeleted)
             reasons.Add("team_deleted");
-        if (team.CaptainUserId != requestedBy.Value)
+        if (team.CaptainUserId != requestedBy.Value || !await IsActiveUserAsync(requestedBy, cancellationToken))
             reasons.Add("captain_required");
 
         return new TeamRegistrationEligibility(reasons.Count == 0, reasons);
@@ -244,7 +256,7 @@ internal sealed class TeamsModuleFacade : ITeamsModule
         var reasons = new List<string>();
         if (team.IsDeleted)
             reasons.Add("team_deleted");
-        if (team.CaptainUserId != userId.Value)
+        if (team.CaptainUserId != userId.Value || !await IsActiveUserAsync(userId, cancellationToken))
             reasons.Add("captain_required");
 
         return new MembershipMutationGuard(reasons.Count == 0, reasons);
@@ -273,6 +285,24 @@ internal sealed class TeamsModuleFacade : ITeamsModule
     private static bool IsValidPublicUsername(string? username)
     {
         return !string.IsNullOrWhiteSpace(username);
+    }
+
+    private async Task<bool> IsActiveUserAsync(UserId userId, CancellationToken cancellationToken)
+    {
+        var user = await _identityModule.GetUserProfileAsync(userId, cancellationToken);
+        return user is { IsDeleted: false };
+    }
+
+    // Live snapshots never report a deleted account as captain, even before deletion cleanup has run.
+    private static UserId? GetActiveCaptainUserId(
+        Guid? captainUserId,
+        IReadOnlyDictionary<UserId, UserProfileSummary> users)
+    {
+        if (!captainUserId.HasValue)
+            return null;
+
+        var captain = new UserId(captainUserId.Value);
+        return users.TryGetValue(captain, out var user) && !user.IsDeleted ? captain : null;
     }
 
     private async Task<IReadOnlyDictionary<UserId, UserProfileSummary>> GetUserProfilesAsync(

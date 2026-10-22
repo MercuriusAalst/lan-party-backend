@@ -28,7 +28,7 @@ internal class TeamInvite
 
         Status = accept ? TeamInviteStatus.Accepted : TeamInviteStatus.Declined;
         if (accept)
-            Team.AddMember(UserId);
+            Team.AddMember(UserId, nowUtc);
         RespondedAt = nowUtc;
     }
 

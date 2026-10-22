@@ -119,11 +119,11 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
     {
         await using var transaction = await _persistenceCoordinator.BeginTransactionAsync(cancellationToken);
         var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
+        var userProfile = await GetActiveCurrentUserForUpdateAsync(userId, cancellationToken);
         var tournament = await GetTournamentAsync(tournamentId, cancellationToken);
         var reasons = await _eligibilityEvaluator.GetIndividualTournamentFailuresAsync(tournament, userId, null, cancellationToken);
         if (reasons.Count != 0)
             throw new ValidationException(string.Join(", ", reasons));
-        var userProfile = (await GetActiveUserProfilesByIdAsync([userId], cancellationToken))[userId];
 
         var now = UtcNow();
         var registration = new TournamentRegistration
@@ -185,6 +185,9 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
     {
         await using var transaction = await _persistenceCoordinator.BeginTransactionAsync(cancellationToken);
         var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
+        var candidateProfiles = await GetActiveUserProfilesForUpdateAsync(
+            request.UserIds.Append(userId),
+            cancellationToken);
         var tournament = await GetTournamentAsync(tournamentId, cancellationToken);
         var team = await GetTeamWithMembersAsync(request.TeamId, cancellationToken);
         var existing = await _dbContext.TournamentRegistrations
@@ -200,9 +203,6 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
         var rosterFailures = TournamentEligibilityEvaluator.GetRosterSizeFailures(tournament, request.UserIds);
         if (!request.UserIds.Contains(userId))
             rosterFailures.Add("captain_required");
-        var candidateProfiles = await GetActiveUserProfilesByIdAsync(
-            request.UserIds.Distinct().ToArray(),
-            cancellationToken);
         var candidateFailures = await GetRosterCandidateFailuresAsync(
             tournament.Id,
             team,
@@ -337,6 +337,7 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
     {
         await using var transaction = await _persistenceCoordinator.BeginTransactionAsync(cancellationToken);
         var userId = await GetCurrentUserIdAsync(auth0UserId, cancellationToken);
+        await GetActiveCurrentUserForUpdateAsync(userId, cancellationToken);
         var member = await _dbContext.TournamentRegistrationRosterMembers
             .Include(roster => roster.TournamentRegistration)
                 .ThenInclude(registration => registration.RosterMembers)
@@ -736,6 +737,33 @@ internal sealed class TournamentRegistrationService : ITournamentRegistrationSer
 
     private async Task<Guid> GetCurrentUserIdAsync(string auth0UserId, CancellationToken cancellationToken) =>
         (await _identityModule.GetRequiredCurrentUserAsync(auth0UserId, cancellationToken)).Id.Value;
+
+    // Takes each account's identity mutation lock inside the registration transaction, in a stable order, so a
+    // registration write is serialized with account deletion and concurrent roster writes cannot deadlock.
+    private async Task<IReadOnlyDictionary<Guid, UserProfileSummary>> GetActiveUserProfilesForUpdateAsync(
+        IEnumerable<Guid> userIds,
+        CancellationToken cancellationToken)
+    {
+        var profiles = new Dictionary<Guid, UserProfileSummary>();
+        foreach (var userId in userIds.Distinct().Order())
+        {
+            var profile = await _identityModule.GetUserProfileForUpdateAsync(new UserId(userId), cancellationToken);
+            if (profile is { IsDeleted: false })
+                profiles[userId] = profile;
+        }
+
+        return profiles;
+    }
+
+    private async Task<UserProfileSummary> GetActiveCurrentUserForUpdateAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var profiles = await GetActiveUserProfilesForUpdateAsync([userId], cancellationToken);
+        return profiles.TryGetValue(userId, out var profile)
+            ? profile
+            : throw new NotFoundException("Current user profile was not found.");
+    }
 
     private async Task<IReadOnlyDictionary<Guid, UserProfileSummary>> GetActiveUserProfilesByIdAsync(
         IReadOnlyCollection<Guid> userIds,

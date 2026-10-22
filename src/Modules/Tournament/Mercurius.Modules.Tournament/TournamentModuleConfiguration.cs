@@ -5,6 +5,7 @@ using Mercurius.Modules.Tournament.Contracts;
 using Mercurius.Modules.Tournament.Endpoints;
 using Mercurius.Modules.Tournament.Infrastructure;
 using Mercurius.Modules.Teams.Contracts;
+using Mercurius.Modules.Identity.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -37,6 +38,8 @@ public static class TournamentModuleConfiguration
         services.AddTransient<MatchBracketImpactAnalyzer>();
         services.AddTransient<IMatchService, MatchService>();
         services.AddModuleEventHandler<MatchResolutionRequiredIntegrationEvent, MatchResolutionNotificationHandler>();
+        services.AddModuleEventHandler<UserDeletedIntegrationEvent, DeletedUserTournamentCleanupHandler>();
+        services.AddModuleEventHandler<TeamCaptainSucceededIntegrationEvent, DeletedUserTournamentCleanupHandler>();
         services.AddHostedService<MatchDeadlineProcessor>();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<AssignedAdminAvailabilityCache>();

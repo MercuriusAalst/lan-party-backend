@@ -11,6 +11,7 @@ internal sealed class TeamMemberConfiguration : IEntityTypeConfiguration<TeamMem
         entity.ToTable("team_members", "teams");
         entity.HasKey(member => new { member.TeamId, member.UserId })
             .HasName("PK_team_members");
+        entity.Property(member => member.JoinedAtUtc);
         entity.HasIndex(member => member.UserId)
             .HasDatabaseName("IX_team_members_UserId");
         entity.HasOne(member => member.Team)

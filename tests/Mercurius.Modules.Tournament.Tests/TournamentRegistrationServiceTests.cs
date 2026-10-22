@@ -690,6 +690,30 @@ public class TournamentRegistrationServiceTests
     }
 
     [Fact]
+    public async Task SubmitTeamRosterAsync_RejectsDeletedTeamMemberWithoutChangingRegistration()
+    {
+        await using var dbContext = CreateDbContext();
+        var captain = CreateUser("captain");
+        var member = CreateUser("member");
+        var team = CreateTeam(captain, member);
+        var tournament = CreateTeamTournament(teamSize: 2);
+        dbContext.Users.AddRange(captain, member);
+        dbContext.Teams.Add(team);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+        member.Anonymize(DateTime.UtcNow);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            service.SubmitTeamRosterAsync(captain.Auth0UserId, tournament.Id, new SubmitTeamRosterDTO(team.Id, [captain.Id, member.Id])));
+
+        Assert.Contains("user_not_found", exception.Message);
+        Assert.False(await dbContext.Set<TournamentRegistration>().AnyAsync());
+        Assert.False(await dbContext.Set<TournamentRegistrationRosterMember>().AnyAsync());
+    }
+
+    [Fact]
     public async Task ConfirmRosterAsync_OnlyAllowsSelectedMember()
     {
         await using var dbContext = CreateDbContext();
@@ -804,8 +828,8 @@ public class TournamentRegistrationServiceTests
         var secondMember = CreateUser("second");
         var firstTeam = CreateTeam(captain, firstMember);
         var secondTeam = new Team("Team Beta", captain.Id) { Id = Guid.NewGuid() };
-        secondTeam.AddMember(captain.Id);
-        secondTeam.AddMember(secondMember.Id);
+        secondTeam.AddMember(captain.Id, DateTime.UtcNow);
+        secondTeam.AddMember(secondMember.Id, DateTime.UtcNow);
         var unregisterTournament = CreateTeamTournament(teamSize: 2);
         var adminTournament = CreateTeamTournament(teamSize: 2);
         dbContext.Users.AddRange(captain, firstMember, secondMember);
@@ -833,8 +857,8 @@ public class TournamentRegistrationServiceTests
         var activeMember = CreateUser("active");
         var pendingTeam = CreateTeam(captain, pendingMember);
         var activeTeam = new Team("Team Beta", activeCaptain.Id) { Id = Guid.NewGuid() };
-        activeTeam.AddMember(activeCaptain.Id);
-        activeTeam.AddMember(activeMember.Id);
+        activeTeam.AddMember(activeCaptain.Id, DateTime.UtcNow);
+        activeTeam.AddMember(activeMember.Id, DateTime.UtcNow);
         var tournament = CreateTeamTournament(teamSize: 2);
         dbContext.Users.AddRange(captain, pendingMember, activeCaptain, activeMember);
         dbContext.Teams.AddRange(pendingTeam, activeTeam);
@@ -954,9 +978,9 @@ public class TournamentRegistrationServiceTests
     private static Team CreateTeam(User captain, params User[] members)
     {
         var team = new Team("Team Alpha", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         foreach (var member in members)
-            team.AddMember(member.Id);
+            team.AddMember(member.Id, DateTime.UtcNow);
         return team;
     }
 

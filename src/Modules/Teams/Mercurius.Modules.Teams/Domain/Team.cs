@@ -72,13 +72,31 @@ public class Team
         Members.Remove(member);
     }
 
-    internal void AddMember(Guid userId)
+    // System cleanup for a deleted account. Unlike RemoveMember it also removes the captain, because captain
+    // succession follows in the same transaction.
+    internal bool RemoveDeletedAccount(Guid userId)
+    {
+        var member = Members.FirstOrDefault(teamMember => teamMember.UserId == userId);
+        return member is not null && Members.Remove(member);
+    }
+
+    internal void AssignSuccessor(Guid? captainUserId)
+    {
+        if (captainUserId.HasValue && !Members.Any(member => member.UserId == captainUserId.Value))
+            throw new InvalidOperationException("A captain successor must be part of the team.");
+
+        CaptainUserId = captainUserId;
+        Version++;
+    }
+
+    internal void AddMember(Guid userId, DateTime joinedAtUtc)
     {
         Members.Add(new TeamMember
         {
             Team = this,
             TeamId = Id,
-            UserId = userId
+            UserId = userId,
+            JoinedAtUtc = joinedAtUtc
         });
     }
 

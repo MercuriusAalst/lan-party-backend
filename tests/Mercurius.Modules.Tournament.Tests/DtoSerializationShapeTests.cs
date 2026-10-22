@@ -29,8 +29,8 @@ public class DtoSerializationShapeTests
             Id = Guid.NewGuid(),
             LogoUrl = "/images/alpha.png"
         };
-        team.AddMember(captain.Id);
-        team.AddMember(member.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var invite = new TeamInvite
         {
             Id = Guid.NewGuid(),
@@ -53,8 +53,8 @@ public class DtoSerializationShapeTests
         var captain = CreateUser(3);
         var member = CreateUser(4);
         var team = new Team("Roster Team", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
-        team.AddMember(member.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(member.Id, DateTime.UtcNow);
         var tournament = CreateTournament(ParticipationMode.Team, teamSize: 2);
         var registration = CreateTeamRegistration(tournament, team, captain, [captain, member], TournamentRegistrationStatus.Active);
         tournament.TournamentRegistrations.Add(registration);

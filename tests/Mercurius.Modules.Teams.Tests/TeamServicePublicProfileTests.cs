@@ -23,9 +23,9 @@ public class TeamServicePublicProfileTests
         var alphaMember = CreateUser("Alpha");
         alphaMember.ProfilePictureUrl = "/images/alpha.webp";
         var team = new Team("Mercury Wolves", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
-        team.AddMember(zetaMember.Id);
-        team.AddMember(alphaMember.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(zetaMember.Id, DateTime.UtcNow);
+        team.AddMember(alphaMember.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, zetaMember, alphaMember);
         dbContext.Teams.Add(team);
 
@@ -74,10 +74,10 @@ public class TeamServicePublicProfileTests
         var blankMember = CreateUser(" ");
         var invitedUser = CreateUser("Invited");
         var team = new Team("Privacy Squad", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
-        team.AddMember(bravoMember.Id);
-        team.AddMember(unnamedMember.Id);
-        team.AddMember(blankMember.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(bravoMember.Id, DateTime.UtcNow);
+        team.AddMember(unnamedMember.Id, DateTime.UtcNow);
+        team.AddMember(blankMember.Id, DateTime.UtcNow);
         dbContext.Users.AddRange(captain, bravoMember, unnamedMember, blankMember, invitedUser);
         team.TeamInvites.Add(new TeamInvite
         {
@@ -104,7 +104,7 @@ public class TeamServicePublicProfileTests
         await using var dbContext = CreateDbContext();
         var captain = CreateUser("CaptainTournament");
         var team = new Team("Tournament Squad", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         dbContext.Users.Add(captain);
         dbContext.Teams.Add(team);
 
@@ -114,7 +114,7 @@ public class TeamServicePublicProfileTests
 
         var otherCaptain = CreateUser("CaptainOther");
         var otherTeam = new Team("Other Team", otherCaptain.Id) { Id = Guid.NewGuid() };
-        otherTeam.AddMember(otherCaptain.Id);
+        otherTeam.AddMember(otherCaptain.Id, DateTime.UtcNow);
         dbContext.Users.Add(otherCaptain);
         var hiddenTournament = CreateTournament(Guid.Parse("00000000-0000-0000-0000-000000000004"), "Aardvark Cup");
 

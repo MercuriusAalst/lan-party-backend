@@ -88,7 +88,7 @@ public class PublicParticipantPrivacyDTOTests
         var team = CreateTeam(30);
         var deletedMember = CreateUser(31);
         deletedMember.IsDeleted = true;
-        team.AddMember(deletedMember.Id);
+        team.AddMember(deletedMember.Id, DateTime.UtcNow);
         var placement = new Placement
         {
             Place = 1,
@@ -140,8 +140,8 @@ public class PublicParticipantPrivacyDTOTests
         var captain = CreateUser(5);
         var rosterMember = CreateUser(6);
         var team = new Team("Roster Team", captain.Id) { Id = Guid.NewGuid() };
-        team.AddMember(captain.Id);
-        team.AddMember(CreateUser(99).Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(CreateUser(99).Id, DateTime.UtcNow);
         var tournament = CreateTournament(ParticipationMode.Team);
         var registration = new TournamentRegistration
         {
@@ -327,8 +327,8 @@ public class PublicParticipantPrivacyDTOTests
         {
             Id = Guid.NewGuid()
         };
-        team.AddMember(captain.Id);
-        team.AddMember(teammate.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
+        team.AddMember(teammate.Id, DateTime.UtcNow);
         return team;
     }
 }

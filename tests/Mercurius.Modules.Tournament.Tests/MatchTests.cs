@@ -487,7 +487,7 @@ public class MatchTests
             Id = Guid.NewGuid(),
             CaptainUserId = captain.Id
         };
-        team.AddMember(captain.Id);
+        team.AddMember(captain.Id, DateTime.UtcNow);
         return team;
     }
 }
