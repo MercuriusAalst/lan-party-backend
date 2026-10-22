@@ -70,6 +70,11 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
         {
             throw;
         }
+        catch (Auth0ManagementRequestException exception)
+        {
+            // These messages are deliberately curated and contain no provider subject, URI or body.
+            throw new Auth0CleanupRetryException(exception.Message);
+        }
         catch
         {
             // Outbox LastError persists exception text. Never retain provider URL or subject.
@@ -115,5 +120,6 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
     private sealed class Auth0CleanupRetryException : Exception
     {
         public Auth0CleanupRetryException() : base("Auth0 account cleanup is temporarily unavailable.") { }
+        public Auth0CleanupRetryException(string safeMessage) : base(safeMessage) { }
     }
 }

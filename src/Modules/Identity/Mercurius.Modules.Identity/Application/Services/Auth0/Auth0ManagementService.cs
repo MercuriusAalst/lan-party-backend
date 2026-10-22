@@ -8,6 +8,7 @@ using Mercurius.Modules.Identity.Options;
 using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
 
 namespace Mercurius.Modules.Identity.Application.Services.Auth0;
 
@@ -41,7 +42,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri($"api/v2/users/{Uri.EscapeDataString(auth0UserId)}"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendWithoutTracingAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("Auth0 profile sync failed with status {StatusCode}.", response.StatusCode);
@@ -63,7 +64,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri($"api/v2/users/{Uri.EscapeDataString(auth0UserId)}"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await SendWithoutTracingAsync(request, cancellationToken);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return null;
             if (!response.IsSuccessStatusCode)
@@ -92,7 +93,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         {
             using var request = new HttpRequestMessage(HttpMethod.Delete, BuildUri($"api/v2/users/{Uri.EscapeDataString(auth0UserId)}"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await SendWithoutTracingAsync(request, cancellationToken);
             if (response.StatusCode is System.Net.HttpStatusCode.NoContent or System.Net.HttpStatusCode.NotFound)
                 return;
             if (!response.IsSuccessStatusCode)
@@ -187,7 +188,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
             using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(path));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await SendWithoutTracingAsync(request, cancellationToken);
             if (notFoundIsEmpty && response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return null;
             response.EnsureSuccessStatusCode();
@@ -223,7 +224,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
         request.Content = JsonContent.Create(new VerificationEmailRequest(auth0UserId));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendWithoutTracingAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -235,7 +236,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
             return;
         }
 
-        using var response = await _httpClient.PostAsJsonAsync(
+        using var response = await PostAsJsonWithoutTracingAsync(
             BuildUri("dbconnections/change_password"),
             new PasswordResetRequest(
                 _options.PasswordResetClientId!,
@@ -244,6 +245,23 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
             cancellationToken);
 
         response.EnsureSuccessStatusCode();
+    }
+
+    private async Task<HttpResponseMessage> SendWithoutTracingAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        using var suppression = SuppressInstrumentationScope.Begin();
+        return await _httpClient.SendAsync(request, cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> PostAsJsonWithoutTracingAsync<T>(
+        Uri requestUri,
+        T value,
+        CancellationToken cancellationToken)
+    {
+        using var suppression = SuppressInstrumentationScope.Begin();
+        return await _httpClient.PostAsJsonAsync(requestUri, value, cancellationToken);
     }
 
     private async Task<string> GetManagementTokenAsync(CancellationToken cancellationToken)
@@ -263,7 +281,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
                 return _managementToken;
             }
 
-            using var response = await _httpClient.PostAsJsonAsync(
+            using var response = await PostAsJsonWithoutTracingAsync(
                 BuildUri("oauth/token"),
                 new ManagementTokenRequest(
                     _options.ManagementClientId!,

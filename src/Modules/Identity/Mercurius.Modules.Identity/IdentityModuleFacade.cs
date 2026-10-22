@@ -13,13 +13,16 @@ internal sealed class IdentityModuleFacade : IIdentityModule
 {
     private readonly IIdentityDbContext _dbContext;
     private readonly IAuth0ManagementService _auth0ManagementService;
+    private readonly IAuthenticatedIdentityContext _authenticatedIdentityContext;
 
     public IdentityModuleFacade(
         IIdentityDbContext dbContext,
-        IAuth0ManagementService auth0ManagementService)
+        IAuth0ManagementService auth0ManagementService,
+        IAuthenticatedIdentityContext authenticatedIdentityContext)
     {
         _dbContext = dbContext;
         _auth0ManagementService = auth0ManagementService;
+        _authenticatedIdentityContext = authenticatedIdentityContext;
     }
 
     public Task<UserProfileSummary?> GetUserProfileAsync(
@@ -41,17 +44,24 @@ internal sealed class IdentityModuleFacade : IIdentityModule
         return await GetUserProfileAsync(userId, cancellationToken);
     }
 
-    public Task<UserProfileSummary?> GetUserProfileByAuth0IdAsync(
+    public async Task<UserProfileSummary?> GetUserProfileByAuth0IdAsync(
         string auth0UserId,
         CancellationToken cancellationToken = default)
     {
         var normalizedAuth0UserId = auth0UserId.Trim();
-
-        return _dbContext.Users
+        var user = await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.Auth0UserId == normalizedAuth0UserId)
             .Select(user => ToUserProfileSummary(user))
             .FirstOrDefaultAsync(cancellationToken);
+        if (_authenticatedIdentityContext is { IsInitialized: true } pin)
+        {
+            if (!string.Equals(pin.Subject, normalizedAuth0UserId, StringComparison.Ordinal) ||
+                pin.UserId != user?.Id.Value)
+                throw new UnauthorizedAccessException("The authenticated account changed during this request.");
+        }
+
+        return user;
     }
 
     public Task<PublicUserProfileSummary?> GetPublicProfileByUsernameAsync(

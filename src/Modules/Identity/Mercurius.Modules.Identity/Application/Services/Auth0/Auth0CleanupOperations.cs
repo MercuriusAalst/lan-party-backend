@@ -34,13 +34,16 @@ internal sealed class Auth0CleanupOperations
         pageSize = Math.Clamp(pageSize, 1, 100);
         var totalJobs = await _identityDb.Auth0AccountCleanups.CountAsync(cancellationToken);
         var pendingJobs = await _identityDb.Auth0AccountCleanups.CountAsync(job => job.CompletedAtUtc == null, cancellationToken);
-        var jobs = await _identityDb.Auth0AccountCleanups.AsNoTracking()
-            .OrderBy(job => job.CompletedAtUtc != null)
-            .ThenByDescending(job => job.RequestedAtUtc)
-            .ThenBy(job => job.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
+        var offset = ((long)page - 1) * pageSize;
+        var jobs = offset > int.MaxValue
+            ? []
+            : await _identityDb.Auth0AccountCleanups.AsNoTracking()
+                .OrderBy(job => job.CompletedAtUtc != null)
+                .ThenByDescending(job => job.RequestedAtUtc)
+                .ThenBy(job => job.Id)
+                .Skip((int)offset)
+                .Take(pageSize)
+                .ToListAsync(cancellationToken);
         var messageIds = jobs.Select(job => job.OutboxMessageId).ToArray();
         var messages = await _eventDb.OutboxMessages.AsNoTracking()
             .Where(message => messageIds.Contains(message.Id))
@@ -89,6 +92,19 @@ internal sealed class Auth0CleanupOperations
                 .SetProperty(message => message.DeadLetteredAtUtc, (DateTime?)null)
                 .SetProperty(message => message.LastError, (string?)null), cancellationToken);
         return updated == 1;
+    }
+
+    public async Task<bool> IsDeletionPendingAsync(Guid? userId, CancellationToken cancellationToken)
+    {
+        if (userId is not Guid id)
+            return false;
+
+        return await _identityDb.Auth0AccountCleanups.AnyAsync(
+                   job => job.UserId == id && job.CompletedAtUtc == null,
+                   cancellationToken) ||
+               await _identityDb.Users.AnyAsync(
+                   user => user.Id == id && user.IsDeleted && !user.Auth0UserId.StartsWith("tombstone:"),
+                   cancellationToken);
     }
 }
 

@@ -76,7 +76,7 @@ public class UserTests
         dbContext.Users.AddRange(publicUser, deletedUser, incompleteUser);
         await dbContext.SaveChangesAsync();
 
-        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)));
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)), new AuthenticatedIdentityContext());
         var usernames = await module.GetPublicUsernamesByIdsAsync(
             [new UserId(publicUser.Id), new UserId(deletedUser.Id), new UserId(incompleteUser.Id)]);
 
@@ -99,7 +99,7 @@ public class UserTests
         {
             HasAdminRole = true
         };
-        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0, new AuthenticatedIdentityContext());
 
         Assert.True(await module.IsAdminUserAsync(new UserId(activeUser.Id)));
         Assert.False(await module.IsAdminUserAsync(new UserId(deletedUser.Id)));
@@ -122,7 +122,7 @@ public class UserTests
         {
             AdminAuth0UserIds = [matchingAdmin.Auth0UserId, otherAdmin.Auth0UserId, deletedAdmin.Auth0UserId]
         };
-        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0, new AuthenticatedIdentityContext());
 
         var admins = await module.GetAdminUsersAsync("adminone", 100);
 
@@ -145,7 +145,7 @@ public class UserTests
         {
             AdminAuth0UserIds = users.Select(user => user.Auth0UserId).ToArray()
         };
-        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0, new AuthenticatedIdentityContext());
 
         var firstPage = await module.GetAdminUsersAsync(string.Empty, 50, CancellationToken.None, 1);
         var secondPage = await module.GetAdminUsersAsync(string.Empty, 50, CancellationToken.None, 2);
@@ -187,7 +187,7 @@ public class UserTests
                 deletedAdmin.Auth0UserId
             ]
         };
-        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0);
+        var module = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0, new AuthenticatedIdentityContext());
 
         var unfiltered = await module.GetAdminUsersAsync(string.Empty, 50);
         var filtered = await module.GetAdminUsersAsync("complete", 50);
@@ -680,6 +680,27 @@ public class UserTests
     }
 
     [Fact]
+    public async Task GetCurrentUserAsync_ReturnsDeletedAccountForLegacyDeletedSessionBeforeBackfill()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = CreateStoredUser("auth0|legacy-deleted", "legacy@example.com");
+        user.IsDeleted = true;
+        user.DeletedAtUtc = DateTime.UtcNow;
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var identityContext = new AuthenticatedIdentityContext();
+        identityContext.Pin(user.Auth0UserId, null, shouldReturnDeletedSession: true, issuedAtUnixSeconds: "1");
+        var service = new UserService(
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
+            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
+            new RecordingIdentityModule(),
+            TimeProvider.System,
+            identityContext);
+
+        await Assert.ThrowsAsync<DeletedAccountException>(() => service.GetCurrentUserAsync(user.Auth0UserId));
+    }
+
+    [Fact]
     public async Task CreateCurrentUserAsync_CreatesMissingCurrentUserFromAuthenticatedSubject()
     {
         await using var dbContext = CreateDbContext();
@@ -902,6 +923,7 @@ public class UserTests
             new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
             new RecordingIdentityModule(),
             TimeProvider.System,
+            new AuthenticatedIdentityContext(),
             media);
         var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
         {
@@ -941,6 +963,7 @@ public class UserTests
             new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
             new RecordingIdentityModule(),
             TimeProvider.System,
+            new AuthenticatedIdentityContext(),
             media);
         var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
         {
@@ -968,6 +991,7 @@ public class UserTests
             new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
             new RecordingIdentityModule(),
             TimeProvider.System,
+            new AuthenticatedIdentityContext(),
             media);
         var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
         {
@@ -998,6 +1022,7 @@ public class UserTests
             new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
             new RecordingIdentityModule(),
             TimeProvider.System,
+            new AuthenticatedIdentityContext(),
             media);
         var publisher = new ThrowingModuleEventPublisher();
         var service = new UserIntegrationEventPublishingService(
@@ -1006,6 +1031,7 @@ public class UserTests
             publisher,
             new NoopRealtimeConnectionManager(),
             CreateLifecycleService(identityDbContext, publisher),
+            new AuthenticatedIdentityContext(),
             media);
         var upload = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream([1, 2, 3]), 0, 3, "picture", "photo.png")
         {
@@ -1451,6 +1477,7 @@ public class UserTests
             new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
             new RecordingIdentityModule(),
             TimeProvider.System,
+            new AuthenticatedIdentityContext(),
             media);
         return new UserIntegrationEventPublishingService(
             inner,
@@ -1458,6 +1485,7 @@ public class UserTests
             publisher,
             realtimeConnectionManager ?? new NoopRealtimeConnectionManager(),
             CreateLifecycleService(identityDbContext, publisher),
+            new AuthenticatedIdentityContext(),
             media);
     }
 
@@ -1496,7 +1524,7 @@ public class UserTests
         MercuriusDBContext dbContext,
         IAuth0ManagementService auth0ManagementService,
         IIdentityModule? identityModule = null) =>
-        new(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0ManagementService, identityModule ?? new RecordingIdentityModule(), TimeProvider.System);
+        new(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), auth0ManagementService, identityModule ?? new RecordingIdentityModule(), TimeProvider.System, new AuthenticatedIdentityContext());
 
     private static void AssertUniqueIndex(IEnumerable<IIndex> indexes, string propertyName, string? filter)
     {

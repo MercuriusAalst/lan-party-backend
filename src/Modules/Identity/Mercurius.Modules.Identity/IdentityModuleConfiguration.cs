@@ -27,6 +27,8 @@ public static class IdentityModuleConfiguration
         services.AddSingleton<Auth0SubjectCryptography>();
         services.AddScoped<Auth0AccountLifecycleService>();
         services.AddScoped<Auth0CleanupOperations>();
+        services.AddScoped<IAuthenticatedIdentityContext, AuthenticatedIdentityContext>();
+        services.AddScoped<IIdentityTokenValidator, IdentityTokenValidator>();
         services.AddHostedService<Auth0LegacyAccountBackfill>();
         services.AddModuleEventHandler<Auth0AccountCleanupRequestedIntegrationEvent, Auth0AccountCleanupHandler>();
         services.AddTransient<IIdentityModule, IdentityModuleFacade>();

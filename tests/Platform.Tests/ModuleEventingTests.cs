@@ -539,7 +539,7 @@ public class ModuleEventingTests
             })
             .Build();
         var moduleEventPublisher = new ModuleEventPublisher(dbContext);
-        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService());
+        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new AuthenticatedIdentityContext());
         var teamsDbContext = new TeamsDbContextAdapter<MercuriusDBContext>(dbContext);
 
         return new TeamEventPublishingDecorator(
@@ -572,11 +572,12 @@ public class ModuleEventingTests
         }));
         var lifecycle = new Auth0AccountLifecycleService(identityDbContext, publisher, cryptography, TimeProvider.System);
         return new UserIntegrationEventPublishingService(
-            new UserService(identityDbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(identityDbContext, new NoopAuth0ManagementService()), TimeProvider.System),
+            new UserService(identityDbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(identityDbContext, new NoopAuth0ManagementService(), new AuthenticatedIdentityContext()), TimeProvider.System, new AuthenticatedIdentityContext()),
             identityDbContext,
             publisher,
             realtimeConnectionManager ?? new NoopRealtimeConnectionManager(),
-            lifecycle);
+            lifecycle,
+            new AuthenticatedIdentityContext());
     }
 
     private static User CreateUser()
@@ -605,6 +606,11 @@ public class ModuleEventingTests
         {
             return Task.FromResult(new Auth0ProfileSnapshot(null, null, false));
         }
+
+        public Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<DateTime?>(null);
+
+        public Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default)
         {

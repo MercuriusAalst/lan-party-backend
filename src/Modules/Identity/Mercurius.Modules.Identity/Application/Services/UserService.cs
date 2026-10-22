@@ -25,12 +25,14 @@ internal class UserService : IUserService
     private readonly IIdentityModule _identityModule;
     private readonly IMediaModule? _mediaModule;
     private readonly ILogger<UserService>? _logger;
+    private readonly IAuthenticatedIdentityContext _authenticatedIdentityContext;
 
     public UserService(
         IIdentityDbContext dbContext,
         IAuth0ManagementService auth0ManagementService,
         IIdentityModule identityModule,
         TimeProvider timeProvider,
+        IAuthenticatedIdentityContext authenticatedIdentityContext,
         IMediaModule? mediaModule = null,
         ILogger<UserService>? logger = null)
     {
@@ -40,6 +42,7 @@ internal class UserService : IUserService
         _timeProvider = timeProvider;
         _mediaModule = mediaModule;
         _logger = logger;
+        _authenticatedIdentityContext = authenticatedIdentityContext;
     }
 
     public async Task<IReadOnlyList<GetUserDTO>> GetAllUsersAsync(
@@ -109,8 +112,14 @@ internal class UserService : IUserService
     internal async Task<Auth0ProfileSnapshot> GetAuth0ProfileForCurrentUserCreationAsync(string auth0UserId)
     {
         var normalizedAuth0UserId = NormalizeAuth0UserId(auth0UserId);
-        if (await _dbContext.Users.AnyAsync(u => u.Auth0UserId == normalizedAuth0UserId))
-            throw new ValidationException("Current user profile already exists.");
+        var existingUser = await _dbContext.Users.AsNoTracking()
+            .Where(user => user.Auth0UserId == normalizedAuth0UserId)
+            .Select(user => new { user.Id, user.IsDeleted })
+            .FirstOrDefaultAsync();
+        if (existingUser is { IsDeleted: true })
+            throw new DeletedAccountException();
+        if (existingUser is not null)
+            throw new ConflictException("profile_exists", "Current user profile already exists.");
 
         return await _auth0ManagementService.GetUserProfileAsync(normalizedAuth0UserId);
     }
@@ -617,7 +626,22 @@ internal class UserService : IUserService
         var normalizedAuth0UserId = NormalizeAuth0UserId(auth0UserId);
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Auth0UserId == normalizedAuth0UserId);
         if (user == null)
+        {
+            if (_authenticatedIdentityContext is { IsInitialized: true } pin &&
+                string.Equals(pin.Subject, normalizedAuth0UserId, StringComparison.Ordinal) &&
+                pin.UserId.HasValue)
+                throw new UnauthorizedAccessException("The authenticated account changed during this request.");
+            if (_authenticatedIdentityContext is { ShouldReturnDeletedSession: true } context &&
+                string.Equals(context.Subject, normalizedAuth0UserId, StringComparison.Ordinal))
+                throw new DeletedAccountException();
             throw new NotFoundException("Current user profile was not found.");
+        }
+
+        if (_authenticatedIdentityContext is { ShouldReturnDeletedSession: true } deletedSession &&
+            string.Equals(deletedSession.Subject, normalizedAuth0UserId, StringComparison.Ordinal))
+            throw new DeletedAccountException();
+
+        EnsurePinnedUser(user, normalizedAuth0UserId);
 
         return user;
     }
@@ -626,7 +650,7 @@ internal class UserService : IUserService
     {
         var normalizedAuth0UserId = NormalizeAuth0UserId(auth0UserId);
         if (await _dbContext.Users.AnyAsync(u => u.Auth0UserId == normalizedAuth0UserId))
-            throw new ValidationException("Auth0 user already exists");
+            throw new ConflictException("profile_exists", "Current user profile already exists.");
 
         var now = UtcNow();
         var user = new User
@@ -742,22 +766,32 @@ internal class UserService : IUserService
         bool ensureActive = true)
     {
         var normalized = NormalizeAuth0UserId(auth0UserId);
-        var id = await _dbContext.Users.AsNoTracking()
-            .Where(user => user.Auth0UserId == normalized)
-            .Select(user => (Guid?)user.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (id is null)
-            throw new NotFoundException("Current user profile was not found.");
-
         var transaction = _dbContext.Database.CurrentTransaction is null
             ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
         try
         {
+            await UserMutationLock.AcquireSubjectAsync(_dbContext, normalized, cancellationToken);
+            var id = await _dbContext.Users.AsNoTracking()
+                .Where(candidate => candidate.Auth0UserId == normalized)
+                .Select(candidate => (Guid?)candidate.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (id is null)
+            {
+                if (_authenticatedIdentityContext is { IsInitialized: true } pin &&
+                    string.Equals(pin.Subject, normalized, StringComparison.Ordinal) &&
+                    pin.UserId.HasValue)
+                    throw new UnauthorizedAccessException("The authenticated account changed during this request.");
+                if (_authenticatedIdentityContext is { ShouldReturnDeletedSession: true } deletedSession &&
+                    string.Equals(deletedSession.Subject, normalized, StringComparison.Ordinal))
+                    throw new DeletedAccountException();
+                throw new NotFoundException("Current user profile was not found.");
+            }
             await UserMutationLock.AcquireAsync(_dbContext, id.Value, cancellationToken);
             var user = await _dbContext.Users.FirstOrDefaultAsync(candidate => candidate.Id == id.Value, cancellationToken);
             if (user is null)
                 throw new NotFoundException("Current user profile was not found.");
+            EnsurePinnedUser(user, normalized);
             if (ensureActive)
                 EnsureActive(user);
             return (user, transaction);
@@ -771,6 +805,15 @@ internal class UserService : IUserService
             }
             throw;
         }
+    }
+
+    private void EnsurePinnedUser(User user, string subject)
+    {
+        if (_authenticatedIdentityContext is not { IsInitialized: true } pin ||
+            !string.Equals(pin.Subject, subject, StringComparison.Ordinal))
+            return;
+        if (pin.UserId != user.Id)
+            throw new UnauthorizedAccessException("The authenticated account changed during this request.");
     }
 
     private async Task<(User User, IDbContextTransaction? Transaction)> GetUserForMutationByIdAsync(

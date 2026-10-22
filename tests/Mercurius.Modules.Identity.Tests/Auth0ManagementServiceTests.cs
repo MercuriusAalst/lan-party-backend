@@ -42,6 +42,55 @@ public sealed class Auth0ManagementServiceTests
         Assert.Contains("google-oauth2%7Csubject%2Fwith%20space", deletePath, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task GetUserCreatedAt_TreatsNotFoundAsAlreadyAbsent()
+    {
+        using var httpClient = new HttpClient(new StubHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("oauth/token", StringComparison.Ordinal))
+                return Json("{\"access_token\":\"token\",\"expires_in\":3600}");
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }));
+        var service = CreateService(httpClient);
+
+        Assert.Null(await service.GetUserCreatedAtAsync("auth0|absent"));
+    }
+
+    [Fact]
+    public async Task GetUserCreatedAt_ReportsMissingManagementConfigurationWithoutCallingHttp()
+    {
+        using var httpClient = new HttpClient(new StubHandler(_ => throw new Xunit.Sdk.XunitException("HTTP should not be called.")));
+        var service = new Auth0ManagementService(
+            httpClient,
+            Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions { Authority = "https://tenant.example/" }),
+            NullLogger<Auth0ManagementService>.Instance,
+            TimeProvider.System);
+
+        var exception = await Assert.ThrowsAsync<Auth0ManagementRequestException>(
+            () => service.GetUserCreatedAtAsync("auth0|missing-config"));
+
+        Assert.Equal("Auth0 Management API is not configured.", exception.Message);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task GetUserCreatedAt_PropagatesProviderStatusForDurableRetry(HttpStatusCode statusCode)
+    {
+        using var httpClient = new HttpClient(new StubHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("oauth/token", StringComparison.Ordinal))
+                return Json("{\"access_token\":\"token\",\"expires_in\":3600}");
+            return new HttpResponseMessage(statusCode);
+        }));
+        var service = CreateService(httpClient);
+
+        var exception = await Assert.ThrowsAsync<Auth0ManagementRequestException>(
+            () => service.GetUserCreatedAtAsync("auth0|retry"));
+
+        Assert.Contains(((int)statusCode).ToString(), exception.Message, StringComparison.Ordinal);
+    }
+
     private static Auth0ManagementService CreateService(HttpClient httpClient)
     {
         var options = Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions

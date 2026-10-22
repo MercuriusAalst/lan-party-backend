@@ -79,7 +79,7 @@ internal static class TeamsTestHarness
 
     // The production identity facade, which takes the real identity mutation lock.
     public static IIdentityModule CreateIdentityFacade(MercuriusDBContext dbContext) =>
-        new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!);
+        new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!, new Mercurius.Modules.Identity.Application.Services.AuthenticatedIdentityContext());
 
     public static TeamsModuleFacade CreateTeamsFacade(MercuriusDBContext dbContext, IIdentityModule? identityModule = null) =>
         new(

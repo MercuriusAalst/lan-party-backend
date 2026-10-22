@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Routing;
 using System.Security.Claims;
 using Platform.Extensions;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Identity.Contracts;
 
 namespace Mercurius.Modules.Identity.Endpoints;
 
@@ -115,18 +116,25 @@ internal static class UserEndpoints
         })
         .RequireAuthorization();
 
-        group.MapDelete("/me", async (ClaimsPrincipal user, IUserService userService) =>
+        group.MapDelete("/me", async (ClaimsPrincipal user, IUserService userService, IAuthenticatedIdentityContext identityContext, Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
         {
             var response = await userService.AnonymizeCurrentUserAsync(user.GetAuth0UserId());
-            return Results.Accepted(value: new { message = response.Message, deletionPending = true });
+            var deletionPending = await cleanupOperations.IsDeletionPendingAsync(identityContext.UserId, cancellationToken);
+            return Results.Accepted(value: new { message = response.Message, deletionPending });
         })
         .RequireAuthorization();
 
         var adminGroup = group.MapGroup("")
             .RequireAuthorization(new AuthorizeAttribute { Roles = "admin" });
 
-        adminGroup.MapGet("/auth0-cleanups", async (int? page, int? pageSize, [Microsoft.AspNetCore.Mvc.FromServices] Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
-            Results.Ok(await cleanupOperations.GetStatusAsync(page ?? 1, pageSize ?? 50, cancellationToken)));
+        adminGroup.MapGet("/auth0-cleanups", async Task<IResult> (int? page, int? pageSize, [Microsoft.AspNetCore.Mvc.FromServices] Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
+        {
+            var validationProblem = ValidatePaging(page, pageSize);
+            if (validationProblem is not null)
+                return validationProblem;
+
+            return Results.Ok(await cleanupOperations.GetStatusAsync(page ?? 1, pageSize ?? 50, cancellationToken));
+        });
 
         adminGroup.MapPost("/auth0-cleanups/{cleanupId:guid}/retry", async (Guid cleanupId, [Microsoft.AspNetCore.Mvc.FromServices] Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
             await cleanupOperations.RetryAsync(cleanupId, cancellationToken)
@@ -165,22 +173,27 @@ internal static class UserEndpoints
             return await userService.UpdateUserAsync(id, request);
         });
 
-        adminGroup.MapDelete("/{id:guid}", async (Guid id, IUserService userService) =>
+        adminGroup.MapDelete("/{id:guid}", async (Guid id, IUserService userService, Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
         {
             await userService.DeleteUserByIdAsync(id);
-            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending = true });
+            var deletionPending = await cleanupOperations.IsDeletionPendingAsync(id, cancellationToken);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
 
-        adminGroup.MapDelete("/{username:nonguid}", async (string username, IUserService userService) =>
+        adminGroup.MapDelete("/{username:nonguid}", async (string username, IUserService userService, Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
         {
+            var target = await userService.GetUserByUsernameAsync(username);
             await userService.DeleteUserAsync(username);
-            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending = true });
+            var deletionPending = await cleanupOperations.IsDeletionPendingAsync(target.Id, cancellationToken);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
 
-        adminGroup.MapDelete("/{username}/account", async (string username, IUserService userService) =>
+        adminGroup.MapDelete("/{username}/account", async (string username, IUserService userService, Auth0CleanupOperations cleanupOperations, CancellationToken cancellationToken) =>
         {
+            var target = await userService.GetUserByUsernameAsync(username);
             await userService.DeleteUserAsync(username);
-            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending = true });
+            var deletionPending = await cleanupOperations.IsDeletionPendingAsync(target.Id, cancellationToken);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
 
         return group;

@@ -21,6 +21,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     private readonly IModuleEventPublisher _moduleEventPublisher;
     private readonly IRealtimeConnectionManager _realtimeConnectionManager;
     private readonly Auth0AccountLifecycleService _accountLifecycle;
+    private readonly IAuthenticatedIdentityContext _authenticatedIdentityContext;
     private readonly IMediaModule? _mediaModule;
     private readonly ILogger<UserIntegrationEventPublishingService>? _logger;
 
@@ -30,6 +31,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         IModuleEventPublisher moduleEventPublisher,
         IRealtimeConnectionManager realtimeConnectionManager,
         Auth0AccountLifecycleService accountLifecycle,
+        IAuthenticatedIdentityContext authenticatedIdentityContext,
         IMediaModule? mediaModule = null,
         ILogger<UserIntegrationEventPublishingService>? logger = null)
     {
@@ -38,6 +40,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         _moduleEventPublisher = moduleEventPublisher;
         _realtimeConnectionManager = realtimeConnectionManager;
         _accountLifecycle = accountLifecycle;
+        _authenticatedIdentityContext = authenticatedIdentityContext;
         _mediaModule = mediaModule;
         _logger = logger;
     }
@@ -307,7 +310,10 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         {
             auth0Subject = auth0Subject.Trim();
             await UserMutationLock.AcquireSubjectAsync(_dbContext, auth0Subject);
-            await _accountLifecycle.EnsureSubjectCanRegisterAsync(auth0Subject);
+            await _accountLifecycle.EnsureSubjectCanRegisterAsync(
+                auth0Subject,
+                _authenticatedIdentityContext.IssuedAtUnixSeconds,
+                string.Equals(_authenticatedIdentityContext.Subject, auth0Subject, StringComparison.Ordinal));
         }
         var user = await mutation();
 

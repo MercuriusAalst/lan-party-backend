@@ -61,12 +61,23 @@ internal sealed class Auth0AccountLifecycleService
 
     public DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
-    public async Task EnsureSubjectCanRegisterAsync(string subject, CancellationToken cancellationToken = default)
+    public async Task EnsureSubjectCanRegisterAsync(string subject, string? issuedAtUnixSeconds, bool enforceCallerToken, CancellationToken cancellationToken = default)
     {
+        var legacyDeletedUserExists = await _dbContext.Users.AsNoTracking()
+            .AnyAsync(user => user.Auth0UserId == subject.Trim() && user.IsDeleted, cancellationToken);
+        if (legacyDeletedUserExists)
+            throw new DeletedAccountException();
         var subjectHash = Auth0SubjectCryptography.Hash(subject.Trim());
         var fence = await _dbContext.Auth0SubjectFences.AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.SubjectHash == subjectHash, cancellationToken);
         if (fence?.PendingCleanupJobId is not null)
             throw new ConflictException("account_cleanup_pending", "This account is still being removed from the identity provider.");
+        var currentUserExists = await _dbContext.Users.AsNoTracking()
+            .AnyAsync(user => user.Auth0UserId == subject.Trim(), cancellationToken);
+        if (currentUserExists)
+            throw new ConflictException("profile_exists", "The account already has a local profile.");
+        if (enforceCallerToken && fence?.RejectTokensBeforeUnixSeconds is long cutoff &&
+            (!long.TryParse(issuedAtUnixSeconds, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var issuedAt) || issuedAt < cutoff))
+            throw new UnauthorizedAccessException("The authenticated account changed during this request.");
     }
 }
