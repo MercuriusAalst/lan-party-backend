@@ -1,8 +1,9 @@
 using Mercurius.Modules.Identity.Application.DTOs;
+using Mercurius.Modules.Identity.Application.Services;
 
 namespace Mercurius.Modules.Identity.Application.Services.Auth0;
 
-internal interface IAuth0ManagementService
+internal interface IAuth0ManagementService : IIdentityProviderAccountService
 {
     Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default);
     Task<bool> HasAdminRoleAsync(string auth0UserId, CancellationToken cancellationToken = default) =>

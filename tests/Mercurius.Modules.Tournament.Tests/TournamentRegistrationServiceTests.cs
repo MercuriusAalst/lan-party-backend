@@ -919,7 +919,7 @@ public class TournamentRegistrationServiceTests
         MercuriusDBContext dbContext,
         ITournamentRealtimePublisher? publisher = null)
     {
-        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new TournamentTestSupport.NoopAuth0ManagementService());
+        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new TournamentTestSupport.NoopAuth0ManagementService(), new Mercurius.Modules.Identity.Application.Services.AuthenticatedIdentityContext());
         var teamsModule = new TeamsModuleFacade(
             new TeamsDbContextAdapter<MercuriusDBContext>(dbContext),
             identityModule,

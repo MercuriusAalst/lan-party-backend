@@ -11,6 +11,8 @@ The back-end runs as exactly one replica. This is a deliberate decision, not an 
 
 The outbox dispatcher and the Discovery projection rebuild are already safe with more than one instance: outbox messages are claimed with a lease token before dispatch, and rebuild jobs are coordinated through the database.
 
+External account deletion adapter configuration, cleanup retry operations, and provider-generation limitations are documented in [auth0-account-lifecycle.md](auth0-account-lifecycle.md).
+
 ## Scaling out
 
 Before running more than one replica:

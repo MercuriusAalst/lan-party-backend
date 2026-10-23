@@ -26,6 +26,11 @@ internal static class TournamentTestSupport
         public Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new Auth0ProfileSnapshot(null, null, false));
 
+        public Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<DateTime?>(null);
+
+        public Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
         public Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SendPasswordResetEmailAsync(string email, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }

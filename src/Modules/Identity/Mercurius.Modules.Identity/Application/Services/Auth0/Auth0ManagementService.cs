@@ -2,11 +2,13 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Globalization;
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity.Options;
 using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
 
 namespace Mercurius.Modules.Identity.Application.Services.Auth0;
 
@@ -40,10 +42,10 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri($"api/v2/users/{Uri.EscapeDataString(auth0UserId)}"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendWithoutTracingAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning("Auth0 profile sync failed for user {Auth0UserId} with status {StatusCode}.", auth0UserId, response.StatusCode);
+            _logger.LogWarning("Auth0 profile sync failed with status {StatusCode}.", response.StatusCode);
             return new Auth0ProfileSnapshot(null, null, false);
         }
 
@@ -53,6 +55,61 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
             string.Equals(identity.Connection, _options.DatabaseConnection, StringComparison.OrdinalIgnoreCase)) == true;
 
         return new Auth0ProfileSnapshot(profile?.Email, profile?.EmailVerified, hasPasswordResetIdentity);
+    }
+
+    public async Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default)
+    {
+        EnsureManagementConfigured();
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri($"api/v2/users/{Uri.EscapeDataString(auth0UserId)}"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
+            using var response = await SendWithoutTracingAsync(request, cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return null;
+            if (!response.IsSuccessStatusCode)
+                throw new Auth0ManagementRequestException($"Auth0 account lookup failed ({(int)response.StatusCode}).");
+            var profile = await response.Content.ReadFromJsonAsync<Auth0UserResponse>(cancellationToken)
+                          ?? throw new Auth0ManagementRequestException("Auth0 account lookup returned no account.");
+            if (profile.CreatedAt is null || !DateTimeOffset.TryParse(
+                    profile.CreatedAt,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var createdAt))
+                throw new Auth0ManagementRequestException("Auth0 account generation was unavailable.");
+            return createdAt.UtcDateTime;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException or UriFormatException)
+        {
+            throw new Auth0ManagementRequestException("Auth0 account lookup is unavailable.");
+        }
+    }
+
+    public async Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default)
+    {
+        EnsureManagementConfigured();
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Delete, BuildUri($"api/v2/users/{Uri.EscapeDataString(auth0UserId)}"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
+            using var response = await SendWithoutTracingAsync(request, cancellationToken);
+            if (response.StatusCode is System.Net.HttpStatusCode.NoContent or System.Net.HttpStatusCode.NotFound)
+                return;
+            if (!response.IsSuccessStatusCode)
+                throw new Auth0ManagementRequestException($"Auth0 account deletion failed ({(int)response.StatusCode}).");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or UriFormatException)
+        {
+            throw new Auth0ManagementRequestException("Auth0 account deletion is unavailable.");
+        }
+    }
+
+    private void EnsureManagementConfigured()
+    {
+        if (!_options.HasManagementApiConfiguration)
+            throw new Auth0ManagementRequestException("Auth0 Management API is not configured.");
     }
 
     public async Task<bool> HasAdminRoleAsync(string auth0UserId, CancellationToken cancellationToken = default)
@@ -131,7 +188,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
             using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(path));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
 
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await SendWithoutTracingAsync(request, cancellationToken);
             if (notFoundIsEmpty && response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return null;
             response.EnsureSuccessStatusCode();
@@ -140,18 +197,18 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidOperationException)
         {
-            _logger.LogWarning(exception, "Auth0 admin role lookup failed for {Path}.", path);
-            throw new ServiceUnavailableException("Auth0 admin role verification is unavailable.", exception);
+            _logger.LogWarning("Auth0 admin role lookup failed ({FailureType}).", exception.GetType().Name);
+            throw new ServiceUnavailableException("Auth0 admin role verification is unavailable.");
         }
-        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning(exception, "Auth0 admin role lookup timed out for {Path}.", path);
-            throw new ServiceUnavailableException("Auth0 admin role verification is unavailable.", exception);
+            _logger.LogWarning("Auth0 admin role lookup timed out.");
+            throw new ServiceUnavailableException("Auth0 admin role verification is unavailable.");
         }
-        catch (UriFormatException exception)
+        catch (UriFormatException)
         {
-            _logger.LogWarning(exception, "Auth0 admin role lookup has invalid Management API configuration.");
-            throw new ServiceUnavailableException("Auth0 admin role verification is unavailable.", exception);
+            _logger.LogWarning("Auth0 admin role lookup has invalid Management API configuration.");
+            throw new ServiceUnavailableException("Auth0 admin role verification is unavailable.");
         }
     }
 
@@ -167,7 +224,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetManagementTokenAsync(cancellationToken));
         request.Content = JsonContent.Create(new VerificationEmailRequest(auth0UserId));
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendWithoutTracingAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
@@ -179,7 +236,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
             return;
         }
 
-        using var response = await _httpClient.PostAsJsonAsync(
+        using var response = await PostAsJsonWithoutTracingAsync(
             BuildUri("dbconnections/change_password"),
             new PasswordResetRequest(
                 _options.PasswordResetClientId!,
@@ -188,6 +245,23 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
             cancellationToken);
 
         response.EnsureSuccessStatusCode();
+    }
+
+    private async Task<HttpResponseMessage> SendWithoutTracingAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        using var suppression = SuppressInstrumentationScope.Begin();
+        return await _httpClient.SendAsync(request, cancellationToken);
+    }
+
+    private async Task<HttpResponseMessage> PostAsJsonWithoutTracingAsync<T>(
+        Uri requestUri,
+        T value,
+        CancellationToken cancellationToken)
+    {
+        using var suppression = SuppressInstrumentationScope.Begin();
+        return await _httpClient.PostAsJsonAsync(requestUri, value, cancellationToken);
     }
 
     private async Task<string> GetManagementTokenAsync(CancellationToken cancellationToken)
@@ -207,7 +281,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
                 return _managementToken;
             }
 
-            using var response = await _httpClient.PostAsJsonAsync(
+            using var response = await PostAsJsonWithoutTracingAsync(
                 BuildUri("oauth/token"),
                 new ManagementTokenRequest(
                     _options.ManagementClientId!,
@@ -238,7 +312,8 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
     private sealed record Auth0UserResponse(
         [property: JsonPropertyName("email")] string? Email,
         [property: JsonPropertyName("email_verified")] bool? EmailVerified,
-        [property: JsonPropertyName("identities")] IReadOnlyList<Auth0IdentityResponse>? Identities);
+        [property: JsonPropertyName("identities")] IReadOnlyList<Auth0IdentityResponse>? Identities,
+        [property: JsonPropertyName("created_at")] string? CreatedAt);
 
     private sealed record Auth0IdentityResponse(
         [property: JsonPropertyName("provider")] string? Provider,

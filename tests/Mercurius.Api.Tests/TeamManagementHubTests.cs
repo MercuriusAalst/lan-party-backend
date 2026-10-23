@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Mercurius.LAN.API.Data;
 using Mercurius.LAN.API.Hubs;
 using Mercurius.Modules.Identity;
+using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Shared;
@@ -11,6 +12,8 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Mercurius.Modules.Identity.Contracts;
+using System.Reflection;
 using Platform.Extensions;
 using Platform.Realtime;
 
@@ -18,6 +21,38 @@ namespace Mercurius.Api.Tests;
 
 public class TeamManagementHubTests
 {
+    [Fact]
+    public async Task IdentityFilter_RejectsInvocationWhenConnectionIdentityHasChanged()
+    {
+        var identityContext = new AuthenticatedIdentityContext();
+        var replacementId = Guid.NewGuid();
+        var validator = new RebindingIdentityTokenValidator(identityContext, replacementId);
+        var filter = new IdentityIncarnationHubFilter(validator, identityContext);
+        var caller = new TestHubCallerContext(
+            "connection",
+            new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "auth0|reused"), new Claim("iat", "200")], "Bearer")));
+        caller.Items["Mercurius.Identity.Incarnation"] = Guid.NewGuid().ToString("N");
+        var invocation = new HubInvocationContext(
+            caller,
+            new ServiceCollection().BuildServiceProvider(),
+            new TestHub(),
+            typeof(TestHub).GetMethod(nameof(TestHub.Ping), BindingFlags.Instance | BindingFlags.Public)!,
+            []);
+        var invoked = false;
+
+        await Assert.ThrowsAsync<HubException>(async () => await filter.InvokeMethodAsync(
+            invocation,
+            _ =>
+            {
+                invoked = true;
+                return new ValueTask<object?>((object?)null);
+            }));
+
+        Assert.False(invoked);
+        Assert.Equal(replacementId, identityContext.UserId);
+    }
+
     [Fact]
     public async Task ConnectionLifecycle_TracksPersonalAndTeamGroupsAndCleansLeaveAndDisconnect()
     {
@@ -118,7 +153,7 @@ public class TeamManagementHubTests
         User user)
     {
         return new TeamManagementHub(
-            new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!),
+            new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!, new Mercurius.Modules.Identity.Application.Services.AuthenticatedIdentityContext()),
             authorizer,
             manager)
         {
@@ -224,6 +259,26 @@ public class TeamManagementHubTests
         public override CancellationToken ConnectionAborted => _connectionAborted.Token;
 
         public override void Abort() => _connectionAborted.Cancel();
+    }
+
+    private sealed class TestHub : Hub
+    {
+        public Task Ping() => Task.CompletedTask;
+    }
+
+    private sealed class RebindingIdentityTokenValidator(
+        AuthenticatedIdentityContext identityContext,
+        Guid replacementId) : IIdentityTokenValidator
+    {
+        public Task<bool> ValidateAndPinAsync(
+            string subject,
+            string? issuedAtUnixSeconds,
+            bool allowDeletedSelfRead,
+            CancellationToken cancellationToken = default)
+        {
+            identityContext.Pin(subject, replacementId, issuedAtUnixSeconds: issuedAtUnixSeconds);
+            return Task.FromResult(true);
+        }
     }
 
     private sealed record GroupOperation(string Action, string ConnectionId, string GroupName);

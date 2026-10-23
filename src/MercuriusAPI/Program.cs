@@ -68,8 +68,12 @@ public class Program
             builder.Configuration.GetSection("Auth0"),
             TeamManagementHub.Route);
         builder.Services.AddSingleton<TeamManagementHubInvocationRateLimitFilter>();
+        builder.Services.AddScoped<IdentityIncarnationHubFilter>();
         builder.Services.AddRealtimeNotificationServices<TeamManagementHub>(options =>
-            options.AddFilter<TeamManagementHubInvocationRateLimitFilter>());
+        {
+            options.AddFilter<TeamManagementHubInvocationRateLimitFilter>();
+            options.AddFilter<IdentityIncarnationHubFilter>();
+        });
         var rateLimitingSection = builder.Configuration.GetSection("RateLimiting");
         builder.Services.AddFixedWindowRateLimiting(new FixedWindowRateLimitingOptions
         {
@@ -102,7 +106,10 @@ public class Program
             RequestPath = "/staticfiles"
         });
         app.UseVersionedSwaggerUI(customJavascriptPath: "/staticfiles/swagger-custom.js");
-        app.UseSecurityPipeline();
+        app.UseAuthentication();
+        app.UseRateLimiter();
+        app.UseMiddleware<IdentityTokenValidationMiddleware>();
+        app.UseAuthorization();
 
         app.MapTournamentModule();
         app.MapIdentityModule();

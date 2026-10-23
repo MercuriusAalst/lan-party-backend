@@ -9,6 +9,8 @@ using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Platform.Eventing;
+using Platform.Extensions;
 
 namespace Mercurius.Modules.Identity;
 
@@ -22,8 +24,15 @@ public static class IdentityModuleConfiguration
         services.TryAddScoped<IIdentityDbContext, IdentityDbContextAdapter<TDbContext>>();
         services.TryAddSingleton(TimeProvider.System);
         services.Configure<Auth0ManagementOptions>(configuration.GetSection(Auth0ManagementOptions.SectionName));
+        services.AddScoped<AccountLifecycleService>();
+        services.AddScoped<IAuthenticatedIdentityContext, AuthenticatedIdentityContext>();
+        services.AddScoped<IIdentityTokenValidator, IdentityTokenValidator>();
+        services.AddModuleEventHandler<AccountCleanupRequestedIntegrationEvent, AccountCleanupHandler>();
         services.AddTransient<IIdentityModule, IdentityModuleFacade>();
-        services.AddHttpClient<IAuth0ManagementService, Auth0ManagementService>();
+        services.AddHttpClient<IAuth0ManagementService, Auth0ManagementService>()
+            .RemoveAllLoggers();
+        services.AddTransient<IIdentityProviderAccountService>(provider =>
+            provider.GetRequiredService<IAuth0ManagementService>());
         services.AddTransient<IUserService, UserService>();
         services.Decorate<IUserService, UserIntegrationEventPublishingService>();
         services.Decorate<IUserService, UserValidationService>();
@@ -34,6 +43,7 @@ public static class IdentityModuleConfiguration
     public static ModelBuilder ApplyIdentityModelConfiguration(this ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new UserConfiguration());
+        modelBuilder.ApplyConfiguration(new AccountCleanupConfiguration());
 
         return modelBuilder;
     }

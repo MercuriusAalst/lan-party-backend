@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using System.Security.Claims;
 using Platform.Extensions;
+using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Identity.Contracts;
 
 namespace Mercurius.Modules.Identity.Endpoints;
 
@@ -114,9 +116,11 @@ internal static class UserEndpoints
         })
         .RequireAuthorization();
 
-        group.MapDelete("/me", async (ClaimsPrincipal user, IUserService userService) =>
+        group.MapDelete("/me", async (ClaimsPrincipal user, IUserService userService, [Microsoft.AspNetCore.Mvc.FromServices] IAuthenticatedIdentityContext identityContext, [Microsoft.AspNetCore.Mvc.FromServices] AccountLifecycleService lifecycleService, CancellationToken cancellationToken) =>
         {
-            return await userService.AnonymizeCurrentUserAsync(user.GetAuth0UserId());
+            var response = await userService.AnonymizeCurrentUserAsync(user.GetAuth0UserId());
+            var deletionPending = await lifecycleService.IsDeletionPendingAsync(identityContext.UserId, cancellationToken);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         })
         .RequireAuthorization();
 
@@ -155,19 +159,27 @@ internal static class UserEndpoints
             return await userService.UpdateUserAsync(id, request);
         });
 
-        adminGroup.MapDelete("/{id:guid}", async (Guid id, IUserService userService) =>
+        adminGroup.MapDelete("/{id:guid}", async (Guid id, IUserService userService, [Microsoft.AspNetCore.Mvc.FromServices] AccountLifecycleService lifecycleService, CancellationToken cancellationToken) =>
         {
             await userService.DeleteUserByIdAsync(id);
+            var deletionPending = await lifecycleService.IsDeletionPendingAsync(id, cancellationToken);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
 
-        adminGroup.MapDelete("/{username:nonguid}", async (string username, IUserService userService) =>
+        adminGroup.MapDelete("/{username:nonguid}", async (string username, IUserService userService, [Microsoft.AspNetCore.Mvc.FromServices] AccountLifecycleService lifecycleService, CancellationToken cancellationToken) =>
         {
-            await userService.DeleteUserAsync(username);
+            var target = await userService.GetUserByUsernameAsync(username);
+            await userService.DeleteUserByIdAsync(target.Id);
+            var deletionPending = await lifecycleService.IsDeletionPendingAsync(target.Id, cancellationToken);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
 
-        adminGroup.MapDelete("/{username}/account", async (string username, IUserService userService) =>
+        adminGroup.MapDelete("/{username}/account", async (string username, IUserService userService, [Microsoft.AspNetCore.Mvc.FromServices] AccountLifecycleService lifecycleService, CancellationToken cancellationToken) =>
         {
-            await userService.DeleteUserAsync(username);
+            var target = await userService.GetUserByUsernameAsync(username);
+            await userService.DeleteUserByIdAsync(target.Id);
+            var deletionPending = await lifecycleService.IsDeletionPendingAsync(target.Id, cancellationToken);
+            return Results.Accepted(value: new { message = "Account deletion requested.", deletionPending });
         });
 
         return group;

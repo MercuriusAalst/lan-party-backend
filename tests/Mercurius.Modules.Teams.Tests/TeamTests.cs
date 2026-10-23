@@ -2050,7 +2050,12 @@ public class TeamTests
         await using var dbContext = PostgresTestDatabase.CreateDbContext();
         var (member, _) = await SeedCrossModuleReferencesAsync(dbContext);
 
-        await new Mercurius.Modules.Identity.Application.Services.UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), null!, null!, TimeProvider.System).DeleteUserByIdAsync(member.Id);
+        await new Mercurius.Modules.Identity.Application.Services.UserService(
+            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
+            null!,
+            null!,
+            TimeProvider.System,
+            new Mercurius.Modules.Identity.Application.Services.AuthenticatedIdentityContext()).DeleteUserByIdAsync(member.Id);
 
         dbContext.ChangeTracker.Clear();
         Assert.True(await dbContext.Users.AnyAsync(user => user.Id == member.Id && user.IsDeleted));

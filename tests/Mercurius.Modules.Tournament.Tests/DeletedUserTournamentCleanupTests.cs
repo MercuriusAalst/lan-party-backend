@@ -310,7 +310,7 @@ public class DeletedUserTournamentCleanupTests
     }
 
     private static IIdentityModule CreateIdentity(MercuriusDBContext dbContext) =>
-        new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new TournamentTestSupport.NoopAuth0ManagementService());
+        new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new TournamentTestSupport.NoopAuth0ManagementService(), new Mercurius.Modules.Identity.Application.Services.AuthenticatedIdentityContext());
 
     private static User CreateUser()
     {

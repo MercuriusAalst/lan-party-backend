@@ -10,6 +10,7 @@ using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Identity.Options;
 using Mercurius.Modules.Media.Contracts;
 using Mercurius.Modules.Tournament.Contracts;
 using Mercurius.Modules.Teams.Contracts;
@@ -538,7 +539,7 @@ public class ModuleEventingTests
             })
             .Build();
         var moduleEventPublisher = new ModuleEventPublisher(dbContext);
-        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService());
+        var identityModule = new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new AuthenticatedIdentityContext());
         var teamsDbContext = new TeamsDbContextAdapter<MercuriusDBContext>(dbContext);
 
         return new TeamEventPublishingDecorator(
@@ -563,11 +564,16 @@ public class ModuleEventingTests
         IModuleEventPublisher? moduleEventPublisher = null,
         IRealtimeConnectionManager? realtimeConnectionManager = null)
     {
+        var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
+        var publisher = moduleEventPublisher ?? new ModuleEventPublisher(dbContext);
+        var lifecycle = new AccountLifecycleService(identityDbContext, publisher);
         return new UserIntegrationEventPublishingService(
-            new UserService(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService(), new IdentityModuleFacade(new IdentityDbContextAdapter<MercuriusDBContext>(dbContext), new NoopAuth0ManagementService()), TimeProvider.System),
-            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
-            moduleEventPublisher ?? new ModuleEventPublisher(dbContext),
-            realtimeConnectionManager ?? new NoopRealtimeConnectionManager());
+            new UserService(identityDbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(identityDbContext, new NoopAuth0ManagementService(), new AuthenticatedIdentityContext()), TimeProvider.System, new AuthenticatedIdentityContext()),
+            identityDbContext,
+            publisher,
+            realtimeConnectionManager ?? new NoopRealtimeConnectionManager(),
+            lifecycle,
+            new AuthenticatedIdentityContext());
     }
 
     private static User CreateUser()
@@ -596,6 +602,11 @@ public class ModuleEventingTests
         {
             return Task.FromResult(new Auth0ProfileSnapshot(null, null, false));
         }
+
+        public Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<DateTime?>(null);
+
+        public Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default)
         {
