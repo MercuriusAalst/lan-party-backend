@@ -13,8 +13,8 @@ internal readonly record struct ImagePolicy(
     public static ImagePolicy For(MediaPurpose purpose) => purpose switch
     {
         MediaPurpose.TournamentBanner => new(2560, 1440, 78, false),
-        MediaPurpose.SponsorLogo => new(1024, 1024, 86, false),
-        MediaPurpose.TeamLogo => new(1024, 1024, 86, false),
+        MediaPurpose.SponsorLogo => new(1024, 1024, 0, true),
+        MediaPurpose.TeamLogo => new(1024, 1024, 0, true),
         MediaPurpose.ProfilePicture => new(512, 512, 82, false),
         _ => throw new ValidationException("Unsupported image purpose.")
     };

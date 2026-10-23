@@ -11,9 +11,9 @@ business purpose, so each consumer cannot receive an appropriate size and compre
   production consumers without changing public routes, DTOs or response shapes.
 - Apply an aspect-preserving maximum bounding box before a single WebP encode:
   tournament banners 2560 by 1440, logos 1024 by 1024, and profile pictures 512 by 512.
-- Keep lossy quality 78 for tournament banners and quality 82 for profile pictures. Select one
-  production logo encoder after measuring lossy and lossless output on representative graphic,
-  text and alpha images.
+- Keep lossy quality 78 for tournament banners and quality 82 for profile pictures. Use lossless
+  WebP for logos after measured graphic, text and alpha fixtures produced smaller files with
+  equivalent visual quality than lossy quality 86.
 - Preserve small inputs without upscaling, preserve orientation and transparency where applicable,
   and retain current input formats, upload-size limits, decode bounds and GIF behavior.
 - Add focused policy, image-quality and consumer-purpose tests plus a reproducible benchmark with

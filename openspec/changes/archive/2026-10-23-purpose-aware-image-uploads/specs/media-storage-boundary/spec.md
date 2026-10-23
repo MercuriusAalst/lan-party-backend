@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Media stores purpose-optimized WebP images
+### Requirement: Media stores bounded lossy WebP images
 Media MUST require every production image upload to name its purpose explicitly. It MUST apply a
 centralized maximum bounding box for that purpose before encoding, MUST preserve the source aspect
 ratio, and MUST NOT crop, stretch or upscale. Media MUST write one WebP output per upload and
@@ -10,8 +10,7 @@ MUST NOT leave a stored file.
 
 Tournament banners MUST be bounded to 2560 by 1440 and encoded as lossy WebP at quality 78.
 Profile pictures MUST be bounded to 512 by 512 and encoded as lossy WebP at quality 82. Sponsor
-and Team logos MUST be bounded to 1024 by 1024 and MUST use one centralized quality-or-lossless
-policy selected from representative graphic, text and alpha-image evidence.
+and Team logos MUST be bounded to 1024 by 1024 and encoded as lossless WebP.
 
 #### Scenario: Large tournament banner is uploaded
 - **WHEN** an allowed image larger than 2560 by 1440 is uploaded as a tournament banner

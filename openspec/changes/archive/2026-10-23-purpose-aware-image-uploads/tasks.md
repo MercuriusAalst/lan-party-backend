@@ -18,7 +18,7 @@
 
 ## 4. Evidence And Rollout
 
-- [ ] 4.1 Run a reproducible benchmark across banner-like, photo, text, alpha and small images.
-- [ ] 4.2 Inspect output quality and select the single production logo encoder from measured evidence.
-- [ ] 4.3 Document benchmark results, historical encoding evidence, existing-asset dry-run procedure and frontend follow-up.
-- [ ] 4.4 Reconcile this task list, validate strictly and archive the completed change.
+- [x] 4.1 Run a reproducible benchmark across banner-like, photo, text, alpha and small images.
+- [x] 4.2 Inspect output quality and select the single production logo encoder from measured evidence.
+- [x] 4.3 Document benchmark results, historical encoding evidence, existing-asset dry-run procedure and frontend follow-up.
+- [x] 4.4 Reconcile this task list, validate strictly and archive the completed change.

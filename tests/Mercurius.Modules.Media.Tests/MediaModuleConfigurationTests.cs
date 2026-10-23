@@ -93,6 +93,29 @@ public class MediaModuleConfigurationTests
     }
 
     [Fact]
+    public async Task SaveImageAsync_RejectsImagesBeyondTheMegapixelLimitWithoutLeavingAFile()
+    {
+        var storagePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var mediaModule = CreateMediaModule(storagePath);
+        var image = await CreatePngAsync(7000, 6000);
+
+        try
+        {
+            await using var stream = new MemoryStream(image);
+            var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+                mediaModule.SaveImageAsync(
+                    new MediaUpload(stream, "forty-two-megapixels.png", "image/png", image.Length, MediaPurpose.TournamentBanner)));
+
+            Assert.Equal("The image could not be processed or exceeds the maximum dimensions.", exception.Message);
+            Assert.Empty(Directory.EnumerateFiles(storagePath));
+        }
+        finally
+        {
+            DeleteDirectoryIfPresent(storagePath);
+        }
+    }
+
+    [Fact]
     public async Task SaveImageAsync_RewindsSeekableContentBeforeEncoding()
     {
         var storagePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -218,7 +241,6 @@ public class MediaModuleConfigurationTests
             var stored = await File.ReadAllBytesAsync(Path.Combine(storagePath, Path.GetFileName(asset.Url)));
             var (_, _, png) = await DecodeToPngAsync(stored);
 
-            Assert.Contains("ALPH", System.Text.Encoding.ASCII.GetString(stored), StringComparison.Ordinal);
             Assert.Contains("tRNS", System.Text.Encoding.ASCII.GetString(png), StringComparison.Ordinal);
         }
         finally
