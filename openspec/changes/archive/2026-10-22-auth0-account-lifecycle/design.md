@@ -1,21 +1,31 @@
 # Design
 
+# Design
+
 ## Identity lifecycle
 
-Keep the historical User.Id stable, but remove its active Auth0 mapping during deletion. A unique, non-authenticatable tombstone preserves the existing non-null unique index. A persistent SHA-256 subject fence is created under a database-coordinated subject lock. Pending cleanup blocks a new local registration; completion records a strict iat cutoff at the completion second plus one.
+Keep the historical User.Id stable, but remove its active Auth0 mapping during deletion. A unique, non-authenticatable tombstone preserves the existing non-null unique index. The cleanup row stores the exact provider subject in the private application database while deletion is pending and clears it atomically when completion commits.
 
-Keep the provider subject only in a private, encrypted pending-cleanup payload. Use a durable key shared by deployed instances. Clear the ciphertext on success. Existing deleted rows are migrated into resumable pending cleanup rows, with their existing Auth0 IDs encrypted by the application backfill rather than transformed in SQL.
+Pending state is any unfinished cleanup row for the subject hash. The token cutoff is derived from the latest completed cleanup row at its completion second plus one. Completed rows, their hashes, and completion timestamps remain permanent security metadata. The same database subject advisory lock coordinates registration, deletion, and cleanup completion.
+
+The subject hash remains SHA-256 over the exact UTF-8 subject in lowercase hexadecimal. It supports indexed lookups and advisory-lock keys and is not a secrecy mechanism.
 
 ## Cleanup delivery
 
-Insert the user-ID-only internal event, fence, and encrypted cleanup payload in the same local transaction as anonymization. Dispatch through the existing leased outbox and bounded retry/dead-letter flow. DELETE the stored exact Auth0 subject after URL escaping, accept 204/404, and capture provider creation generation before destructive dispatch; retries compare the observed generation to avoid deleting a newly observed recreation. No Auth0 GET/DELETE sequence can eliminate its external time-of-check/time-of-use race; document it. Operator retry reuses existing dead-letter semantics and never resurrects a completed payload.
+Insert the cleanup row and user-ID-only internal event through the existing leased outbox in the same local transaction as anonymization. Dispatch through the existing outbox handler and retry/dead-letter flow. DELETE only the stored exact Auth0 subject after URL escaping, accept 204/404, and compare provider creation generation before destructive retries. No Auth0 GET/DELETE sequence can eliminate its external time-of-check/time-of-use race.
+
+No hosted backfill worker or new queue engine is needed. The original unreleased lifecycle migration creates the cleanup table and, in bounded PostgreSQL statements, enqueues cleanup plus the existing outbox event and tombstones every pre-feature deleted subject. Migration execution performs no provider calls.
 
 ## Authentication and registration
 
-Validate a token's subject and iat after JWT validation and before authenticated API execution. Reject missing or malformed iat for a fenced subject and reject values earlier than the durable cutoff. Pin the internal user ID for the request and each hub invocation, and enforce it on later identity resolution so concurrent deletion and registration cannot substitute accounts. Hub connection and invocation checks use the identity-owned scoped context.
+Validate a token's subject and iat after JWT validation and before authenticated API execution. Reject missing or malformed iat for a subject with cleanup history and reject values earlier than the derived cutoff. Pin the internal user ID for the request and each hub invocation, and enforce it on later identity resolution so concurrent deletion and registration cannot substitute accounts.
 
-Creation and deletion acquire the same database subject advisory lock and recheck the fence and token cutoff in the registration transaction. Ordinary first registration does not compare iat to profile creation time. Existing deletion mutation locks remain in place.
+Creation and deletion acquire the same database subject advisory lock and recheck cleanup state and cutoff in the registration transaction. Ordinary first registration does not compare iat to profile creation time.
 
 ## Rollout and contract
 
-All four deletion routes return HTTP 202 with { message, deletionPending: true } after the local transaction commits. /users/me retains its 404 onboarding and 410 deleted-session behavior. An admin-only status/retry endpoint exposes local IDs, status, counts, times, and sanitized errors only. Deployments must stop/drain binaries that do not enforce the subject fence before activating legacy backfill or allowing new registrations; a database migration alone cannot make mixed-version token checks safe. Only the repository's documented single API replica is supported during rolling deployment.
+All four deletion routes return HTTP 202 with { message, deletionPending: true } after the local transaction commits. /users/me retains its 404 onboarding and 410 deleted-session behavior. There are no Auth0 cleanup status/retry HTTP routes.
+
+Operators use documented database SQL against the private database to inspect local cleanup IDs and sanitized outbox state, count legacy rows, and safely requeue only dead-lettered unfinished jobs. No dedicated operator CLI exists. The database and backup trust boundary protects the temporary exact subject; it is never written to outbox payloads, DTOs, logs, exceptions or telemetry.
+
+The lifecycle migration was applied only to disposable local/test databases and has never been deployed to shared, staging or production. Those local/test databases must be recreated before using the amended schema. There is no ciphertext conversion or compatibility path. Deployments must stop/drain binaries without cleanup-history enforcement before allowing registrations; only the repository's documented single API replica is supported.

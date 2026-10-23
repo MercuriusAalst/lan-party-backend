@@ -1,32 +1,94 @@
 # Auth0 Account Deletion Operations
 
-LAN account deletion commits locally first. It keeps the historical LAN user ID and related references, anonymizes the profile, detaches the Auth0 subject, and queues provider cleanup. The delete endpoints return HTTP 202 with `deletionPending: true`; this confirms that local deletion and durable cleanup scheduling succeeded, not that Auth0 has already removed the account.
+LAN account deletion commits locally first. It keeps the historical LAN user ID and related references, anonymizes the profile, detaches the Auth0 subject, and queues provider cleanup. The delete endpoints return HTTP 202 with `deletionPending`, which is true while provider cleanup remains unfinished. It can be false after cleanup has already completed or on an idempotent repeat; the response confirms local handling, not that Auth0 work necessarily just occurred.
 
 ## Configuration and Auth0 permissions
 
-Configure the Auth0 Management API authority, audience, client ID, and client secret, with `read:users` and `delete:users` grants. Missing Management API configuration does not mark cleanup complete: jobs remain pending and retry.
+Configure the Auth0 Management API authority, audience, client ID, and client secret, with `read:users` and `delete:users` grants. Missing Management API configuration does not mark cleanup complete: jobs remain pending and retry through the existing outbox.
 
-The exact provider subject is stored only in the private `identity.auth0_account_cleanups` row while cleanup is pending. It is never returned by public or operator JSON and is cleared atomically when cleanup completes. Database access, backups, and replica credentials therefore form the protection boundary for this temporary value.
+The exact provider subject is stored only in the private `identity.auth0_account_cleanups` row while cleanup is pending. It is cleared atomically when cleanup completes and is never written to outbox payloads, public or administrator responses, logs, exceptions, or telemetry. Database access, backups, and replica credentials form the protection boundary for this temporary value, matching the existing active-identity data boundary.
+
+Completed cleanup rows are permanent security metadata. Their subject hash and completion time drive provider cleanup state and token rejection, while the exact subject is empty. Outbox retention must not delete these rows or cascade into cleanup history.
 
 ## Deployment and migration
 
-The lifecycle migration is unreleased and is amended to the final one-table schema rather than layered over a shared deployment. During rollout, drain and stop every old API binary before applying/activating the new version and its legacy backfill. An old binary does not enforce cleanup-history cutoffs, so a mixed-version deployment could accept an old token during subject reuse. Start the new binary after the Management API configuration is available. The backfill processes at most 100 legacy deleted users per batch, detaches their old Auth0 subject under the same database locks used by account creation/deletion, and resumes after restart; it retries failures in the background and exits after a successful empty batch. Until a legacy row is detached, old tokens for it are still rejected, and registration remains blocked.
+The `20261022140826_Auth0AccountLifecycle` migration is unreleased and was applied only to disposable local/test databases. It has never been deployed to shared, staging, or production. Databases that already applied the earlier version of this migration must be recreated; there is no ciphertext conversion or compatibility path. Do not reset a database without authorization.
 
-After a user has been detached or a new incarnation has been registered, roll forward only. Do not roll back to a binary that lacks cleanup-history enforcement or remove permanent cleanup history: an old JWT could otherwise resolve to a replacement account. This deployment follows the repository's single-API-replica policy in [single-instance-deployment.md](single-instance-deployment.md).
+The amended migration creates the single `identity.auth0_account_cleanups` table and then repairs pre-feature deleted users before the new binary opens traffic. Each PostgreSQL statement selects at most 100 users under row locks, inserts one private cleanup row and the existing outbox integration event, and replaces the Auth0 subject with the stable tombstone. A loop repeats until the update affects no rows. The processing-time loop is bounded per statement; the enclosing migration transaction covers the normal LAN-sized history. No provider or network call occurs during migration.
 
-## Permanent lifecycle metadata
+Drain and stop binaries that do not enforce cleanup-history cutoffs before applying the migration. After it finishes, run the legacy-pending query below and require `legacy_pending = 0` before opening traffic. There is no hosted backfill worker and no additional migration.
 
-Completed rows in `identity.auth0_account_cleanups` are permanent security metadata. Their `SubjectHash` and `CompletedAtUtc` values are the durable source for the subject token cutoff, while an unfinished row is the durable pending marker. Outbox retention changes must not delete these rows or cascade from an outbox record into cleanup history. The `SubjectHash` index remains required for lifecycle reads.
+After a user has been detached or a new incarnation has been registered, roll forward only. Do not roll back to a binary that lacks cleanup-history enforcement or remove permanent cleanup history: an old JWT could otherwise resolve to a replacement account. This follows the repository's single-API-replica policy in [single-instance-deployment.md](single-instance-deployment.md).
 
-## Monitoring and retry
+## Database operator runbook
 
-Use the admin-only endpoints:
+There is no cleanup status or retry HTTP API and no dedicated cleanup CLI. Operators with authorized access to the private application database use SQL; database access is an explicit operational trust assumption.
 
-- `GET /v1/lan/users/auth0-cleanups?page=1&pageSize=50` reports counts and pages cleanup jobs, prioritizing unfinished jobs. It includes local user/job IDs, status, retry attempts, timestamps, and sanitized error/configuration information; it never returns the provider subject. `legacyPendingCount` identifies deleted historical rows not yet detached.
-- `POST /v1/lan/users/auth0-cleanups/{cleanupId}/retry` resets an eligible dead-lettered outbox message for dispatch. It returns 202 when queued and 404 when the job is missing, already complete, or not currently retryable.
+This status query returns local identifiers, lifecycle timestamps, sanitized outbox state, and retry timing. It never selects the exact subject, subject hash, outbox payload, or provider URL.
 
-The shared outbox retries failures up to five attempts with exponential delays starting at 5 seconds and capped at 5 minutes, then dead-letters the message. Provider outages, missing permissions/configuration, or a missing encryption key should be corrected before retrying. Check status again after retry; do not use raw subjects in support tickets or logs. Auth0 HTTP instrumentation suppresses spans for these requests because provider user URLs contain the subject.
+```sql
+SELECT
+    c."Id" AS cleanup_id,
+    c."UserId" AS user_id,
+    c."RequestedAtUtc",
+    c."CompletedAtUtc",
+    CASE
+        WHEN c."CompletedAtUtc" IS NOT NULL THEN 'completed'
+        WHEN m.id IS NULL THEN 'missing-outbox'
+        WHEN m.processed_at_utc IS NOT NULL THEN 'processed-without-completion'
+        WHEN m.dead_lettered_at_utc IS NOT NULL THEN 'dead-lettered'
+        WHEN m.claim_expires_at_utc > now() THEN 'claimed'
+        WHEN m.next_attempt_at_utc > now() THEN 'scheduled'
+        ELSE 'pending'
+    END AS status,
+    m.retry_count,
+    m.next_attempt_at_utc,
+    COALESCE(c."SanitizedOutcome", m.last_error) AS sanitized_outcome
+FROM identity.auth0_account_cleanups AS c
+LEFT JOIN platform.outbox_messages AS m ON m.id = c."OutboxMessageId"
+ORDER BY c."CompletedAtUtc" IS NOT NULL, c."RequestedAtUtc" DESC, c."Id"
+LIMIT 100;
+
+SELECT count(*) AS legacy_pending
+FROM identity.users
+WHERE "IsDeleted" AND "Auth0UserId" NOT LIKE 'tombstone:%';
+```
+
+The shared outbox retries failures with exponential delays and then dead-letters the event; the existing `mercurius.outbox.dead_lettered` metric remains the alerting signal. Repair provider outage, permissions, or configuration before retrying. Set `cleanup_id` to a local row ID from the status query. One returned ID means the dead-lettered unfinished job was requeued; zero means the row is missing, complete, actively claimed, processed, or otherwise ineligible.
+
+For example, in `psql`: `\set cleanup_id 'UUID_FROM_STATUS_QUERY'`.
+
+<!-- cleanup-retry-sql:start -->
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+WITH eligible AS MATERIALIZED (
+    SELECT m.id
+    FROM platform.outbox_messages AS m
+    JOIN identity.auth0_account_cleanups AS c ON c."OutboxMessageId" = m.id
+    WHERE c."Id" = :'cleanup_id'::uuid
+      AND c."CompletedAtUtc" IS NULL
+      AND m.event_type = 'Mercurius.Modules.Identity.Contracts.Auth0AccountCleanupRequestedIntegrationEvent'
+      AND m.processed_at_utc IS NULL
+      AND m.dead_lettered_at_utc IS NOT NULL
+      AND (m.claim_expires_at_utc IS NULL OR m.claim_expires_at_utc <= now())
+    FOR UPDATE OF m, c
+)
+UPDATE platform.outbox_messages AS m
+SET retry_count = 0,
+    last_attempt_at_utc = NULL,
+    next_attempt_at_utc = now(),
+    dead_lettered_at_utc = NULL,
+    last_error = NULL
+FROM eligible AS e
+WHERE m.id = e.id
+RETURNING m.id;
+COMMIT;
+```
+<!-- cleanup-retry-sql:end -->
+
+Never reset processed or actively claimed work, inbox markers, or cleanup completion timestamps. Never delete lifecycle history. Do not include raw subjects in tickets or logs.
 
 ## Provider generation limitation
 
-Cleanup reads Auth0's `created_at` before deleting and records the observed generation. On a retry, a different generation is treated as a recreated account and preserved. A missing Auth0 user is treated as already cleaned up. Auth0 does not provide an atomic conditional delete by `created_at`, so another party can recreate the same subject between our GET and DELETE; that external time-of-check/time-of-use race cannot be eliminated by this service. The permanent cleanup history still prevents stale LAN tokens from inheriting the replacement profile, memberships, or roles.
+Cleanup reads Auth0's `created_at` before deleting and records the observed generation. On a retry, a different generation is treated as a recreated account and preserved. A missing Auth0 user is treated as already cleaned up. Auth0 does not provide an atomic conditional delete by `created_at`, so another party can recreate the same subject between our GET and DELETE; that external time-of-check/time-of-use race cannot be eliminated by this service. Permanent cleanup history still prevents stale LAN tokens from inheriting the replacement profile, memberships, or roles.

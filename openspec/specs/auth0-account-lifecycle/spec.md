@@ -51,15 +51,15 @@ Completed cleanup rows, including their subject hash and completion time, MUST r
 
 ### Requirement: Safe cleanup operations
 
-An administrator MUST be able to inspect and retry unfinished cleanup using local identifiers and sanitized status only. Retrying a completed cleanup MUST NOT delete a recreated provider identity. Cleanup MUST compare the provider creation generation observed before deletion with its value on retry where available. The system MUST document that a provider GET followed by DELETE cannot be atomic and retains a time-of-check/time-of-use race.
+An administrator with access to the private application database MUST be able to inspect cleanup and safely retry only an unfinished dead-lettered job using documented SQL and local identifiers. The system MUST NOT require a dedicated cleanup API or CLI. Retrying a completed or actively claimed cleanup MUST NOT delete or duplicate provider work. Cleanup MUST compare the provider creation generation observed before deletion with its value on retry where available. The system MUST document that a provider GET followed by DELETE cannot be atomic and retains a time-of-check/time-of-use race.
 
 #### Scenario: Operator inspects cleanup
 
-- WHEN an administrator requests cleanup status
-- THEN the response contains local user/job IDs, status, attempts, timestamps, and sanitized errors without the provider subject
+- WHEN an administrator runs the documented database status query
+- THEN it returns local user/job IDs, status, attempts, timestamps, and sanitized errors without the provider subject or hash
 
 #### Scenario: Operator retries cleanup
 
-- WHEN an administrator retries an unfinished dead-lettered cleanup
+- WHEN an administrator runs the documented database retry statement for an unfinished dead-lettered cleanup
 - THEN existing outbox retry mechanics resume it and a completed job is not dispatched again
 

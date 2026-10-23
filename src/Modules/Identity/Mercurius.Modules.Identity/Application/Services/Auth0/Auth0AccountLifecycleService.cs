@@ -73,4 +73,17 @@ internal sealed class Auth0AccountLifecycleService
             (!long.TryParse(issuedAtUnixSeconds, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var issuedAt) || issuedAt < requiredCutoff))
             throw new UnauthorizedAccessException("The authenticated account changed during this request.");
     }
+
+    public async Task<bool> IsDeletionPendingAsync(Guid? userId, CancellationToken cancellationToken)
+    {
+        if (userId is not Guid id)
+            return false;
+
+        return await _dbContext.Auth0AccountCleanups.AnyAsync(
+                   cleanup => cleanup.UserId == id && cleanup.CompletedAtUtc == null,
+                   cancellationToken) ||
+               await _dbContext.Users.AnyAsync(
+                   user => user.Id == id && user.IsDeleted && !user.Auth0UserId.StartsWith("tombstone:"),
+                   cancellationToken);
+    }
 }

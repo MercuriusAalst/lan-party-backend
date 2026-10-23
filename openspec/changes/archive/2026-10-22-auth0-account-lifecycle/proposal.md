@@ -4,11 +4,13 @@ Deleting a LAN account currently anonymizes only the local profile. The Auth0 id
 
 ## Scope
 
-- Detach every deleted LAN row from its provider subject and persist exact-subject cleanup work atomically with anonymization.
-- Retry and expose provider cleanup failures without claiming deletion is complete before Auth0 confirms it.
-- Establish a durable token freshness boundary so a prior token cannot access a re-registered LAN account with the same subject.
+- Detach every deleted LAN row from its provider subject and persist exact-subject cleanup work atomically with anonymization in one private cleanup table.
+- Retry provider cleanup through the existing outbox without claiming deletion is complete before Auth0 confirms it.
+- Derive the pending state and durable token freshness boundary from permanent cleanup history.
 - Preserve local identity history and existing deletion events while returning a pending cleanup response from every deletion route.
+- Repair pre-feature deleted users in the unreleased schema migration without a hosted backfill worker or provider call.
+- Provide database-only status and safe-retry SQL for operations instead of new API routes.
 
 ## Non-goals
 
-- Frontend implementation, generic outbox redesign, and atomicity across the LAN database and Auth0.
+- Frontend implementation, generic outbox redesign, separate encryption, and atomicity across the LAN database and Auth0.

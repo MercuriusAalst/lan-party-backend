@@ -52,7 +52,9 @@ public sealed class AccountLifecycleHttpTests
 
         using var deleteResponse = await SendAsync(client, HttpMethod.Delete, "v1/lan/users/me", subject, "100");
         Assert.Equal(HttpStatusCode.Accepted, deleteResponse.StatusCode);
-        using var deleteJson = JsonDocument.Parse(await deleteResponse.Content.ReadAsStringAsync());
+        var deleteBody = await deleteResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(subject, deleteBody, StringComparison.Ordinal);
+        using var deleteJson = JsonDocument.Parse(deleteBody);
         Assert.Equal("Account deletion requested.", deleteJson.RootElement.GetProperty("message").GetString());
         Assert.True(deleteJson.RootElement.GetProperty("deletionPending").GetBoolean());
 
@@ -76,16 +78,6 @@ public sealed class AccountLifecycleHttpTests
         Assert.Equal(HttpStatusCode.Unauthorized, staleRegistration.StatusCode);
         using var staleAdminAccess = await SendAsync(client, HttpMethod.Get, "v1/lan/users/admins", subject, "100", role: "admin");
         Assert.Equal(HttpStatusCode.Unauthorized, staleAdminAccess.StatusCode);
-
-        using var cleanupStatus = await SendAsync(
-            client,
-            HttpMethod.Get,
-            "v1/lan/users/auth0-cleanups",
-            "auth0|admin",
-            "300",
-            role: "admin");
-        Assert.Equal(HttpStatusCode.OK, cleanupStatus.StatusCode);
-        Assert.DoesNotContain(subject, await cleanupStatus.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
         for (var pass = 0; pass < 5; pass++)
         {
