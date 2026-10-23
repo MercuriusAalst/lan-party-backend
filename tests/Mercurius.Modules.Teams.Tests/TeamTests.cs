@@ -963,13 +963,15 @@ public class TeamTests
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync();
 
-        var teamService = CreateTeamService(dbContext, new StubMediaModule("/images/team-logo.webp"));
+        var media = new StubMediaModule("/images/team-logo.webp");
+        var teamService = CreateTeamService(dbContext, media);
 
         var result = await teamService.UploadTeamLogoAsync(captain.Auth0UserId, team.Id, CreateFormFile());
         var profile = await teamService.GetPublicTeamProfileAsync("alpha");
 
         Assert.Equal("/images/team-logo.webp", result.LogoUrl);
         Assert.Equal("/images/team-logo.webp", profile.LogoUrl);
+        Assert.Equal(MediaPurpose.TeamLogo, media.SavedPurpose);
     }
 
     [Fact]
@@ -2292,10 +2294,13 @@ public class TeamTests
 
         public List<DeletedImage> DeletedImages { get; } = [];
 
+        public MediaPurpose? SavedPurpose { get; private set; }
+
         public Task<StoredMediaAsset> SaveImageAsync(
             MediaUpload upload,
             CancellationToken cancellationToken = default)
         {
+            SavedPurpose = upload.Purpose;
             CancelAfterSave?.Cancel();
             return Task.FromResult(new StoredMediaAsset(_imageUrl));
         }

@@ -9,7 +9,6 @@ namespace Mercurius.Modules.Media.Infrastructure;
 internal sealed class FileSystemMediaModule : IMediaModule
 {
     private const string ImagesPathPrefix = "images/";
-    private const float WebPQuality = 82;
     private static readonly FrameSizeLimit MaxImageSize = new(8000, 8000, 40);
     private static readonly SecurityOptions SecurityLimits = new SecurityOptions()
         .SetMaxDecodeSize(MaxImageSize)
@@ -39,6 +38,7 @@ internal sealed class FileSystemMediaModule : IMediaModule
     {
         cancellationToken.ThrowIfCancellationRequested();
         ValidateImage(upload);
+        var policy = ImagePolicy.For(upload.Purpose);
         if (upload.Content.CanSeek)
             upload.Content.Position = 0;
 
@@ -58,7 +58,8 @@ internal sealed class FileSystemMediaModule : IMediaModule
             {
                 await new ImageJob()
                     .Decode(upload.Content, true)
-                    .Encode(new StreamDestination(outputStream, true), new WebPLossyEncoder(WebPQuality))
+                    .ConstrainWithin(policy.MaxWidth, policy.MaxHeight)
+                    .Encode(new StreamDestination(outputStream, true), policy.CreateEncoder())
                     .Finish()
                     .SetSecurityOptions(SecurityLimits)
                     .InProcessAsync();

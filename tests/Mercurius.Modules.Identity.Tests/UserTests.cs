@@ -966,6 +966,7 @@ public class UserTests
         var replaced = await service.UploadCurrentUserPictureAsync(user.Auth0UserId, upload);
         Assert.Equal("/images/new.webp", replaced.User?.ProfilePictureUrl);
         Assert.Equal("/images/new.webp", (await dbContext.Users.SingleAsync(candidate => candidate.Id == user.Id)).ProfilePictureUrl);
+        Assert.Equal(MediaPurpose.ProfilePicture, media.SavedPurpose);
         Assert.Equal(["/images/old.webp"], media.DeletedUrls);
 
         var removed = await service.RemoveCurrentUserPictureAsync(user.Auth0UserId);
@@ -1735,8 +1736,15 @@ public class UserTests
         public Exception? SaveException { get; init; }
         public List<string?> DeletedUrls { get; } = [];
 
-        public Task<StoredMediaAsset> SaveImageAsync(MediaUpload upload, CancellationToken cancellationToken = default) =>
-            SaveException is null ? Task.FromResult(new StoredMediaAsset(SavedUrl)) : Task.FromException<StoredMediaAsset>(SaveException);
+        public MediaPurpose? SavedPurpose { get; private set; }
+
+        public Task<StoredMediaAsset> SaveImageAsync(MediaUpload upload, CancellationToken cancellationToken = default)
+        {
+            SavedPurpose = upload.Purpose;
+            return SaveException is null
+                ? Task.FromResult(new StoredMediaAsset(SavedUrl))
+                : Task.FromException<StoredMediaAsset>(SaveException);
+        }
 
         public Task DeleteImageAsync(string? mediaUrl, CancellationToken cancellationToken = default)
         {
