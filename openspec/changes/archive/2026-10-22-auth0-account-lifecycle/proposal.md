@@ -8,7 +8,6 @@ Deleting a LAN account currently anonymizes only the local profile. The Auth0 id
 - Retry provider cleanup through the existing outbox without claiming deletion is complete before Auth0 confirms it.
 - Derive the pending state and durable token freshness boundary from permanent cleanup history.
 - Preserve local identity history and existing deletion events while returning a pending cleanup response from every deletion route.
-- Repair pre-feature deleted users in the unreleased schema migration without a hosted backfill worker or provider call.
 - Provide database-only status and safe-retry SQL for operations instead of new API routes.
 
 ## Non-goals

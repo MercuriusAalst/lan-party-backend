@@ -4,7 +4,7 @@
 
 ### Requirement: Durable Auth0 cleanup
 
-Deleting a LAN user MUST preserve its local identifier and historical references, anonymize its profile, detach its active provider subject, and atomically persist a durable cleanup job with the local deletion. The historical row MUST NOT retain the reusable subject. Cleanup MUST target only the exact Auth0 subject stored in the private cleanup row. A 204 or 404 MUST complete cleanup; missing configuration and transient provider failures MUST remain pending and retry through bounded durable delivery. Pending provider subjects MUST be hidden from logs, telemetry, public responses and administrator API responses, and erased after completion. The unreleased schema migration MUST enqueue pre-feature deleted rows without a provider call or hosted backfill worker.
+Deleting a LAN user MUST preserve its local identifier and historical references, anonymize its profile, detach its active provider subject, and atomically persist a durable cleanup job with the local deletion. The historical row MUST NOT retain the reusable subject. Cleanup MUST target only the exact Auth0 subject stored in the private cleanup row. A 204 or 404 MUST complete cleanup; missing configuration and transient provider failures MUST remain pending and retry through bounded durable delivery. Pending provider subjects MUST be hidden from logs, telemetry, public responses and administrator API responses, and erased after completion.
 
 #### Scenario: Any deletion route queues cleanup
 
@@ -21,11 +21,6 @@ Deleting a LAN user MUST preserve its local identifier and historical references
 
 - WHEN configuration is missing or Auth0 returns a retryable error, times out, or cannot be reached
 - THEN durable bounded retry remains observable and the API does not claim cleanup completed
-
-#### Scenario: Legacy deleted user is backfilled
-
-- WHEN a deleted historical row still contains an Auth0 subject
-- THEN application backfill encrypts the subject into pending cleanup and detaches the row resumably without logging or exposing the subject
 
 ### Requirement: Reused-subject account incarnation
 

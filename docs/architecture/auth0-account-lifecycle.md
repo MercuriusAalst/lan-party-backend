@@ -10,15 +10,9 @@ The exact provider subject is stored only in the private `identity.auth0_account
 
 Completed cleanup rows are permanent security metadata. Their subject hash and completion time drive provider cleanup state and token rejection, while the exact subject is empty. Outbox retention must not delete these rows or cascade into cleanup history.
 
-## Deployment and migration
+## Schema
 
-The `20261022140826_Auth0AccountLifecycle` migration is unreleased and was applied only to disposable local/test databases. It has never been deployed to shared, staging, or production. Databases that already applied the earlier version of this migration must be recreated; there is no ciphertext conversion or compatibility path. Do not reset a database without authorization.
-
-The amended migration creates the single `identity.auth0_account_cleanups` table and then repairs pre-feature deleted users before the new binary opens traffic. Each PostgreSQL statement selects at most 100 users under row locks, inserts one private cleanup row and the existing outbox integration event, and replaces the Auth0 subject with the stable tombstone. A loop repeats until the update affects no rows. The processing-time loop is bounded per statement; the enclosing migration transaction covers the normal LAN-sized history. No provider or network call occurs during migration.
-
-Drain and stop binaries that do not enforce cleanup-history cutoffs before applying the migration. After it finishes, run the legacy-pending query below and require `legacy_pending = 0` before opening traffic. There is no hosted backfill worker and no additional migration.
-
-After a user has been detached or a new incarnation has been registered, roll forward only. Do not roll back to a binary that lacks cleanup-history enforcement or remove permanent cleanup history: an old JWT could otherwise resolve to a replacement account. This follows the repository's single-API-replica policy in [single-instance-deployment.md](single-instance-deployment.md).
+This lifecycle implementation targets a fresh test environment and starts with the new cleanup schema. The initial migration creates the single `identity.auth0_account_cleanups` table; it does not repair pre-existing rows, enqueue legacy work, or provide an upgrade path. Do not reset a database as part of this code change.
 
 ## Database operator runbook
 
@@ -48,10 +42,6 @@ FROM identity.auth0_account_cleanups AS c
 LEFT JOIN platform.outbox_messages AS m ON m.id = c."OutboxMessageId"
 ORDER BY c."CompletedAtUtc" IS NOT NULL, c."RequestedAtUtc" DESC, c."Id"
 LIMIT 100;
-
-SELECT count(*) AS legacy_pending
-FROM identity.users
-WHERE "IsDeleted" AND "Auth0UserId" NOT LIKE 'tombstone:%';
 ```
 
 The shared outbox retries failures with exponential delays and then dead-letters the event; the existing `mercurius.outbox.dead_lettered` metric remains the alerting signal. Repair provider outage, permissions, or configuration before retrying. Set `cleanup_id` to a local row ID from the status query. One returned ID means the dead-lettered unfinished job was requeued; zero means the row is missing, complete, actively claimed, processed, or otherwise ineligible.

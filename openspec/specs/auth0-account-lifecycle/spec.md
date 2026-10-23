@@ -5,7 +5,7 @@ TBD - created by archiving change auth0-account-lifecycle. Update Purpose after 
 ## Requirements
 ### Requirement: Durable Auth0 cleanup
 
-Deleting a LAN user MUST preserve its local identifier and historical references, anonymize its profile, detach its active provider subject, and atomically persist a durable cleanup job with the local deletion. The historical row MUST NOT retain the reusable subject. Cleanup MUST target only the exact Auth0 subject stored in the private cleanup row. A 204 or 404 MUST complete cleanup; missing configuration and transient provider failures MUST remain pending and retry through bounded durable delivery. Pending provider subjects MUST be hidden from logs and public/operator responses and erased after completion. Existing deleted rows MUST be backfilled resumably without a raw-subject SQL transform.
+Deleting a LAN user MUST preserve its local identifier and historical references, anonymize its profile, detach its active provider subject, and atomically persist a durable cleanup job with the local deletion. The historical row MUST NOT retain the reusable subject. Cleanup MUST target only the exact Auth0 subject stored in the private cleanup row. A 204 or 404 MUST complete cleanup; missing configuration and transient provider failures MUST remain pending and retry through bounded durable delivery. Pending provider subjects MUST be hidden from logs and public/operator responses and erased after completion.
 
 #### Scenario: Any deletion route queues cleanup
 
@@ -22,11 +22,6 @@ Deleting a LAN user MUST preserve its local identifier and historical references
 
 - WHEN configuration is missing or Auth0 returns a retryable error, times out, or cannot be reached
 - THEN durable bounded retry remains observable and the API does not claim cleanup completed
-
-#### Scenario: Legacy deleted user is backfilled
-
-- WHEN a deleted historical row still contains an Auth0 subject
-- THEN application backfill stores the subject in the private pending cleanup row and detaches the row resumably without logging or exposing the subject
 
 ### Requirement: Reused-subject account incarnation
 

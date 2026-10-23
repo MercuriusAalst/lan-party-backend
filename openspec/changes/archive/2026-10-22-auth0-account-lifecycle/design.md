@@ -14,7 +14,7 @@ The subject hash remains SHA-256 over the exact UTF-8 subject in lowercase hexad
 
 Insert the cleanup row and user-ID-only internal event through the existing leased outbox in the same local transaction as anonymization. Dispatch through the existing outbox handler and retry/dead-letter flow. DELETE only the stored exact Auth0 subject after URL escaping, accept 204/404, and compare provider creation generation before destructive retries. No Auth0 GET/DELETE sequence can eliminate its external time-of-check/time-of-use race.
 
-No hosted backfill worker or new queue engine is needed. The original unreleased lifecycle migration creates the cleanup table and, in bounded PostgreSQL statements, enqueues cleanup plus the existing outbox event and tombstones every pre-feature deleted subject. Migration execution performs no provider calls.
+The initial lifecycle migration only creates the cleanup schema. It does not inspect or transform pre-feature rows, enqueue legacy work, or provide an upgrade path.
 
 ## Authentication and registration
 
@@ -26,6 +26,6 @@ Creation and deletion acquire the same database subject advisory lock and rechec
 
 All four deletion routes return HTTP 202 with { message, deletionPending: true } after the local transaction commits. /users/me retains its 404 onboarding and 410 deleted-session behavior. There are no Auth0 cleanup status/retry HTTP routes.
 
-Operators use documented database SQL against the private database to inspect local cleanup IDs and sanitized outbox state, count legacy rows, and safely requeue only dead-lettered unfinished jobs. No dedicated operator CLI exists. The database and backup trust boundary protects the temporary exact subject; it is never written to outbox payloads, DTOs, logs, exceptions or telemetry.
+Operators use documented database SQL against the private database to inspect local cleanup IDs and sanitized outbox state and safely requeue only dead-lettered unfinished jobs. No dedicated operator CLI exists. The database and backup trust boundary protects the temporary exact subject; it is never written to outbox payloads, DTOs, logs, exceptions or telemetry.
 
-The lifecycle migration was applied only to disposable local/test databases and has never been deployed to shared, staging or production. Those local/test databases must be recreated before using the amended schema. There is no ciphertext conversion or compatibility path. Deployments must stop/drain binaries without cleanup-history enforcement before allowing registrations; only the repository's documented single API replica is supported.
+The lifecycle schema targets a fresh test environment and starts with the new implementation. There is no data repair, compatibility path, or mixed-version upgrade workflow. Only the repository's documented single API replica is supported.
