@@ -1,8 +1,9 @@
 using Mercurius.Modules.Identity.Application.DTOs;
+using Mercurius.Modules.Identity.Application.Services;
 
 namespace Mercurius.Modules.Identity.Application.Services.Auth0;
 
-internal interface IAuth0ManagementService
+internal interface IAuth0ManagementService : IIdentityProviderAccountService
 {
     Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default);
     Task<bool> HasAdminRoleAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
@@ -11,6 +12,4 @@ internal interface IAuth0ManagementService
         Task.FromResult<IReadOnlyList<string>>([]);
     Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default);
     Task SendPasswordResetEmailAsync(string email, CancellationToken cancellationToken = default);
-    Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default);
-    Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default);
 }

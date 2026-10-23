@@ -1,4 +1,4 @@
-# auth0-account-lifecycle Specification
+# Account Lifecycle Specification
 
 ## Purpose
 TBD - created by archiving change auth0-account-lifecycle. Update Purpose after archive.

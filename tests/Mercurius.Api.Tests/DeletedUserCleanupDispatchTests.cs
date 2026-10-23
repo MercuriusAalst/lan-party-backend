@@ -74,7 +74,7 @@ public sealed class DeletedUserCleanupDispatchTests
         Assert.Equal(member.Id, persisted.CaptainUserId);
         Assert.Equal([member.Id], persisted.Members.Select(teamMember => teamMember.UserId));
         Assert.All(await dbContext.OutboxMessages.AsNoTracking()
-            .Where(message => !message.EventType.Contains(nameof(Mercurius.Modules.Identity.Contracts.Auth0AccountCleanupRequestedIntegrationEvent)))
+            .Where(message => !message.EventType.Contains(nameof(Mercurius.Modules.Identity.Contracts.AccountCleanupRequestedIntegrationEvent)))
             .ToListAsync(), message => Assert.True(
             message.ProcessedAtUtc is not null,
             $"{message.EventType} was not delivered: {message.LastError}"));

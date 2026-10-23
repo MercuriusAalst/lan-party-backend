@@ -4,7 +4,7 @@ using Mercurius.Modules.Identity.Infrastructure;
 using Mercurius.Modules.Identity.Application.Services;
 using Microsoft.EntityFrameworkCore;
 
-namespace Mercurius.Modules.Identity.Application.Services.Auth0;
+namespace Mercurius.Modules.Identity.Application.Services;
 
 internal sealed class IdentityTokenValidator : IIdentityTokenValidator
 {
@@ -32,12 +32,12 @@ internal sealed class IdentityTokenValidator : IIdentityTokenValidator
             return false;
         }
 
-        var hash = Auth0SubjectHash.Compute(subject);
+        var hash = IdentitySubjectHash.Compute(subject);
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         await UserMutationLock.AcquireSubjectAsync(_dbContext, subject, cancellationToken);
-        var pendingCleanupExists = await _dbContext.Auth0AccountCleanups.AsNoTracking()
+        var pendingCleanupExists = await _dbContext.AccountCleanups.AsNoTracking()
             .AnyAsync(cleanup => cleanup.SubjectHash == hash && cleanup.CompletedAtUtc == null, cancellationToken);
-        var lastCompletedAtUtc = await _dbContext.Auth0AccountCleanups.AsNoTracking()
+        var lastCompletedAtUtc = await _dbContext.AccountCleanups.AsNoTracking()
             .Where(cleanup => cleanup.SubjectHash == hash)
             .MaxAsync(cleanup => cleanup.CompletedAtUtc, cancellationToken);
         var user = await _dbContext.Users.AsNoTracking()

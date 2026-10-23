@@ -1,17 +1,14 @@
 using Mercurius.LAN.API.Data;
-using Mercurius.Modules.Identity.Application.Services.Auth0;
-using Mercurius.Modules.Identity.Application.DTOs;
+using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Infrastructure;
-using Mercurius.Modules.Identity.Options;
 using Mercurius.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Mercurius.Modules.Identity.Tests;
 
-public sealed class Auth0AccountCleanupHandlerTests
+public sealed class AccountCleanupHandlerTests
 {
     [Fact]
     public async Task HandleAsync_DeletesCapturedOldGenerationThenPurgesPayloadAndRecordsCompletion()
@@ -23,17 +20,17 @@ public sealed class Auth0AccountCleanupHandlerTests
         var providerCreatedAt = requestedAt.AddDays(-20);
         var job = await SeedCleanupAsync(dbContext, subject, requestedAt);
         var management = new RecordingManagementService(providerCreatedAt);
-        var handler = new Auth0AccountCleanupHandler(
+        var handler = new AccountCleanupHandler(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
             management,
             TimeProvider.System);
 
         await handler.HandleAsync(
-            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
             new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt));
 
         dbContext.ChangeTracker.Clear();
-        var completed = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
+        var completed = await dbContext.Set<AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
         Assert.Equal(1, management.DeleteCalls);
         Assert.Equal(subject, management.LastDeletedSubject);
         Assert.Equal(TruncateToPostgresPrecision(providerCreatedAt), completed.ProviderCreatedAtUtc);
@@ -43,7 +40,7 @@ public sealed class Auth0AccountCleanupHandlerTests
         Assert.Equal(job.SubjectHash, completed.SubjectHash);
 
         await handler.HandleAsync(
-            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
             new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt));
         Assert.Equal(1, management.DeleteCalls);
     }
@@ -58,17 +55,17 @@ public sealed class Auth0AccountCleanupHandlerTests
         var providerCreatedAt = requestedAt.AddMinutes(1);
         var job = await SeedCleanupAsync(dbContext, subject, requestedAt);
         var management = new RecordingManagementService(providerCreatedAt);
-        var handler = new Auth0AccountCleanupHandler(
+        var handler = new AccountCleanupHandler(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
             management,
             TimeProvider.System);
 
         await handler.HandleAsync(
-            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
             new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt));
 
         dbContext.ChangeTracker.Clear();
-        var completed = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
+        var completed = await dbContext.Set<AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
         Assert.Equal(0, management.DeleteCalls);
         Assert.Null(completed.ProviderCreatedAtUtc);
         Assert.Equal("replacement-preserved", completed.SanitizedOutcome);
@@ -86,7 +83,7 @@ public sealed class Auth0AccountCleanupHandlerTests
         var replacementCreatedAt = requestedAt.AddMinutes(1);
         var job = await SeedCleanupAsync(dbContext, subject, requestedAt);
         var management = new RecordingManagementService(replacementCreatedAt);
-        var handler = new Auth0AccountCleanupHandler(
+        var handler = new AccountCleanupHandler(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
             management,
             TimeProvider.System);
@@ -104,28 +101,28 @@ public sealed class Auth0AccountCleanupHandlerTests
             """);
         await dbContext.Database.ExecuteSqlRawAsync("""
             CREATE TRIGGER fail_auth0_cleanup_completion
-            BEFORE UPDATE ON identity.auth0_account_cleanups
+            BEFORE UPDATE ON identity.account_cleanups
             FOR EACH ROW EXECUTE FUNCTION identity.fail_auth0_cleanup_completion();
             """);
 
         var failedAttempt = await Record.ExceptionAsync(() => handler.HandleAsync(
-            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
             new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt)));
 
-        Assert.Equal("Auth0 account cleanup is temporarily unavailable.", failedAttempt?.Message);
+        Assert.Equal("Account cleanup is temporarily unavailable.", failedAttempt?.Message);
         dbContext.ChangeTracker.Clear();
         await using (var triggerCleanup = CreateDbContext(database.ConnectionString))
         {
-            await triggerCleanup.Database.ExecuteSqlRawAsync("DROP TRIGGER fail_auth0_cleanup_completion ON identity.auth0_account_cleanups;");
+            await triggerCleanup.Database.ExecuteSqlRawAsync("DROP TRIGGER fail_auth0_cleanup_completion ON identity.account_cleanups;");
             await triggerCleanup.Database.ExecuteSqlRawAsync("DROP FUNCTION identity.fail_auth0_cleanup_completion();");
         }
 
         await handler.HandleAsync(
-            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
             new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt));
 
         dbContext.ChangeTracker.Clear();
-        var completed = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
+        var completed = await dbContext.Set<AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
         Assert.Equal(0, management.DeleteCalls);
         Assert.Null(completed.ProviderCreatedAtUtc);
         Assert.Equal("replacement-preserved", completed.SanitizedOutcome);
@@ -146,39 +143,39 @@ public sealed class Auth0AccountCleanupHandlerTests
         var job = await SeedCleanupAsync(dbContext, subject, requestedAt);
         Exception failure = failureKind == "timeout"
             ? new TaskCanceledException($"request timeout for https://tenant.example/users/{subject}")
-            : new Auth0ManagementRequestException($"Auth0 account lookup failed ({failureKind}).");
+            : new IdentityProviderRequestException($"Account lookup failed ({failureKind}).");
         var management = new RecordingManagementService(null)
         {
             Failure = failure
         };
-        var handler = new Auth0AccountCleanupHandler(
+        var handler = new AccountCleanupHandler(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
             management,
             TimeProvider.System);
 
         var exception = await Record.ExceptionAsync(() => handler.HandleAsync(
-            new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
+            new AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
             new Platform.Eventing.ModuleEventContext(job.OutboxMessageId, "cleanup", requestedAt)));
 
         dbContext.ChangeTracker.Clear();
-        var retryable = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
+        var retryable = await dbContext.Set<AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
         Assert.NotNull(exception);
-        Assert.Equal(failureKind == "timeout" ? "Auth0 account cleanup is temporarily unavailable." : $"Auth0 account lookup failed ({failureKind}).", exception!.Message);
+        Assert.Equal(failureKind == "timeout" ? "Account cleanup is temporarily unavailable." : $"Account lookup failed ({failureKind}).", exception!.Message);
         Assert.DoesNotContain(subject, exception.ToString(), StringComparison.Ordinal);
         Assert.Null(retryable.CompletedAtUtc);
         Assert.Equal(subject, retryable.Subject);
     }
 
-    private static async Task<Auth0AccountCleanup> SeedCleanupAsync(
+    private static async Task<AccountCleanup> SeedCleanupAsync(
         MercuriusDBContext dbContext,
         string subject,
         DateTime requestedAt)
     {
-        var job = new Auth0AccountCleanup
+        var job = new AccountCleanup
         {
             Id = Guid.NewGuid(),
             UserId = Guid.NewGuid(),
-            SubjectHash = Auth0SubjectHash.Compute(subject),
+            SubjectHash = IdentitySubjectHash.Compute(subject),
             Subject = subject,
             RequestedAtUtc = requestedAt,
             OutboxMessageId = Guid.NewGuid()
@@ -194,17 +191,15 @@ public sealed class Auth0AccountCleanupHandlerTests
     private static DateTime TruncateToPostgresPrecision(DateTime value) =>
         new(value.Ticks - value.Ticks % 10, DateTimeKind.Utc);
 
-    private sealed class RecordingManagementService(DateTime? createdAt) : IAuth0ManagementService
+    private sealed class RecordingManagementService(DateTime? createdAt) : IIdentityProviderAccountService
     {
         public Exception? Failure { get; init; }
         public int DeleteCalls { get; private set; }
         public string? LastDeletedSubject { get; private set; }
 
-        public Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new Auth0ProfileSnapshot(null, null, false));
-        public Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+        public Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
             Failure is null ? Task.FromResult(createdAt) : Task.FromException<DateTime?>(Failure);
-        public Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default)
+        public Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default)
         {
             if (Failure is not null)
                 return Task.FromException(Failure);
@@ -212,9 +207,5 @@ public sealed class Auth0AccountCleanupHandlerTests
             LastDeletedSubject = auth0UserId;
             return Task.CompletedTask;
         }
-        public Task<bool> HasAdminRoleAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<IReadOnlyList<string>> GetAdminUserIdsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<string>>([]);
-        public Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task SendPasswordResetEmailAsync(string email, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

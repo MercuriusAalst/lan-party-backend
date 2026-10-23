@@ -1,6 +1,6 @@
 namespace Mercurius.Modules.Identity.Domain;
 
-internal sealed class Auth0AccountCleanup
+internal sealed class AccountCleanup
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }

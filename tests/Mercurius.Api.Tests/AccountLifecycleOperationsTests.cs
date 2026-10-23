@@ -1,8 +1,7 @@
 using System.Text.Json;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Identity;
-using Mercurius.Modules.Identity.Application.DTOs;
-using Mercurius.Modules.Identity.Application.Services.Auth0;
+using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.TestInfrastructure;
@@ -10,6 +9,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Platform.Eventing;
 using Platform.Eventing.Persistence;
@@ -17,10 +17,10 @@ using Platform.Extensions;
 
 namespace Mercurius.Api.Tests;
 
-public sealed class Auth0LifecycleOperationsTests
+public sealed class AccountLifecycleOperationsTests
 {
     private const string CleanupEventType =
-        "Mercurius.Modules.Identity.Contracts.Auth0AccountCleanupRequestedIntegrationEvent";
+        "Mercurius.Modules.Identity.Contracts.AccountCleanupRequestedIntegrationEvent";
 
     [Fact]
     public async Task CurrentLifecycleCleanup_UsesExistingDispatcherAndRetriesProviderFailure()
@@ -30,7 +30,7 @@ public sealed class Auth0LifecycleOperationsTests
         var subject = $"auth0|dispatch-{Guid.NewGuid():N}";
         var (cleanup, message) = CreateCleanup(subject, cleanupUserId);
         message.Payload = JsonSerializer.Serialize(
-            new Auth0AccountCleanupRequestedIntegrationEvent(cleanup.Id, cleanupUserId),
+            new AccountCleanupRequestedIntegrationEvent(cleanup.Id, cleanupUserId),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         message.RetryCount = 0;
         message.NextAttemptAtUtc = DateTime.UtcNow.AddMinutes(-1);
@@ -43,9 +43,9 @@ public sealed class Auth0LifecycleOperationsTests
             await seed.SaveChangesAsync();
         }
 
-        var provider = new RecordingAuth0ManagementService
+        var provider = new RecordingIdentityProviderAccountService
         {
-            Failure = new Auth0ManagementRequestException("Auth0 account lookup failed (429)."),
+            Failure = new IdentityProviderRequestException("Account lookup failed (429)."),
             CreatedAtUtc = DateTime.UtcNow.AddDays(-10)
         };
         var builder = WebApplication.CreateBuilder();
@@ -56,7 +56,8 @@ public sealed class Auth0LifecycleOperationsTests
         builder.Services.AddDbContext<MercuriusDBContext>(options => options.UseNpgsql(database.ConnectionString));
         builder.Services.AddModuleEventing<MercuriusDBContext>();
         builder.Services.AddIdentityModule<MercuriusDBContext>(builder.Configuration);
-        builder.Services.AddScoped<IAuth0ManagementService>(_ => provider);
+        builder.Services.RemoveAll<IIdentityProviderAccountService>();
+        builder.Services.AddScoped<IIdentityProviderAccountService>(_ => provider);
         await using var app = builder.Build();
 
         using (var scope = app.Services.CreateScope())
@@ -64,7 +65,7 @@ public sealed class Auth0LifecycleOperationsTests
 
         await using (var failedAttempt = CreateDbContext(database.ConnectionString))
         {
-            var pending = await failedAttempt.Set<Auth0AccountCleanup>().SingleAsync();
+            var pending = await failedAttempt.Set<AccountCleanup>().SingleAsync();
             var outbox = await failedAttempt.OutboxMessages.SingleAsync(candidate => candidate.EventType == CleanupEventType);
             Assert.Null(pending.CompletedAtUtc);
             Assert.Equal(subject, pending.Subject);
@@ -84,7 +85,7 @@ public sealed class Auth0LifecycleOperationsTests
             await scope.ServiceProvider.GetRequiredService<IModuleEventDispatcher>().DispatchPendingAsync();
 
         await using var completedAttempt = CreateDbContext(database.ConnectionString);
-        var completed = await completedAttempt.Set<Auth0AccountCleanup>().SingleAsync();
+        var completed = await completedAttempt.Set<AccountCleanup>().SingleAsync();
         Assert.NotNull(completed.CompletedAtUtc);
         Assert.Equal(string.Empty, completed.Subject);
         Assert.Equal("deleted", completed.SanitizedOutcome);
@@ -127,17 +128,17 @@ public sealed class Auth0LifecycleOperationsTests
         Assert.NotNull(messages[claimed.OutboxMessageId].ClaimExpiresAtUtc);
     }
 
-    private static (Auth0AccountCleanup Cleanup, OutboxMessage Message) CreateCleanup(
+    private static (AccountCleanup Cleanup, OutboxMessage Message) CreateCleanup(
         string? subject = null,
         Guid? userId = null)
     {
         subject ??= $"auth0|retry-{Guid.NewGuid():N}";
-        var cleanup = new Auth0AccountCleanup
+        var cleanup = new AccountCleanup
         {
             Id = Guid.NewGuid(),
             UserId = userId ?? Guid.NewGuid(),
             Subject = subject,
-            SubjectHash = Auth0SubjectHash.Compute(subject),
+            SubjectHash = IdentitySubjectHash.Compute(subject),
             RequestedAtUtc = DateTime.UtcNow.AddMinutes(-10),
             OutboxMessageId = Guid.NewGuid()
         };
@@ -150,7 +151,7 @@ public sealed class Auth0LifecycleOperationsTests
             RetryCount = 5,
             NextAttemptAtUtc = DateTime.UtcNow.AddMinutes(5),
             DeadLetteredAtUtc = DateTime.UtcNow,
-            LastError = "Auth0 account cleanup is temporarily unavailable."
+            LastError = "Account cleanup is temporarily unavailable."
         };
         return (cleanup, message);
     }
@@ -194,36 +195,21 @@ public sealed class Auth0LifecycleOperationsTests
     private static MercuriusDBContext CreateDbContext(string connectionString) =>
         new(new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options);
 
-    private sealed class RecordingAuth0ManagementService : IAuth0ManagementService
+    private sealed class RecordingIdentityProviderAccountService : IIdentityProviderAccountService
     {
         public Exception? Failure { get; set; }
         public DateTime? CreatedAtUtc { get; set; }
         public int DeleteCalls { get; private set; }
         public string? LastDeletedSubject { get; private set; }
 
-        public Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new Auth0ProfileSnapshot(null, null, false));
-
-        public Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+        public Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
             Failure is null ? Task.FromResult(CreatedAtUtc) : Task.FromException<DateTime?>(Failure);
 
-        public Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default)
+        public Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default)
         {
             DeleteCalls++;
             LastDeletedSubject = auth0UserId;
             return Task.CompletedTask;
         }
-
-        public Task<bool> HasAdminRoleAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(false);
-
-        public Task<IReadOnlyList<string>> GetAdminUserIdsAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<string>>([]);
-
-        public Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-
-        public Task SendPasswordResetEmailAsync(string email, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
     }
 }

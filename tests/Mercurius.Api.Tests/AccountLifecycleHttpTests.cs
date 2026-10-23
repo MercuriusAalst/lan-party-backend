@@ -8,6 +8,7 @@ using Mercurius.LAN.API.Hubs;
 using Mercurius.LAN.API.Middleware;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Application.DTOs;
+using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Domain;
@@ -61,7 +62,7 @@ public sealed class AccountLifecycleHttpTests
         using (var read = CreateDbContext(database.ConnectionString))
         {
             var deleted = await read.Users.SingleAsync(user => user.Id == oldUser.Id);
-            var cleanup = await read.Set<Auth0AccountCleanup>().SingleAsync(job => job.UserId == oldUser.Id);
+            var cleanup = await read.Set<AccountCleanup>().SingleAsync(job => job.UserId == oldUser.Id);
             Assert.True(deleted.IsDeleted);
             Assert.StartsWith("tombstone:", deleted.Auth0UserId, StringComparison.Ordinal);
             Assert.Equal(subject, cleanup.Subject);
@@ -150,7 +151,7 @@ public sealed class AccountLifecycleHttpTests
         long firstCutoff;
         await using (var firstVerify = CreateDbContext(database.ConnectionString))
         {
-            var cleanup = await firstVerify.Set<Auth0AccountCleanup>()
+            var cleanup = await firstVerify.Set<AccountCleanup>()
                 .SingleAsync(job => job.UserId == firstUser.Id);
             firstCutoff = CutoffFor(cleanup);
         }
@@ -178,7 +179,7 @@ public sealed class AccountLifecycleHttpTests
         long secondCutoff;
         await using (var secondVerify = CreateDbContext(database.ConnectionString))
         {
-            var cleanup = await secondVerify.Set<Auth0AccountCleanup>()
+            var cleanup = await secondVerify.Set<AccountCleanup>()
                 .SingleAsync(job => job.UserId == firstReplacementId);
             secondCutoff = CutoffFor(cleanup);
         }
@@ -198,8 +199,8 @@ public sealed class AccountLifecycleHttpTests
             Assert.Equal(HttpStatusCode.Unauthorized, replayAfterSecondCycle.StatusCode);
 
         await using var finalVerify = CreateDbContext(database.ConnectionString);
-        Assert.Equal(2, await finalVerify.Set<Auth0AccountCleanup>()
-            .CountAsync(job => job.SubjectHash == Auth0SubjectHash.Compute(subject)));
+        Assert.Equal(2, await finalVerify.Set<AccountCleanup>()
+            .CountAsync(job => job.SubjectHash == IdentitySubjectHash.Compute(subject)));
     }
 
     [Fact]
@@ -239,7 +240,7 @@ public sealed class AccountLifecycleHttpTests
         foreach (var user in users)
         {
             Assert.True(await verify.Users.AnyAsync(candidate => candidate.Id == user.Id && candidate.IsDeleted));
-            Assert.Single(await verify.Set<Auth0AccountCleanup>().Where(job => job.UserId == user.Id).ToListAsync());
+            Assert.Single(await verify.Set<AccountCleanup>().Where(job => job.UserId == user.Id).ToListAsync());
         }
     }
 
@@ -267,9 +268,9 @@ public sealed class AccountLifecycleHttpTests
             await scope.ServiceProvider.GetRequiredService<IModuleEventDispatcher>().DispatchPendingAsync();
 
         await using var verify = CreateDbContext(database.ConnectionString);
-        var cleanup = await verify.Set<Auth0AccountCleanup>().SingleAsync(job => job.UserId == user.Id);
+        var cleanup = await verify.Set<AccountCleanup>().SingleAsync(job => job.UserId == user.Id);
         var outbox = await verify.OutboxMessages.AsNoTracking()
-            .SingleAsync(message => message.EventType.Contains(nameof(Auth0AccountCleanupRequestedIntegrationEvent)));
+            .SingleAsync(message => message.EventType.Contains(nameof(AccountCleanupRequestedIntegrationEvent)));
         Assert.Null(cleanup.CompletedAtUtc);
         Assert.Equal(subject, cleanup.Subject);
         Assert.True(outbox.RetryCount > 0);
@@ -355,7 +356,7 @@ public sealed class AccountLifecycleHttpTests
         }
     }
 
-    private static long CutoffFor(Auth0AccountCleanup cleanup) =>
+    private static long CutoffFor(AccountCleanup cleanup) =>
         new DateTimeOffset(cleanup.CompletedAtUtc ?? throw new InvalidOperationException("Cleanup did not complete."))
             .ToUnixTimeSeconds() + 1;
 
@@ -401,9 +402,9 @@ public sealed class AccountLifecycleHttpTests
         public Exception? Failure { get; init; }
         public Task<Auth0ProfileSnapshot> GetUserProfileAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
             Task.FromResult(new Auth0ProfileSnapshot($"{Guid.NewGuid():N}@example.test", true, false));
-        public Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+        public Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
             Failure is null ? Task.FromResult(providerCreatedAt) : Task.FromException<DateTime?>(Failure);
-        public Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default)
+        public Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default)
         {
             if (Failure is not null)
                 return Task.FromException(Failure);

@@ -667,19 +667,19 @@ public class UserTests
         dbContext.ChangeTracker.Clear();
         var deletedOriginal = await dbContext.Users.AsNoTracking().SingleAsync(user => user.Id == original.Id);
         var stillActiveLaterUser = await dbContext.Users.AsNoTracking().SingleAsync(user => user.Id == laterUser.Id);
-        var cleanup = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(job => job.UserId == original.Id);
+        var cleanup = await dbContext.Set<AccountCleanup>().SingleAsync(job => job.UserId == original.Id);
         Assert.True(deletedOriginal.IsDeleted);
         Assert.StartsWith("tombstone:", deletedOriginal.Auth0UserId, StringComparison.Ordinal);
         Assert.False(stillActiveLaterUser.IsDeleted);
         Assert.Equal("auth0|delete-later", stillActiveLaterUser.Auth0UserId);
         Assert.Null(cleanup.CompletedAtUtc);
 
-        var cleanupEvent = Assert.Single(publisher.Events.OfType<Auth0AccountCleanupRequestedIntegrationEvent>());
+        var cleanupEvent = Assert.Single(publisher.Events.OfType<AccountCleanupRequestedIntegrationEvent>());
         var deletionEvent = Assert.Single(publisher.Events.OfType<UserDeletedIntegrationEvent>());
         Assert.Equal(original.Id, cleanupEvent.UserId);
         Assert.Equal(new UserId(original.Id), deletionEvent.UserId);
-        Assert.Empty(await dbContext.Set<Auth0AccountCleanup>().AsNoTracking()
-            .Where(cleanupEntry => cleanupEntry.SubjectHash == Auth0SubjectHash.Compute(stillActiveLaterUser.Auth0UserId))
+        Assert.Empty(await dbContext.Set<AccountCleanup>().AsNoTracking()
+            .Where(cleanupEntry => cleanupEntry.SubjectHash == IdentitySubjectHash.Compute(stillActiveLaterUser.Auth0UserId))
             .ToListAsync());
     }
 
@@ -1120,7 +1120,7 @@ public class UserTests
         Assert.Null(persisted.ProfilePictureUrl);
         Assert.Equal([pictureUrl], media.DeletedUrls);
         Assert.StartsWith("tombstone:", persisted.Auth0UserId, StringComparison.Ordinal);
-        Assert.Single(await dbContext.Set<Auth0AccountCleanup>().AsNoTracking().Where(job => job.UserId == user.Id).ToListAsync());
+        Assert.Single(await dbContext.Set<AccountCleanup>().AsNoTracking().Where(job => job.UserId == user.Id).ToListAsync());
     }
 
     [Fact]
@@ -1521,9 +1521,9 @@ public class UserTests
             media);
     }
 
-    private static Auth0AccountLifecycleService CreateLifecycleService(IIdentityDbContext dbContext, IModuleEventPublisher publisher)
+    private static AccountLifecycleService CreateLifecycleService(IIdentityDbContext dbContext, IModuleEventPublisher publisher)
     {
-        return new Auth0AccountLifecycleService(dbContext, publisher);
+        return new AccountLifecycleService(dbContext, publisher);
     }
 
     private static Microsoft.AspNetCore.Http.FormFile CreatePictureUpload() =>
@@ -1877,7 +1877,7 @@ public class UserTests
             return Task.CompletedTask;
         }
 
-        public Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
-        public Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
+        public Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

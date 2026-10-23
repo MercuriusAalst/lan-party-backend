@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Mercurius.Modules.Identity.Infrastructure;
 
-internal sealed class Auth0AccountCleanupConfiguration : IEntityTypeConfiguration<Auth0AccountCleanup>
+internal sealed class AccountCleanupConfiguration : IEntityTypeConfiguration<AccountCleanup>
 {
-    public void Configure(EntityTypeBuilder<Auth0AccountCleanup> entity)
+    public void Configure(EntityTypeBuilder<AccountCleanup> entity)
     {
-        entity.ToTable("auth0_account_cleanups", "identity");
+        entity.ToTable("account_cleanups", "identity");
         entity.HasKey(cleanup => cleanup.Id);
         entity.Property(cleanup => cleanup.SubjectHash).HasMaxLength(64).IsRequired();
         entity.Property(cleanup => cleanup.Subject).HasMaxLength(512).IsRequired();

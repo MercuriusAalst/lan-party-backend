@@ -24,7 +24,7 @@ Creation and deletion acquire the same database subject advisory lock and rechec
 
 ## Rollout and contract
 
-All four deletion routes return HTTP 202 with { message, deletionPending: true } after the local transaction commits. /users/me retains its 404 onboarding and 410 deleted-session behavior. There are no Auth0 cleanup status/retry HTTP routes.
+All four deletion routes return HTTP 202 with { message, deletionPending: true } after the local transaction commits. /users/me retains its 404 onboarding and 410 deleted-session behavior. There are no cleanup status/retry HTTP routes.
 
 Operators use documented database SQL against the private database to inspect local cleanup IDs and sanitized outbox state and safely requeue only dead-lettered unfinished jobs. No dedicated operator CLI exists. The database and backup trust boundary protects the temporary exact subject; it is never written to outbox payloads, DTOs, logs, exceptions or telemetry.
 

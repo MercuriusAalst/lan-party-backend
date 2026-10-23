@@ -1,19 +1,18 @@
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Contracts;
-using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Infrastructure;
 using Platform.Eventing;
 using Microsoft.EntityFrameworkCore;
 using Mercurius.Modules.Shared.Exceptions;
 
-namespace Mercurius.Modules.Identity.Application.Services.Auth0;
+namespace Mercurius.Modules.Identity.Application.Services;
 
-internal sealed class Auth0AccountLifecycleService
+internal sealed class AccountLifecycleService
 {
     private readonly IIdentityDbContext _dbContext;
     private readonly IModuleEventPublisher _eventPublisher;
 
-    public Auth0AccountLifecycleService(
+    public AccountLifecycleService(
         IIdentityDbContext dbContext,
         IModuleEventPublisher eventPublisher)
     {
@@ -24,8 +23,8 @@ internal sealed class Auth0AccountLifecycleService
     public async Task<Guid> QueueCleanupAsync(string subject, Guid userId, DateTime requestedAtUtc, CancellationToken cancellationToken = default)
     {
         await UserMutationLock.AcquireSubjectAsync(_dbContext, subject, cancellationToken);
-        var subjectHash = Auth0SubjectHash.Compute(subject);
-        var pendingCleanupJobId = await _dbContext.Auth0AccountCleanups
+        var subjectHash = IdentitySubjectHash.Compute(subject);
+        var pendingCleanupJobId = await _dbContext.AccountCleanups
             .Where(cleanup => cleanup.SubjectHash == subjectHash && cleanup.CompletedAtUtc == null)
             .Select(cleanup => (Guid?)cleanup.Id)
             .FirstOrDefaultAsync(cancellationToken);
@@ -34,9 +33,9 @@ internal sealed class Auth0AccountLifecycleService
 
         var jobId = Guid.NewGuid();
         var messageId = _eventPublisher.Publish(
-            new Auth0AccountCleanupRequestedIntegrationEvent(jobId, userId),
+            new AccountCleanupRequestedIntegrationEvent(jobId, userId),
             requestedAtUtc);
-        _dbContext.Auth0AccountCleanups.Add(new Auth0AccountCleanup
+        _dbContext.AccountCleanups.Add(new AccountCleanup
         {
             Id = jobId,
             UserId = userId,
@@ -50,8 +49,8 @@ internal sealed class Auth0AccountLifecycleService
 
     public async Task EnsureSubjectCanRegisterAsync(string subject, string? issuedAtUnixSeconds, bool enforceCallerToken, CancellationToken cancellationToken = default)
     {
-        var subjectHash = Auth0SubjectHash.Compute(subject.Trim());
-        var pendingCleanupExists = await _dbContext.Auth0AccountCleanups.AsNoTracking()
+        var subjectHash = IdentitySubjectHash.Compute(subject.Trim());
+        var pendingCleanupExists = await _dbContext.AccountCleanups.AsNoTracking()
             .AnyAsync(cleanup => cleanup.SubjectHash == subjectHash && cleanup.CompletedAtUtc == null, cancellationToken);
         if (pendingCleanupExists)
             throw new ConflictException("account_cleanup_pending", "This account is still being removed from the identity provider.");
@@ -59,7 +58,7 @@ internal sealed class Auth0AccountLifecycleService
             .AnyAsync(user => user.Auth0UserId == subject.Trim(), cancellationToken);
         if (currentUserExists)
             throw new ConflictException("profile_exists", "The account already has a local profile.");
-        var lastCompletedAtUtc = await _dbContext.Auth0AccountCleanups.AsNoTracking()
+        var lastCompletedAtUtc = await _dbContext.AccountCleanups.AsNoTracking()
             .Where(cleanup => cleanup.SubjectHash == subjectHash)
             .MaxAsync(cleanup => cleanup.CompletedAtUtc, cancellationToken);
         var cutoff = lastCompletedAtUtc is DateTime completedAt
@@ -75,7 +74,7 @@ internal sealed class Auth0AccountLifecycleService
         if (userId is not Guid id)
             return false;
 
-        return await _dbContext.Auth0AccountCleanups.AnyAsync(
+        return await _dbContext.AccountCleanups.AnyAsync(
             cleanup => cleanup.UserId == id && cleanup.CompletedAtUtc == null,
             cancellationToken);
     }

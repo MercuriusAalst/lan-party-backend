@@ -1,44 +1,43 @@
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Infrastructure;
-using Mercurius.Modules.Identity.Application.Services;
 using Microsoft.EntityFrameworkCore;
 using Platform.Eventing;
 
-namespace Mercurius.Modules.Identity.Application.Services.Auth0;
+namespace Mercurius.Modules.Identity.Application.Services;
 
-internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0AccountCleanupRequestedIntegrationEvent>
+internal sealed class AccountCleanupHandler : IModuleEventHandler<AccountCleanupRequestedIntegrationEvent>
 {
     private readonly IIdentityDbContext _dbContext;
-    private readonly IAuth0ManagementService _managementService;
+    private readonly IIdentityProviderAccountService _accountService;
     private readonly TimeProvider _timeProvider;
 
-    public Auth0AccountCleanupHandler(
+    public AccountCleanupHandler(
         IIdentityDbContext dbContext,
-        IAuth0ManagementService managementService,
+        IIdentityProviderAccountService accountService,
         TimeProvider timeProvider)
     {
         _dbContext = dbContext;
-        _managementService = managementService;
+        _accountService = accountService;
         _timeProvider = timeProvider;
     }
 
-    public string ConsumerName => "identity.auth0-account-cleanup";
+    public string ConsumerName => "identity.account-cleanup";
 
-    public async Task HandleAsync(Auth0AccountCleanupRequestedIntegrationEvent payload, ModuleEventContext context, CancellationToken cancellationToken = default)
+    public async Task HandleAsync(AccountCleanupRequestedIntegrationEvent payload, ModuleEventContext context, CancellationToken cancellationToken = default)
     {
         using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         attemptTimeout.CancelAfter(TimeSpan.FromSeconds(60));
         var attemptToken = attemptTimeout.Token;
-        var cleanup = await _dbContext.Auth0AccountCleanups.AsNoTracking()
+        var cleanup = await _dbContext.AccountCleanups.AsNoTracking()
             .SingleOrDefaultAsync(job => job.Id == payload.CleanupId, attemptToken)
-            ?? throw new Auth0CleanupRetryException();
+            ?? throw new AccountCleanupRetryException();
         if (cleanup.CompletedAtUtc is not null)
             return;
 
         var subject = cleanup.Subject;
         try
         {
-            var providerCreatedAt = await _managementService.GetUserCreatedAtAsync(subject, attemptToken);
+            var providerCreatedAt = await _accountService.GetAccountCreatedAtAsync(subject, attemptToken);
             string outcome;
             if (providerCreatedAt is null)
             {
@@ -56,9 +55,9 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
             else
             {
                 await RecordProviderGenerationAsync(cleanup.Id, providerCreatedAt.Value, attemptToken);
-                // Auth0 does not offer a conditional delete by generation: a recreate between
+                // Providers may not offer a conditional delete by generation: a recreate between
                 // this GET and DELETE remains an external-provider TOCTOU limitation.
-                await _managementService.DeleteUserAsync(subject, attemptToken);
+                await _accountService.DeleteAccountAsync(subject, attemptToken);
                 outcome = "deleted";
             }
 
@@ -68,15 +67,15 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
         {
             throw;
         }
-        catch (Auth0ManagementRequestException exception)
+        catch (IdentityProviderRequestException exception)
         {
             // These messages are deliberately curated and contain no provider subject, URI or body.
-            throw new Auth0CleanupRetryException(exception.Message);
+            throw new AccountCleanupRetryException(exception.Message);
         }
         catch
         {
             // Outbox LastError persists exception text. Never retain provider URL or subject.
-            throw new Auth0CleanupRetryException();
+            throw new AccountCleanupRetryException();
         }
     }
 
@@ -84,7 +83,7 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
     {
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         await UserMutationLock.AcquireSubjectAsync(_dbContext, subject, cancellationToken);
-        var job = await _dbContext.Auth0AccountCleanups.SingleAsync(candidate => candidate.Id == cleanupId, cancellationToken);
+        var job = await _dbContext.AccountCleanups.SingleAsync(candidate => candidate.Id == cleanupId, cancellationToken);
         if (job.CompletedAtUtc is not null)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -102,14 +101,14 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
 
     private async Task RecordProviderGenerationAsync(Guid cleanupId, DateTime providerCreatedAtUtc, CancellationToken cancellationToken)
     {
-        await _dbContext.Auth0AccountCleanups
+        await _dbContext.AccountCleanups
             .Where(job => job.Id == cleanupId && job.CompletedAtUtc == null && job.ProviderCreatedAtUtc == null)
             .ExecuteUpdateAsync(setters => setters.SetProperty(job => job.ProviderCreatedAtUtc, providerCreatedAtUtc), cancellationToken);
     }
 
-    private sealed class Auth0CleanupRetryException : Exception
+    private sealed class AccountCleanupRetryException : Exception
     {
-        public Auth0CleanupRetryException() : base("Auth0 account cleanup is temporarily unavailable.") { }
-        public Auth0CleanupRetryException(string safeMessage) : base(safeMessage) { }
+        public AccountCleanupRetryException() : base("Account cleanup is temporarily unavailable.") { }
+        public AccountCleanupRetryException(string safeMessage) : base(safeMessage) { }
     }
 }

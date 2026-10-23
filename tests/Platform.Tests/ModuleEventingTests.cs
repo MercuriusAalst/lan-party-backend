@@ -566,7 +566,7 @@ public class ModuleEventingTests
     {
         var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
         var publisher = moduleEventPublisher ?? new ModuleEventPublisher(dbContext);
-        var lifecycle = new Auth0AccountLifecycleService(identityDbContext, publisher);
+        var lifecycle = new AccountLifecycleService(identityDbContext, publisher);
         return new UserIntegrationEventPublishingService(
             new UserService(identityDbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(identityDbContext, new NoopAuth0ManagementService(), new AuthenticatedIdentityContext()), TimeProvider.System, new AuthenticatedIdentityContext()),
             identityDbContext,
@@ -603,10 +603,10 @@ public class ModuleEventingTests
             return Task.FromResult(new Auth0ProfileSnapshot(null, null, false));
         }
 
-        public Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
+        public Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default) =>
             Task.FromResult<DateTime?>(null);
 
-        public Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task SendVerificationEmailAsync(string auth0UserId, CancellationToken cancellationToken = default)
         {

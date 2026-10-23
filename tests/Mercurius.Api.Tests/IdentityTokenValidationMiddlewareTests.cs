@@ -37,11 +37,11 @@ public sealed class IdentityTokenValidationMiddlewareTests
             var oldPersisted = await mutate.Users.SingleAsync(user => user.Id == oldUser.Id);
             oldPersisted.Anonymize(DateTime.UtcNow);
             mutate.Users.Add(replacement);
-            mutate.Set<Auth0AccountCleanup>().Add(new Auth0AccountCleanup
+            mutate.Set<AccountCleanup>().Add(new AccountCleanup
             {
                 Id = Guid.NewGuid(),
                 UserId = oldUser.Id,
-                SubjectHash = Auth0SubjectHash.Compute(subject),
+                SubjectHash = IdentitySubjectHash.Compute(subject),
                 Subject = string.Empty,
                 RequestedAtUtc = DateTime.UtcNow.AddMinutes(-1),
                 CompletedAtUtc = DateTimeOffset.FromUnixTimeSeconds(199).UtcDateTime,

@@ -15,7 +15,7 @@ internal sealed class IdentityDbContextAdapter<TDbContext> : IIdentityDbContext
     }
 
     public DbSet<User> Users => _dbContext.Set<User>();
-    public DbSet<Auth0AccountCleanup> Auth0AccountCleanups => _dbContext.Set<Auth0AccountCleanup>();
+    public DbSet<AccountCleanup> AccountCleanups => _dbContext.Set<AccountCleanup>();
     public DatabaseFacade Database => _dbContext.Database;
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>

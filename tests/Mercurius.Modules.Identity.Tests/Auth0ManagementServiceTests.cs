@@ -19,13 +19,13 @@ public sealed class Auth0ManagementServiceTests
         }));
         var service = CreateService(httpClient);
 
-        var createdAt = await service.GetUserCreatedAtAsync("google-oauth2|subject");
+        var createdAt = await service.GetAccountCreatedAtAsync("google-oauth2|subject");
 
         Assert.Equal(new DateTime(2026, 1, 15, 10, 30, 0, DateTimeKind.Utc), createdAt);
     }
 
     [Fact]
-    public async Task DeleteUser_EscapesExactSubjectAndTreatsNotFoundAsSuccess()
+    public async Task DeleteAccount_EscapesExactSubjectAndTreatsNotFoundAsSuccess()
     {
         string? deletePath = null;
         using var httpClient = new HttpClient(new StubHandler(request =>
@@ -37,7 +37,7 @@ public sealed class Auth0ManagementServiceTests
         }));
         var service = CreateService(httpClient);
 
-        await service.DeleteUserAsync("google-oauth2|subject/with space");
+        await service.DeleteAccountAsync("google-oauth2|subject/with space");
 
         Assert.Contains("google-oauth2%7Csubject%2Fwith%20space", deletePath, StringComparison.OrdinalIgnoreCase);
     }
@@ -53,7 +53,7 @@ public sealed class Auth0ManagementServiceTests
         }));
         var service = CreateService(httpClient);
 
-        Assert.Null(await service.GetUserCreatedAtAsync("auth0|absent"));
+        Assert.Null(await service.GetAccountCreatedAtAsync("auth0|absent"));
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class Auth0ManagementServiceTests
             TimeProvider.System);
 
         var exception = await Assert.ThrowsAsync<Auth0ManagementRequestException>(
-            () => service.GetUserCreatedAtAsync("auth0|missing-config"));
+            () => service.GetAccountCreatedAtAsync("auth0|missing-config"));
 
         Assert.Equal("Auth0 Management API is not configured.", exception.Message);
     }
@@ -86,7 +86,7 @@ public sealed class Auth0ManagementServiceTests
         var service = CreateService(httpClient);
 
         var exception = await Assert.ThrowsAsync<Auth0ManagementRequestException>(
-            () => service.GetUserCreatedAtAsync("auth0|retry"));
+            () => service.GetAccountCreatedAtAsync("auth0|retry"));
 
         Assert.Contains(((int)statusCode).ToString(), exception.Message, StringComparison.Ordinal);
     }

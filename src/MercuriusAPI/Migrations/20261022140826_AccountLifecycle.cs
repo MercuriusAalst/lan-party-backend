@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,13 +6,13 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Mercurius.LAN.API.Migrations
 {
     /// <inheritdoc />
-    public partial class Auth0AccountLifecycle : Migration
+    public partial class AccountLifecycle : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "auth0_account_cleanups",
+                name: "account_cleanups",
                 schema: "identity",
                 columns: table => new
                 {
@@ -28,26 +28,26 @@ namespace Mercurius.LAN.API.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_auth0_account_cleanups", x => x.Id);
+                    table.PrimaryKey("PK_account_cleanups", x => x.Id);
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_auth0_account_cleanups_OutboxMessageId",
+                name: "IX_account_cleanups_OutboxMessageId",
                 schema: "identity",
-                table: "auth0_account_cleanups",
+                table: "account_cleanups",
                 column: "OutboxMessageId",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_auth0_account_cleanups_SubjectHash",
+                name: "IX_account_cleanups_SubjectHash",
                 schema: "identity",
-                table: "auth0_account_cleanups",
+                table: "account_cleanups",
                 column: "SubjectHash");
 
             migrationBuilder.CreateIndex(
-                name: "IX_auth0_account_cleanups_UserId_RequestedAtUtc",
+                name: "IX_account_cleanups_UserId_RequestedAtUtc",
                 schema: "identity",
-                table: "auth0_account_cleanups",
+                table: "account_cleanups",
                 columns: new[] { "UserId", "RequestedAtUtc" });
         }
 
@@ -55,7 +55,7 @@ namespace Mercurius.LAN.API.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "auth0_account_cleanups",
+                name: "account_cleanups",
                 schema: "identity");
         }
     }

@@ -17,7 +17,7 @@ public sealed class IdentityTokenValidatorTests
         await using var database = PostgresTestDatabase.CreateMigrated();
         await using var dbContext = CreateDbContext(database.ConnectionString);
         var subject = "auth0|pending-cleanup";
-        dbContext.Set<Auth0AccountCleanup>().Add(CreateCleanup(subject));
+        dbContext.Set<AccountCleanup>().Add(CreateCleanup(subject));
         await dbContext.SaveChangesAsync();
         var context = new AuthenticatedIdentityContext();
         var validator = CreateValidator(dbContext, context);
@@ -34,7 +34,7 @@ public sealed class IdentityTokenValidatorTests
         var subject = "auth0|recreated";
         var newUser = CreateUser(subject);
         dbContext.Users.Add(newUser);
-        dbContext.Set<Auth0AccountCleanup>().Add(CreateCleanup(
+        dbContext.Set<AccountCleanup>().Add(CreateCleanup(
             subject,
             DateTimeOffset.FromUnixTimeSeconds(199).UtcDateTime));
         await dbContext.SaveChangesAsync();
@@ -69,7 +69,7 @@ public sealed class IdentityTokenValidatorTests
         original.Anonymize(DateTime.UtcNow);
         var replacement = CreateUser(subject);
         first.Users.Add(replacement);
-        first.Set<Auth0AccountCleanup>().Add(CreateCleanup(
+        first.Set<AccountCleanup>().Add(CreateCleanup(
             subject,
             DateTimeOffset.FromUnixTimeSeconds(199).UtcDateTime));
         await first.SaveChangesAsync();
@@ -86,12 +86,12 @@ public sealed class IdentityTokenValidatorTests
             context);
     }
 
-    private static Auth0AccountCleanup CreateCleanup(string subject, DateTime? completedAtUtc = null) =>
+    private static AccountCleanup CreateCleanup(string subject, DateTime? completedAtUtc = null) =>
         new()
         {
             Id = Guid.NewGuid(),
             UserId = Guid.NewGuid(),
-            SubjectHash = Auth0SubjectHash.Compute(subject),
+            SubjectHash = IdentitySubjectHash.Compute(subject),
             Subject = subject,
             RequestedAtUtc = DateTime.UtcNow.AddMinutes(-1),
             CompletedAtUtc = completedAtUtc,

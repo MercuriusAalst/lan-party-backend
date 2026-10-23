@@ -7,7 +7,7 @@ namespace Mercurius.Modules.Identity.Infrastructure;
 internal interface IIdentityDbContext
 {
     DbSet<User> Users { get; }
-    DbSet<Auth0AccountCleanup> Auth0AccountCleanups { get; }
+    DbSet<AccountCleanup> AccountCleanups { get; }
     DatabaseFacade Database { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

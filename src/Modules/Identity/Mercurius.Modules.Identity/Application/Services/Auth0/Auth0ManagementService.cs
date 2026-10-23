@@ -57,7 +57,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         return new Auth0ProfileSnapshot(profile?.Email, profile?.EmailVerified, hasPasswordResetIdentity);
     }
 
-    public async Task<DateTime?> GetUserCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default)
+    public async Task<DateTime?> GetAccountCreatedAtAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         EnsureManagementConfigured();
         try
@@ -86,7 +86,7 @@ internal sealed class Auth0ManagementService : IAuth0ManagementService
         }
     }
 
-    public async Task DeleteUserAsync(string auth0UserId, CancellationToken cancellationToken = default)
+    public async Task DeleteAccountAsync(string auth0UserId, CancellationToken cancellationToken = default)
     {
         EnsureManagementConfigured();
         try

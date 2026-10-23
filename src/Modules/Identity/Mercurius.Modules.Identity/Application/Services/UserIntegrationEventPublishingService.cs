@@ -21,7 +21,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
     private readonly IIdentityDbContext _dbContext;
     private readonly IModuleEventPublisher _moduleEventPublisher;
     private readonly IRealtimeConnectionManager _realtimeConnectionManager;
-    private readonly Auth0AccountLifecycleService _accountLifecycle;
+    private readonly AccountLifecycleService _accountLifecycle;
     private readonly IAuthenticatedIdentityContext _authenticatedIdentityContext;
     private readonly IMediaModule? _mediaModule;
     private readonly ILogger<UserIntegrationEventPublishingService>? _logger;
@@ -31,7 +31,7 @@ internal sealed class UserIntegrationEventPublishingService : IUserService
         IIdentityDbContext dbContext,
         IModuleEventPublisher moduleEventPublisher,
         IRealtimeConnectionManager realtimeConnectionManager,
-        Auth0AccountLifecycleService accountLifecycle,
+        AccountLifecycleService accountLifecycle,
         IAuthenticatedIdentityContext authenticatedIdentityContext,
         IMediaModule? mediaModule = null,
         ILogger<UserIntegrationEventPublishingService>? logger = null)

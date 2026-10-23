@@ -1,4 +1,4 @@
-# Auth0 Account Lifecycle
+# Account Lifecycle
 
 ## ADDED Requirements
 
