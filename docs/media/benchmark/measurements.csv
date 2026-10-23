@@ -1,8 +1,0 @@
-fixture,input_dimensions,baseline_bytes,baseline_dimensions,output_bytes,output_dimensions,reduction_percent
-banner-artwork-text,5000x2813,37208,5000x2813,14294,2560x1440,61.6
-banner-photo-detail,3840x2560,3112906,3840x2560,512632,2160x1440,83.5
-banner-small,320x180,1154,320x180,1052,320x180,8.8
-logo-text-alpha-lossy-q86,1600x800,3602,1024x512,3602,1024x512,0.0
-logo-text-alpha-lossless,1600x800,858,1024x512,858,1024x512,-76.2
-logo-flat-alpha-lossy-q86,1200x1200,4020,1024x1024,4020,1024x1024,0.0
-logo-flat-alpha-lossless,1200x1200,896,1024x1024,896,1024x1024,-77.7
