@@ -91,8 +91,8 @@ public sealed class IdentityTokenValidatorTests
         {
             Id = Guid.NewGuid(),
             UserId = Guid.NewGuid(),
-            SubjectHash = Auth0SubjectCryptography.Hash(subject),
-            EncryptedSubject = "ciphertext",
+            SubjectHash = Auth0SubjectHash.Compute(subject),
+            Subject = subject,
             RequestedAtUtc = DateTime.UtcNow.AddMinutes(-1),
             CompletedAtUtc = completedAtUtc,
             OutboxMessageId = Guid.NewGuid()

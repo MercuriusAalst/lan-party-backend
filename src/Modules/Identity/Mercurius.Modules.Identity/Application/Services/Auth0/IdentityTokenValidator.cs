@@ -32,7 +32,7 @@ internal sealed class IdentityTokenValidator : IIdentityTokenValidator
             return false;
         }
 
-        var hash = Auth0SubjectCryptography.Hash(subject);
+        var hash = Auth0SubjectHash.Compute(subject);
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         await UserMutationLock.AcquireSubjectAsync(_dbContext, subject, cancellationToken);
         var pendingCleanupExists = await _dbContext.Auth0AccountCleanups.AsNoTracking()

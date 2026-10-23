@@ -679,7 +679,7 @@ public class UserTests
         Assert.Equal(original.Id, cleanupEvent.UserId);
         Assert.Equal(new UserId(original.Id), deletionEvent.UserId);
         Assert.Empty(await dbContext.Set<Auth0AccountCleanup>().AsNoTracking()
-            .Where(cleanupEntry => cleanupEntry.SubjectHash == Auth0SubjectCryptography.Hash(stillActiveLaterUser.Auth0UserId))
+            .Where(cleanupEntry => cleanupEntry.SubjectHash == Auth0SubjectHash.Compute(stillActiveLaterUser.Auth0UserId))
             .ToListAsync());
     }
 
@@ -1544,11 +1544,7 @@ public class UserTests
 
     private static Auth0AccountLifecycleService CreateLifecycleService(IIdentityDbContext dbContext, IModuleEventPublisher publisher)
     {
-        var cryptography = new Auth0SubjectCryptography(Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions
-        {
-            AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
-        }));
-        return new Auth0AccountLifecycleService(dbContext, publisher, cryptography);
+        return new Auth0AccountLifecycleService(dbContext, publisher);
     }
 
     private static Microsoft.AspNetCore.Http.FormFile CreatePictureUpload() =>

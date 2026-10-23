@@ -1,20 +1,22 @@
 # Auth0 Account Deletion Operations
 
-LAN account deletion commits locally first. It keeps the historical LAN user ID and related references, anonymizes the profile, detaches the Auth0 subject, and queues encrypted provider cleanup. The delete endpoints return HTTP 202 with `deletionPending: true`; this confirms that local deletion and durable cleanup scheduling succeeded, not that Auth0 has already removed the account.
+LAN account deletion commits locally first. It keeps the historical LAN user ID and related references, anonymizes the profile, detaches the Auth0 subject, and queues provider cleanup. The delete endpoints return HTTP 202 with `deletionPending: true`; this confirms that local deletion and durable cleanup scheduling succeeded, not that Auth0 has already removed the account.
 
 ## Configuration and Auth0 permissions
 
-Set `Auth0:AccountCleanupEncryptionKey` through the deployment secret store. The value must be Base64 that decodes to exactly 32 random bytes; generate it with `openssl rand -base64 32`. In the API configuration environment, the setting name is `Mercurius.LAN.API_Auth0__AccountCleanupEncryptionKey`. Keep the same secret across restarts and replicas. Never commit it or include it in diagnostics.
+Configure the Auth0 Management API authority, audience, client ID, and client secret, with `read:users` and `delete:users` grants. Missing Management API configuration does not mark cleanup complete: jobs remain pending and retry.
 
-The encryption key protects the exact provider subject while cleanup is pending. Retain it while any cleanup is pending or dead-lettered. Losing or changing it makes those payloads undecryptable. To rotate it, first retry or otherwise resolve all pending and dead-lettered cleanup, verify no pending cleanup remains, then change the configured key as a coordinated deployment. Completed jobs have their ciphertext erased.
-
-Configure the Auth0 Management API authority, audience, client ID, and client secret, with `read:users` and `delete:users` grants. Missing Management API configuration does not mark cleanup complete: jobs remain pending and retry. Missing or invalid encryption key prevents secure enqueue/backfill; repair the setting and the bounded backfill will resume.
+The exact provider subject is stored only in the private `identity.auth0_account_cleanups` row while cleanup is pending. It is never returned by public or operator JSON and is cleared atomically when cleanup completes. Database access, backups, and replica credentials therefore form the protection boundary for this temporary value.
 
 ## Deployment and migration
 
-The schema migration is additive. During rollout, drain and stop every old API binary before applying/activating the new version and its legacy backfill. An old binary does not enforce subject fences, so a mixed-version deployment could accept an old token during subject reuse. Start the new binary only after the durable encryption key and Management API configuration are available. The backfill processes at most 100 legacy deleted users per batch, detaches their old Auth0 subject under the same database locks used by account creation/deletion, and resumes after restart; it retries failures in the background. Until a legacy row is detached, old tokens for it are still rejected, and registration remains blocked.
+The lifecycle migration is unreleased and is amended to the final one-table schema rather than layered over a shared deployment. During rollout, drain and stop every old API binary before applying/activating the new version and its legacy backfill. An old binary does not enforce cleanup-history cutoffs, so a mixed-version deployment could accept an old token during subject reuse. Start the new binary after the Management API configuration is available. The backfill processes at most 100 legacy deleted users per batch, detaches their old Auth0 subject under the same database locks used by account creation/deletion, and resumes after restart; it retries failures in the background and exits after a successful empty batch. Until a legacy row is detached, old tokens for it are still rejected, and registration remains blocked.
 
-After a user has been detached or a new incarnation has been registered, roll forward only. Do not roll back to a binary that lacks subject-fence enforcement or remove the fence metadata: an old JWT could otherwise resolve to a replacement account. This deployment follows the repository's single-API-replica policy in [single-instance-deployment.md](single-instance-deployment.md).
+After a user has been detached or a new incarnation has been registered, roll forward only. Do not roll back to a binary that lacks cleanup-history enforcement or remove permanent cleanup history: an old JWT could otherwise resolve to a replacement account. This deployment follows the repository's single-API-replica policy in [single-instance-deployment.md](single-instance-deployment.md).
+
+## Permanent lifecycle metadata
+
+Completed rows in `identity.auth0_account_cleanups` are permanent security metadata. Their `SubjectHash` and `CompletedAtUtc` values are the durable source for the subject token cutoff, while an unfinished row is the durable pending marker. Outbox retention changes must not delete these rows or cascade from an outbox record into cleanup history. The `SubjectHash` index remains required for lifecycle reads.
 
 ## Monitoring and retry
 
@@ -27,4 +29,4 @@ The shared outbox retries failures up to five attempts with exponential delays s
 
 ## Provider generation limitation
 
-Cleanup reads Auth0's `created_at` before deleting and records the observed generation. On a retry, a different generation is treated as a recreated account and preserved. A missing Auth0 user is treated as already cleaned up. Auth0 does not provide an atomic conditional delete by `created_at`, so another party can recreate the same subject between our GET and DELETE; that external time-of-check/time-of-use race cannot be eliminated by this service. The local subject fence still prevents stale LAN tokens from inheriting the replacement profile, memberships, or roles.
+Cleanup reads Auth0's `created_at` before deleting and records the observed generation. On a retry, a different generation is treated as a recreated account and preserved. A missing Auth0 user is treated as already cleaned up. Auth0 does not provide an atomic conditional delete by `created_at`, so another party can recreate the same subject between our GET and DELETE; that external time-of-check/time-of-use race cannot be eliminated by this service. The permanent cleanup history still prevents stale LAN tokens from inheriting the replacement profile, memberships, or roles.

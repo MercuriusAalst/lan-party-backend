@@ -34,10 +34,8 @@ namespace Mercurius.Api.Tests;
 
 public sealed class AccountLifecycleHttpTests
 {
-    private const string EncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
-
     [Fact]
-    public async Task HttpLifecycle_DeletesWithPendingContractThenRejectsOldTokenAfterSameSubjectRecreation()
+    public async Task HttpLifecycle_DeletesWithoutEncryptionKeyThenRejectsOldTokenAfterSameSubjectRecreation()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
         var subject = $"auth0|http-lifecycle-{Guid.NewGuid():N}";
@@ -64,7 +62,7 @@ public sealed class AccountLifecycleHttpTests
             var cleanup = await read.Set<Auth0AccountCleanup>().SingleAsync(job => job.UserId == oldUser.Id);
             Assert.True(deleted.IsDeleted);
             Assert.StartsWith("tombstone:", deleted.Auth0UserId, StringComparison.Ordinal);
-            Assert.NotEmpty(cleanup.EncryptedSubject);
+            Assert.Equal(subject, cleanup.Subject);
         }
 
         using var deletedProfile = await SendAsync(client, HttpMethod.Get, "v1/lan/users/me", subject, "100");
@@ -78,6 +76,16 @@ public sealed class AccountLifecycleHttpTests
         Assert.Equal(HttpStatusCode.Unauthorized, staleRegistration.StatusCode);
         using var staleAdminAccess = await SendAsync(client, HttpMethod.Get, "v1/lan/users/admins", subject, "100", role: "admin");
         Assert.Equal(HttpStatusCode.Unauthorized, staleAdminAccess.StatusCode);
+
+        using var cleanupStatus = await SendAsync(
+            client,
+            HttpMethod.Get,
+            "v1/lan/users/auth0-cleanups",
+            "auth0|admin",
+            "300",
+            role: "admin");
+        Assert.Equal(HttpStatusCode.OK, cleanupStatus.StatusCode);
+        Assert.DoesNotContain(subject, await cleanupStatus.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
         for (var pass = 0; pass < 5; pass++)
         {
@@ -199,7 +207,7 @@ public sealed class AccountLifecycleHttpTests
 
         await using var finalVerify = CreateDbContext(database.ConnectionString);
         Assert.Equal(2, await finalVerify.Set<Auth0AccountCleanup>()
-            .CountAsync(job => job.SubjectHash == Auth0SubjectCryptography.Hash(subject)));
+            .CountAsync(job => job.SubjectHash == Auth0SubjectHash.Compute(subject)));
     }
 
     [Fact]
@@ -271,7 +279,7 @@ public sealed class AccountLifecycleHttpTests
         var outbox = await verify.OutboxMessages.AsNoTracking()
             .SingleAsync(message => message.EventType.Contains(nameof(Auth0AccountCleanupRequestedIntegrationEvent)));
         Assert.Null(cleanup.CompletedAtUtc);
-        Assert.NotEmpty(cleanup.EncryptedSubject);
+        Assert.Equal(subject, cleanup.Subject);
         Assert.True(outbox.RetryCount > 0);
         Assert.Null(outbox.DeadLetteredAtUtc);
         Assert.Contains("Auth0 account lookup failed (429).", outbox.LastError, StringComparison.Ordinal);
@@ -283,7 +291,6 @@ public sealed class AccountLifecycleHttpTests
         var builder = WebApplication.CreateBuilder();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Auth0:AccountCleanupEncryptionKey"] = EncryptionKey,
             ["Auth0:Audience"] = "https://api.example.test"
         });
         builder.Services.AddDbContext<MercuriusDBContext>(options => options.UseNpgsql(connectionString));

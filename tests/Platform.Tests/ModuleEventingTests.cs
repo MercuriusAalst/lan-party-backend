@@ -566,11 +566,7 @@ public class ModuleEventingTests
     {
         var identityDbContext = new IdentityDbContextAdapter<MercuriusDBContext>(dbContext);
         var publisher = moduleEventPublisher ?? new ModuleEventPublisher(dbContext);
-        var cryptography = new Auth0SubjectCryptography(Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions
-        {
-            AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
-        }));
-        var lifecycle = new Auth0AccountLifecycleService(identityDbContext, publisher, cryptography);
+        var lifecycle = new Auth0AccountLifecycleService(identityDbContext, publisher);
         return new UserIntegrationEventPublishingService(
             new UserService(identityDbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(identityDbContext, new NoopAuth0ManagementService(), new AuthenticatedIdentityContext()), TimeProvider.System, new AuthenticatedIdentityContext()),
             identityDbContext,

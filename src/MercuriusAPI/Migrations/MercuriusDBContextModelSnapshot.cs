@@ -217,11 +217,6 @@ namespace Mercurius.LAN.API.Migrations
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("EncryptedSubject")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("character varying(4096)");
-
                     b.Property<Guid>("OutboxMessageId")
                         .HasColumnType("uuid");
 
@@ -240,6 +235,11 @@ namespace Mercurius.LAN.API.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
@@ -253,23 +253,6 @@ namespace Mercurius.LAN.API.Migrations
                     b.HasIndex("UserId", "RequestedAtUtc");
 
                     b.ToTable("auth0_account_cleanups", "identity");
-                });
-
-            modelBuilder.Entity("Mercurius.Modules.Identity.Domain.Auth0SubjectFence", b =>
-                {
-                    b.Property<string>("SubjectHash")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<Guid?>("PendingCleanupJobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long?>("RejectTokensBeforeUnixSeconds")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("SubjectHash");
-
-                    b.ToTable("auth0_subject_fences", "identity");
                 });
 
             modelBuilder.Entity("Mercurius.Modules.Identity.Domain.User", b =>

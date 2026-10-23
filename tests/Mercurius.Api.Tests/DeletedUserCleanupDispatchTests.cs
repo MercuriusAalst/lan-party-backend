@@ -41,7 +41,6 @@ public sealed class DeletedUserCleanupDispatchTests
             "--Logging:LogLevel:Default=Warning",
             $"--ConnectionStrings:MercuriusDB={database.ConnectionString}",
             $"--FileStorage:Location={StorageLocation}",
-            "--Auth0:AccountCleanupEncryptionKey=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
             "--Auth0:Audience=https://api.example.test",
             "--Database:ApplyMigrationsOnStartup=false"
         ]);

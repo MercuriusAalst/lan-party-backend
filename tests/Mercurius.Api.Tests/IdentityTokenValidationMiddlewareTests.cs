@@ -41,8 +41,8 @@ public sealed class IdentityTokenValidationMiddlewareTests
             {
                 Id = Guid.NewGuid(),
                 UserId = oldUser.Id,
-                SubjectHash = Auth0SubjectCryptography.Hash(subject),
-                EncryptedSubject = string.Empty,
+                SubjectHash = Auth0SubjectHash.Compute(subject),
+                Subject = string.Empty,
                 RequestedAtUtc = DateTime.UtcNow.AddMinutes(-1),
                 CompletedAtUtc = DateTimeOffset.FromUnixTimeSeconds(199).UtcDateTime,
                 OutboxMessageId = Guid.NewGuid()

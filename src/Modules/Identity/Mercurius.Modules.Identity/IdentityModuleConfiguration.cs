@@ -24,7 +24,6 @@ public static class IdentityModuleConfiguration
         services.TryAddScoped<IIdentityDbContext, IdentityDbContextAdapter<TDbContext>>();
         services.TryAddSingleton(TimeProvider.System);
         services.Configure<Auth0ManagementOptions>(configuration.GetSection(Auth0ManagementOptions.SectionName));
-        services.AddSingleton<Auth0SubjectCryptography>();
         services.AddScoped<Auth0AccountLifecycleService>();
         services.AddScoped<Auth0CleanupOperations>();
         services.AddScoped<IAuthenticatedIdentityContext, AuthenticatedIdentityContext>();

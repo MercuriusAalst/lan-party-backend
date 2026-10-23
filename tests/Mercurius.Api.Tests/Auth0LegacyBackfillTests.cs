@@ -41,13 +41,8 @@ public sealed class Auth0LegacyBackfillTests
 
             Assert.NotNull(cleanup);
             Assert.Equal($"tombstone:{legacyUser.Id:N}", detached!.Auth0UserId);
-            Assert.NotEmpty(cleanup!.EncryptedSubject);
-            Assert.Equal(Auth0SubjectCryptography.Hash(subject), cleanup.SubjectHash);
-            Assert.Equal(subject, new Auth0SubjectCryptography(Microsoft.Extensions.Options.Options.Create(
-                new Mercurius.Modules.Identity.Options.Auth0ManagementOptions
-                {
-                    AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
-                })).Decrypt(cleanup.EncryptedSubject, cleanup.Id));
+            Assert.Equal(subject, cleanup!.Subject);
+            Assert.Equal(Auth0SubjectHash.Compute(subject), cleanup.SubjectHash);
         }
         finally
         {
@@ -86,7 +81,7 @@ public sealed class Auth0LegacyBackfillTests
         {
             var (cleanup, detached) = await WaitForDetachedAsync(database.ConnectionString, later.Id);
             Assert.Equal($"tombstone:{later.Id:N}", detached.Auth0UserId);
-            Assert.Equal(Auth0SubjectCryptography.Hash(later.Auth0UserId), cleanup.SubjectHash);
+            Assert.Equal(Auth0SubjectHash.Compute(later.Auth0UserId), cleanup.SubjectHash);
         }
         finally
         {
@@ -140,7 +135,6 @@ public sealed class Auth0LegacyBackfillTests
             "--Logging:LogLevel:Default=Warning",
             $"--ConnectionStrings:MercuriusDB={connectionString}",
             $"--FileStorage:Location={Path.Combine(Path.GetTempPath(), "mercurius-host-tests")}",
-            "--Auth0:AccountCleanupEncryptionKey=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
             "--Auth0:Audience=https://api.example.test",
             "--Database:ApplyMigrationsOnStartup=false",
             "--urls=http://127.0.0.1:0"

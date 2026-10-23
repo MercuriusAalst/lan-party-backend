@@ -10,18 +10,15 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
 {
     private readonly IIdentityDbContext _dbContext;
     private readonly IAuth0ManagementService _managementService;
-    private readonly Auth0SubjectCryptography _cryptography;
     private readonly TimeProvider _timeProvider;
 
     public Auth0AccountCleanupHandler(
         IIdentityDbContext dbContext,
         IAuth0ManagementService managementService,
-        Auth0SubjectCryptography cryptography,
         TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _managementService = managementService;
-        _cryptography = cryptography;
         _timeProvider = timeProvider;
     }
 
@@ -38,7 +35,7 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
         if (cleanup.CompletedAtUtc is not null)
             return;
 
-        var subject = _cryptography.Decrypt(cleanup.EncryptedSubject, cleanup.Id);
+        var subject = cleanup.Subject;
         try
         {
             var providerCreatedAt = await _managementService.GetUserCreatedAtAsync(subject, attemptToken);
@@ -97,7 +94,7 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
         var completedAt = _timeProvider.GetUtcNow().UtcDateTime;
         job.CompletedAtUtc = completedAt;
         job.SanitizedOutcome = outcome;
-        job.EncryptedSubject = string.Empty;
+        job.Subject = string.Empty;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

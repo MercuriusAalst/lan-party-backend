@@ -10,20 +10,17 @@ internal sealed class Auth0CleanupOperations
 {
     private readonly IIdentityDbContext _identityDb;
     private readonly IModuleEventDbContext _eventDb;
-    private readonly Auth0SubjectCryptography _cryptography;
     private readonly Auth0ManagementOptions _options;
     private readonly TimeProvider _timeProvider;
 
     public Auth0CleanupOperations(
         IIdentityDbContext identityDb,
         IModuleEventDbContext eventDb,
-        Auth0SubjectCryptography cryptography,
         IOptions<Auth0ManagementOptions> options,
         TimeProvider timeProvider)
     {
         _identityDb = identityDb;
         _eventDb = eventDb;
-        _cryptography = cryptography;
         _options = options.Value;
         _timeProvider = timeProvider;
     }
@@ -56,7 +53,6 @@ internal sealed class Auth0CleanupOperations
             legacyPending,
             totalJobs,
             pendingJobs,
-            !_cryptography.IsConfigured ? "Account cleanup encryption key is missing or invalid." :
             !_options.HasManagementApiConfiguration ? "Auth0 Management API configuration is incomplete." : null,
             jobs.Select(job =>
             {

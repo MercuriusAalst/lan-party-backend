@@ -10,7 +10,6 @@ internal sealed class Auth0ManagementOptions
     public string? ManagementClientSecret { get; set; }
     public string? DatabaseConnection { get; set; }
     public string? PasswordResetClientId { get; set; }
-    public string? AccountCleanupEncryptionKey { get; set; }
 
     public bool HasManagementApiConfiguration =>
         !string.IsNullOrWhiteSpace(Authority) &&

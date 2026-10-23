@@ -12,22 +12,19 @@ internal sealed class Auth0AccountLifecycleService
 {
     private readonly IIdentityDbContext _dbContext;
     private readonly IModuleEventPublisher _eventPublisher;
-    private readonly Auth0SubjectCryptography _cryptography;
 
     public Auth0AccountLifecycleService(
         IIdentityDbContext dbContext,
-        IModuleEventPublisher eventPublisher,
-        Auth0SubjectCryptography cryptography)
+        IModuleEventPublisher eventPublisher)
     {
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
-        _cryptography = cryptography;
     }
 
     public async Task<Guid> QueueCleanupAsync(string subject, Guid userId, DateTime requestedAtUtc, CancellationToken cancellationToken = default)
     {
         await UserMutationLock.AcquireSubjectAsync(_dbContext, subject, cancellationToken);
-        var subjectHash = Auth0SubjectCryptography.Hash(subject);
+        var subjectHash = Auth0SubjectHash.Compute(subject);
         var pendingCleanupJobId = await _dbContext.Auth0AccountCleanups
             .Where(cleanup => cleanup.SubjectHash == subjectHash && cleanup.CompletedAtUtc == null)
             .Select(cleanup => (Guid?)cleanup.Id)
@@ -44,7 +41,7 @@ internal sealed class Auth0AccountLifecycleService
             Id = jobId,
             UserId = userId,
             SubjectHash = subjectHash,
-            EncryptedSubject = _cryptography.Encrypt(subject, jobId),
+            Subject = subject,
             RequestedAtUtc = requestedAtUtc,
             OutboxMessageId = messageId
         });
@@ -57,7 +54,7 @@ internal sealed class Auth0AccountLifecycleService
             .AnyAsync(user => user.Auth0UserId == subject.Trim() && user.IsDeleted, cancellationToken);
         if (legacyDeletedUserExists)
             throw new DeletedAccountException();
-        var subjectHash = Auth0SubjectCryptography.Hash(subject.Trim());
+        var subjectHash = Auth0SubjectHash.Compute(subject.Trim());
         var pendingCleanupExists = await _dbContext.Auth0AccountCleanups.AsNoTracking()
             .AnyAsync(cleanup => cleanup.SubjectHash == subjectHash && cleanup.CompletedAtUtc == null, cancellationToken);
         if (pendingCleanupExists)

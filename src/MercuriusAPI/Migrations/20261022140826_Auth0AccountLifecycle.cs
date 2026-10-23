@@ -19,7 +19,7 @@ namespace Mercurius.LAN.API.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     UserId = table.Column<Guid>(type: "uuid", nullable: false),
                     SubjectHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    EncryptedSubject = table.Column<string>(type: "character varying(4096)", maxLength: 4096, nullable: false),
+                    Subject = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
                     RequestedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     ProviderCreatedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CompletedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -29,20 +29,6 @@ namespace Mercurius.LAN.API.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_auth0_account_cleanups", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "auth0_subject_fences",
-                schema: "identity",
-                columns: table => new
-                {
-                    SubjectHash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    PendingCleanupJobId = table.Column<Guid>(type: "uuid", nullable: true),
-                    RejectTokensBeforeUnixSeconds = table.Column<long>(type: "bigint", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_auth0_subject_fences", x => x.SubjectHash);
                 });
 
             migrationBuilder.CreateIndex(
@@ -72,9 +58,6 @@ namespace Mercurius.LAN.API.Migrations
                 name: "auth0_account_cleanups",
                 schema: "identity");
 
-            migrationBuilder.DropTable(
-                name: "auth0_subject_fences",
-                schema: "identity");
         }
     }
 }

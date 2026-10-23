@@ -11,7 +11,7 @@ internal sealed class Auth0AccountCleanupConfiguration : IEntityTypeConfiguratio
         entity.ToTable("auth0_account_cleanups", "identity");
         entity.HasKey(cleanup => cleanup.Id);
         entity.Property(cleanup => cleanup.SubjectHash).HasMaxLength(64).IsRequired();
-        entity.Property(cleanup => cleanup.EncryptedSubject).HasMaxLength(4096).IsRequired();
+        entity.Property(cleanup => cleanup.Subject).HasMaxLength(512).IsRequired();
         entity.Property(cleanup => cleanup.SanitizedOutcome).HasMaxLength(200);
         entity.HasIndex(cleanup => new { cleanup.UserId, cleanup.RequestedAtUtc });
         entity.HasIndex(cleanup => cleanup.SubjectHash);
