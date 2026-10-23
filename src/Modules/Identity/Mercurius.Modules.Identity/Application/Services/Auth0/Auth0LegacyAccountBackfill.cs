@@ -27,6 +27,7 @@ internal sealed class Auth0LegacyAccountBackfill : BackgroundService
             {
                 if (await ProcessBatchAsync(stoppingToken) > 0)
                     continue;
+                return;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
