@@ -112,13 +112,7 @@ internal class UserService : IUserService
     internal async Task<Auth0ProfileSnapshot> GetAuth0ProfileForCurrentUserCreationAsync(string auth0UserId)
     {
         var normalizedAuth0UserId = NormalizeAuth0UserId(auth0UserId);
-        var existingUser = await _dbContext.Users.AsNoTracking()
-            .Where(user => user.Auth0UserId == normalizedAuth0UserId)
-            .Select(user => new { user.Id, user.IsDeleted })
-            .FirstOrDefaultAsync();
-        if (existingUser is { IsDeleted: true })
-            throw new DeletedAccountException();
-        if (existingUser is not null)
+        if (await _dbContext.Users.AnyAsync(user => user.Auth0UserId == normalizedAuth0UserId))
             throw new ConflictException("profile_exists", "Current user profile already exists.");
 
         return await _auth0ManagementService.GetUserProfileAsync(normalizedAuth0UserId);

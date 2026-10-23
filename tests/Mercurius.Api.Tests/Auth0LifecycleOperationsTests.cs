@@ -1,17 +1,13 @@
 using System.Text.Json;
 using Mercurius.LAN.API.Data;
-using Mercurius.LAN.API.Migrations;
 using Mercurius.Modules.Identity;
 using Mercurius.Modules.Identity.Application.DTOs;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Identity.Contracts;
 using Mercurius.Modules.Identity.Domain;
-using Mercurius.Modules.Identity.Options;
 using Mercurius.TestInfrastructure;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -21,50 +17,30 @@ using Platform.Extensions;
 
 namespace Mercurius.Api.Tests;
 
-public sealed class Auth0LegacyRepairMigrationTests
+public sealed class Auth0LifecycleOperationsTests
 {
-    private const string LegacyPrerequisiteMigration = "20261021192739_TeamMemberJoinedAt";
     private const string CleanupEventType =
         "Mercurius.Modules.Identity.Contracts.Auth0AccountCleanupRequestedIntegrationEvent";
 
     [Fact]
-    public async Task LifecycleMigration_RepairsLegacyUsersInBoundedIdempotentBatches()
+    public async Task CurrentLifecycleCleanup_UsesExistingDispatcherAndRetriesProviderFailure()
     {
-        await using var database = PostgresTestDatabase.Create();
-        await using var dbContext = CreateDbContext(database.ConnectionString);
-        var migrator = dbContext.GetService<IMigrator>();
-        await migrator.MigrateAsync(LegacyPrerequisiteMigration);
-
-        var unicodeSubject = "auth0|Zoë-重要-ß";
-        var legacyUsers = Enumerable.Range(0, 105)
-            .Select(index => CreateUser(
-                $"legacy{index:D3}",
-                index == 0 ? unicodeSubject : $"auth0|legacy-{index:D3}",
-                isDeleted: true))
-            .ToList();
-        var activeUser = CreateUser("active", "auth0|active", isDeleted: false);
-        dbContext.Users.AddRange(legacyUsers);
-        dbContext.Users.Add(activeUser);
-        await dbContext.SaveChangesAsync();
-
-        await migrator.MigrateAsync();
-        await AssertRepairAsync(dbContext, legacyUsers, activeUser, unicodeSubject);
-
-        await dbContext.Database.ExecuteSqlRawAsync(Auth0AccountLifecycle.LegacyCleanupRepairSql);
-        await AssertRepairAsync(dbContext, legacyUsers, activeUser, unicodeSubject);
-    }
-
-    [Fact]
-    public async Task SeededCleanup_UsesExistingDispatcherAndRetriesProviderFailure()
-    {
-        await using var database = PostgresTestDatabase.Create();
-        await using (var migration = CreateDbContext(database.ConnectionString))
+        await using var database = PostgresTestDatabase.CreateMigrated();
+        var cleanupUserId = Guid.NewGuid();
+        var subject = $"auth0|dispatch-{Guid.NewGuid():N}";
+        var (cleanup, message) = CreateCleanup(subject, cleanupUserId);
+        message.Payload = JsonSerializer.Serialize(
+            new Auth0AccountCleanupRequestedIntegrationEvent(cleanup.Id, cleanupUserId),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        message.RetryCount = 0;
+        message.NextAttemptAtUtc = DateTime.UtcNow.AddMinutes(-1);
+        message.DeadLetteredAtUtc = null;
+        message.LastError = null;
+        await using (var seed = CreateDbContext(database.ConnectionString))
         {
-            var migrator = migration.GetService<IMigrator>();
-            await migrator.MigrateAsync(LegacyPrerequisiteMigration);
-            migration.Users.Add(CreateUser("dispatch", "auth0|dispatch-legacy", isDeleted: true));
-            await migration.SaveChangesAsync();
-            await migrator.MigrateAsync();
+            seed.Add(cleanup);
+            seed.OutboxMessages.Add(message);
+            await seed.SaveChangesAsync();
         }
 
         var provider = new RecordingAuth0ManagementService
@@ -88,10 +64,10 @@ public sealed class Auth0LegacyRepairMigrationTests
 
         await using (var failedAttempt = CreateDbContext(database.ConnectionString))
         {
-            var cleanup = await failedAttempt.Set<Auth0AccountCleanup>().SingleAsync();
-            var outbox = await failedAttempt.OutboxMessages.SingleAsync(message => message.EventType == CleanupEventType);
-            Assert.Null(cleanup.CompletedAtUtc);
-            Assert.Equal("auth0|dispatch-legacy", cleanup.Subject);
+            var pending = await failedAttempt.Set<Auth0AccountCleanup>().SingleAsync();
+            var outbox = await failedAttempt.OutboxMessages.SingleAsync(candidate => candidate.EventType == CleanupEventType);
+            Assert.Null(pending.CompletedAtUtc);
+            Assert.Equal(subject, pending.Subject);
             Assert.True(outbox.RetryCount > 0);
             Assert.Null(outbox.ProcessedAtUtc);
         }
@@ -100,8 +76,8 @@ public sealed class Auth0LegacyRepairMigrationTests
         await using (var release = CreateDbContext(database.ConnectionString))
         {
             await release.OutboxMessages
-                .Where(message => message.EventType == CleanupEventType)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(message => message.NextAttemptAtUtc, (DateTime?)null));
+                .Where(candidate => candidate.EventType == CleanupEventType)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(candidate => candidate.NextAttemptAtUtc, (DateTime?)null));
         }
 
         using (var scope = app.Services.CreateScope())
@@ -113,7 +89,7 @@ public sealed class Auth0LegacyRepairMigrationTests
         Assert.Equal(string.Empty, completed.Subject);
         Assert.Equal("deleted", completed.SanitizedOutcome);
         Assert.Equal(1, provider.DeleteCalls);
-        Assert.Equal("auth0|dispatch-legacy", provider.LastDeletedSubject);
+        Assert.Equal(subject, provider.LastDeletedSubject);
     }
 
     [Fact]
@@ -121,11 +97,11 @@ public sealed class Auth0LegacyRepairMigrationTests
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
         await using var dbContext = CreateDbContext(database.ConnectionString);
-        var (eligible, eligibleMessage) = CreatePendingCleanup();
-        var (completed, completedMessage) = CreatePendingCleanup();
+        var (eligible, eligibleMessage) = CreateCleanup();
+        var (completed, completedMessage) = CreateCleanup();
         completed.CompletedAtUtc = DateTime.UtcNow;
         completed.Subject = string.Empty;
-        var (claimed, claimedMessage) = CreatePendingCleanup();
+        var (claimed, claimedMessage) = CreateCleanup();
         claimedMessage.ClaimToken = Guid.NewGuid();
         claimedMessage.ClaimExpiresAtUtc = DateTime.UtcNow.AddMinutes(5);
         dbContext.AddRange(eligible, completed, claimed);
@@ -151,57 +127,15 @@ public sealed class Auth0LegacyRepairMigrationTests
         Assert.NotNull(messages[claimed.OutboxMessageId].ClaimExpiresAtUtc);
     }
 
-    private static async Task AssertRepairAsync(
-        MercuriusDBContext dbContext,
-        IReadOnlyList<User> legacyUsers,
-        User activeUser,
-        string unicodeSubject)
+    private static (Auth0AccountCleanup Cleanup, OutboxMessage Message) CreateCleanup(
+        string? subject = null,
+        Guid? userId = null)
     {
-        dbContext.ChangeTracker.Clear();
-        var users = await dbContext.Users.AsNoTracking().ToDictionaryAsync(user => user.Id);
-        foreach (var legacy in legacyUsers)
-        {
-            var persisted = users[legacy.Id];
-            Assert.Equal($"tombstone:{legacy.Id:N}", persisted.Auth0UserId);
-            Assert.Equal(legacy.Username, persisted.Username);
-            Assert.Equal(legacy.NormalizedUsername, persisted.NormalizedUsername);
-            Assert.Equal(TruncateToPostgresPrecision(legacy.CreatedAtUtc), persisted.CreatedAtUtc);
-            Assert.True(persisted.IsDeleted);
-        }
-        var persistedActive = users[activeUser.Id];
-        Assert.Equal(activeUser.Auth0UserId, persistedActive.Auth0UserId);
-        Assert.Equal(activeUser.Username, persistedActive.Username);
-        Assert.False(persistedActive.IsDeleted);
-
-        var cleanups = await dbContext.Set<Auth0AccountCleanup>().AsNoTracking().ToListAsync();
-        Assert.Equal(legacyUsers.Count, cleanups.Count);
-        var messages = await dbContext.OutboxMessages.AsNoTracking()
-            .Where(message => message.EventType == CleanupEventType)
-            .ToDictionaryAsync(message => message.Id);
-        Assert.Equal(legacyUsers.Count, messages.Count);
-
-        foreach (var cleanup in cleanups)
-        {
-            Assert.Equal(Auth0SubjectHash.Compute(cleanup.Subject), cleanup.SubjectHash);
-            Assert.Matches("^[0-9a-f]{64}$", cleanup.SubjectHash);
-            var message = messages[cleanup.OutboxMessageId];
-            using var payload = JsonDocument.Parse(message.Payload);
-            Assert.Equal(cleanup.Id, payload.RootElement.GetProperty("cleanupId").GetGuid());
-            Assert.Equal(cleanup.UserId, payload.RootElement.GetProperty("userId").GetGuid());
-            Assert.DoesNotContain(cleanup.Subject, message.Payload, StringComparison.Ordinal);
-        }
-        Assert.Equal(
-            Auth0SubjectHash.Compute(unicodeSubject),
-            cleanups.Single(cleanup => cleanup.Subject == unicodeSubject).SubjectHash);
-    }
-
-    private static (Auth0AccountCleanup Cleanup, OutboxMessage Message) CreatePendingCleanup()
-    {
-        var subject = $"auth0|retry-{Guid.NewGuid():N}";
+        subject ??= $"auth0|retry-{Guid.NewGuid():N}";
         var cleanup = new Auth0AccountCleanup
         {
             Id = Guid.NewGuid(),
-            UserId = Guid.NewGuid(),
+            UserId = userId ?? Guid.NewGuid(),
             Subject = subject,
             SubjectHash = Auth0SubjectHash.Compute(subject),
             RequestedAtUtc = DateTime.UtcNow.AddMinutes(-10),
@@ -257,29 +191,8 @@ public sealed class Auth0LegacyRepairMigrationTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static User CreateUser(string username, string subject, bool isDeleted)
-    {
-        var now = DateTime.UtcNow;
-        return new User
-        {
-            Id = Guid.NewGuid(),
-            Auth0UserId = subject,
-            Username = username,
-            NormalizedUsername = username,
-            Firstname = "Legacy",
-            Lastname = "User",
-            CreatedAtUtc = now.AddDays(-10),
-            UpdatedAtUtc = now.AddDays(-1),
-            IsDeleted = isDeleted,
-            DeletedAtUtc = isDeleted ? now.AddDays(-1) : null
-        };
-    }
-
     private static MercuriusDBContext CreateDbContext(string connectionString) =>
         new(new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options);
-
-    private static DateTime TruncateToPostgresPrecision(DateTime value) =>
-        new(value.Ticks - value.Ticks % 10, DateTimeKind.Utc);
 
     private sealed class RecordingAuth0ManagementService : IAuth0ManagementService
     {

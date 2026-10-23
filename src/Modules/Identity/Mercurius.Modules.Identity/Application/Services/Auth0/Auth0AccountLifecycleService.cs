@@ -50,10 +50,6 @@ internal sealed class Auth0AccountLifecycleService
 
     public async Task EnsureSubjectCanRegisterAsync(string subject, string? issuedAtUnixSeconds, bool enforceCallerToken, CancellationToken cancellationToken = default)
     {
-        var legacyDeletedUserExists = await _dbContext.Users.AsNoTracking()
-            .AnyAsync(user => user.Auth0UserId == subject.Trim() && user.IsDeleted, cancellationToken);
-        if (legacyDeletedUserExists)
-            throw new DeletedAccountException();
         var subjectHash = Auth0SubjectHash.Compute(subject.Trim());
         var pendingCleanupExists = await _dbContext.Auth0AccountCleanups.AsNoTracking()
             .AnyAsync(cleanup => cleanup.SubjectHash == subjectHash && cleanup.CompletedAtUtc == null, cancellationToken);
@@ -80,10 +76,7 @@ internal sealed class Auth0AccountLifecycleService
             return false;
 
         return await _dbContext.Auth0AccountCleanups.AnyAsync(
-                   cleanup => cleanup.UserId == id && cleanup.CompletedAtUtc == null,
-                   cancellationToken) ||
-               await _dbContext.Users.AnyAsync(
-                   user => user.Id == id && user.IsDeleted && !user.Auth0UserId.StartsWith("tombstone:"),
-                   cancellationToken);
+            cleanup => cleanup.UserId == id && cleanup.CompletedAtUtc == null,
+            cancellationToken);
     }
 }

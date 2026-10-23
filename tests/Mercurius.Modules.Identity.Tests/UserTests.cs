@@ -734,27 +734,6 @@ public class UserTests
     }
 
     [Fact]
-    public async Task GetCurrentUserAsync_ReturnsDeletedAccountForLegacyDeletedSessionBeforeBackfill()
-    {
-        await using var dbContext = CreateDbContext();
-        var user = CreateStoredUser("auth0|legacy-deleted", "legacy@example.com");
-        user.IsDeleted = true;
-        user.DeletedAtUtc = DateTime.UtcNow;
-        dbContext.Users.Add(user);
-        await dbContext.SaveChangesAsync();
-        var identityContext = new AuthenticatedIdentityContext();
-        identityContext.Pin(user.Auth0UserId, null, shouldReturnDeletedSession: true, issuedAtUnixSeconds: "1");
-        var service = new UserService(
-            new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
-            new RecordingAuth0ManagementService(new Auth0ProfileSnapshot(null, null, false)),
-            new RecordingIdentityModule(),
-            TimeProvider.System,
-            identityContext);
-
-        await Assert.ThrowsAsync<DeletedAccountException>(() => service.GetCurrentUserAsync(user.Auth0UserId));
-    }
-
-    [Fact]
     public async Task CreateCurrentUserAsync_CreatesMissingCurrentUserFromAuthenticatedSubject()
     {
         await using var dbContext = CreateDbContext();

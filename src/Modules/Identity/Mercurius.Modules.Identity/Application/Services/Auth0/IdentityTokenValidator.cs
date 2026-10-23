@@ -60,13 +60,11 @@ internal sealed class IdentityTokenValidator : IIdentityTokenValidator
         if (tokenCutoff is not null && staleIssuedAt &&
             !(allowDeletedSelfRead && !activeLocalUser))
             return Deny();
-        if (user is { IsDeleted: true } && !allowDeletedSelfRead)
-            return Deny();
         if (!hasValidIssuedAt && hasCleanupHistory && !allowDeletedSelfRead)
             return Deny();
 
         var deletedSession = allowDeletedSelfRead && !activeLocalUser &&
-                             (user is { IsDeleted: true } || pendingCleanupExists || staleIssuedAt);
+                             (pendingCleanupExists || staleIssuedAt);
         _identityContext.Pin(subject, activeLocalUser ? user!.Id : null, deletedSession, issuedAtUnixSeconds);
         return true;
 
