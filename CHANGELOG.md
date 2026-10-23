@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.8.1...backend-v0.8.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* Complete Auth0 Account Deletion And Fence Reused Identities ([#163](https://github.com/MercuriusAalst/lan-party-backend/issues/163)) ([b5bd5b4](https://github.com/MercuriusAalst/lan-party-backend/commit/b5bd5b4d9b614445f492037fbe5fee78e4792783)), closes [#162](https://github.com/MercuriusAalst/lan-party-backend/issues/162)
+
 ## [0.8.1](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.8.0...backend-v0.8.1) (2026-10-22)
 
 
