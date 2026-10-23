@@ -3,9 +3,11 @@
 ## Purpose
 TBD - created by archiving change auth0-account-lifecycle. Update Purpose after archive.
 ## Requirements
-### Requirement: Durable Auth0 cleanup
+### Requirement: Durable account cleanup
 
-Deleting a LAN user MUST preserve its local identifier and historical references, anonymize its profile, detach its active provider subject, and atomically persist a durable cleanup job with the local deletion. The historical row MUST NOT retain the reusable subject. Cleanup MUST target only the exact Auth0 subject stored in the private cleanup row. A 204 or 404 MUST complete cleanup; missing configuration and transient provider failures MUST remain pending and retry through bounded durable delivery. Pending provider subjects MUST be hidden from logs and public/operator responses and erased after completion.
+Deleting a LAN user MUST preserve its local identifier and historical references, anonymize its profile, detach its active provider subject, and atomically persist a durable cleanup job with the local deletion. The historical row MUST NOT retain the reusable subject. Cleanup MUST target only the exact provider subject stored in the private cleanup row. A 204 or 404 MUST complete cleanup; missing configuration and transient provider failures MUST remain pending and retry through bounded durable delivery. Pending provider subjects MUST be hidden from logs and public/operator responses and erased after completion.
+
+Lifecycle orchestration MUST depend on a narrow provider-neutral account port for reading account creation generation and deleting an exact subject. The configured adapter MUST implement that port without exposing provider-specific request exceptions or interfaces to the cleanup handler.
 
 #### Scenario: Any deletion route queues cleanup
 
@@ -15,12 +17,12 @@ Deleting a LAN user MUST preserve its local identifier and historical references
 
 #### Scenario: Provider cleanup succeeds or is already complete
 
-- WHEN Auth0 returns 204 or 404 for the exact stored subject
+- WHEN the configured provider returns 204 or 404 for the exact stored subject
 - THEN the pending subject is erased and cleanup is marked complete
 
 #### Scenario: Provider cleanup fails
 
-- WHEN configuration is missing or Auth0 returns a retryable error, times out, or cannot be reached
+- WHEN configuration is missing or the configured provider returns a retryable error, times out, or cannot be reached
 - THEN durable bounded retry remains observable and the API does not claim cleanup completed
 
 ### Requirement: Reused-subject account incarnation
@@ -31,7 +33,7 @@ Completed cleanup rows, including their subject hash and completion time, MUST r
 
 #### Scenario: Recreated social subject receives a fresh LAN identity
 
-- WHEN a new Auth0 identity uses a subject from a completed deleted account and presents a token issued at or after the cleanup cutoff
+- WHEN a new external identity uses a subject from a completed deleted account and presents a token issued at or after the cleanup cutoff
 - THEN registration creates a new local user ID with no inherited profile, memberships, or permissions
 
 #### Scenario: Old or malformed token replays a fenced subject

@@ -7,3 +7,4 @@
 - [x] 5. Create the initial cleanup schema without legacy-data repair or upgrade machinery.
 - [x] 6. Remove hosted backfill and operator HTTP routes, retain only deletion-pending checks in the lifecycle service, and document database status/safe-retry SQL.
 - [x] 7. Document private database trust, permanent history, fresh test schema scope, and external Auth0 GET/DELETE race.
+- [ ] 8. Move lifecycle orchestration and persistence to neutral naming and depend on a provider-neutral account port implemented by the current Auth0 adapter.
