@@ -570,7 +570,7 @@ public class ModuleEventingTests
         {
             AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
         }));
-        var lifecycle = new Auth0AccountLifecycleService(identityDbContext, publisher, cryptography, TimeProvider.System);
+        var lifecycle = new Auth0AccountLifecycleService(identityDbContext, publisher, cryptography);
         return new UserIntegrationEventPublishingService(
             new UserService(identityDbContext, new NoopAuth0ManagementService(), new IdentityModuleFacade(identityDbContext, new NoopAuth0ManagementService(), new AuthenticatedIdentityContext()), TimeProvider.System, new AuthenticatedIdentityContext()),
             identityDbContext,

@@ -13,28 +13,26 @@ internal sealed class Auth0AccountLifecycleService
     private readonly IIdentityDbContext _dbContext;
     private readonly IModuleEventPublisher _eventPublisher;
     private readonly Auth0SubjectCryptography _cryptography;
-    private readonly TimeProvider _timeProvider;
 
     public Auth0AccountLifecycleService(
         IIdentityDbContext dbContext,
         IModuleEventPublisher eventPublisher,
-        Auth0SubjectCryptography cryptography,
-        TimeProvider timeProvider)
+        Auth0SubjectCryptography cryptography)
     {
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
         _cryptography = cryptography;
-        _timeProvider = timeProvider;
     }
 
     public async Task<Guid> QueueCleanupAsync(string subject, Guid userId, DateTime requestedAtUtc, CancellationToken cancellationToken = default)
     {
         await UserMutationLock.AcquireSubjectAsync(_dbContext, subject, cancellationToken);
         var subjectHash = Auth0SubjectCryptography.Hash(subject);
-        var fence = await _dbContext.Auth0SubjectFences.SingleOrDefaultAsync(
-            candidate => candidate.SubjectHash == subjectHash,
-            cancellationToken);
-        if (fence?.PendingCleanupJobId is Guid existingJobId)
+        var pendingCleanupJobId = await _dbContext.Auth0AccountCleanups
+            .Where(cleanup => cleanup.SubjectHash == subjectHash && cleanup.CompletedAtUtc == null)
+            .Select(cleanup => (Guid?)cleanup.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (pendingCleanupJobId is Guid existingJobId)
             return existingJobId;
 
         var jobId = Guid.NewGuid();
@@ -50,16 +48,8 @@ internal sealed class Auth0AccountLifecycleService
             RequestedAtUtc = requestedAtUtc,
             OutboxMessageId = messageId
         });
-        if (fence is null)
-        {
-            fence = new Auth0SubjectFence { SubjectHash = subjectHash };
-            _dbContext.Auth0SubjectFences.Add(fence);
-        }
-        fence.PendingCleanupJobId = jobId;
         return jobId;
     }
-
-    public DateTime UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
     public async Task EnsureSubjectCanRegisterAsync(string subject, string? issuedAtUnixSeconds, bool enforceCallerToken, CancellationToken cancellationToken = default)
     {
@@ -68,16 +58,22 @@ internal sealed class Auth0AccountLifecycleService
         if (legacyDeletedUserExists)
             throw new DeletedAccountException();
         var subjectHash = Auth0SubjectCryptography.Hash(subject.Trim());
-        var fence = await _dbContext.Auth0SubjectFences.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.SubjectHash == subjectHash, cancellationToken);
-        if (fence?.PendingCleanupJobId is not null)
+        var pendingCleanupExists = await _dbContext.Auth0AccountCleanups.AsNoTracking()
+            .AnyAsync(cleanup => cleanup.SubjectHash == subjectHash && cleanup.CompletedAtUtc == null, cancellationToken);
+        if (pendingCleanupExists)
             throw new ConflictException("account_cleanup_pending", "This account is still being removed from the identity provider.");
         var currentUserExists = await _dbContext.Users.AsNoTracking()
             .AnyAsync(user => user.Auth0UserId == subject.Trim(), cancellationToken);
         if (currentUserExists)
             throw new ConflictException("profile_exists", "The account already has a local profile.");
-        if (enforceCallerToken && fence?.RejectTokensBeforeUnixSeconds is long cutoff &&
-            (!long.TryParse(issuedAtUnixSeconds, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var issuedAt) || issuedAt < cutoff))
+        var lastCompletedAtUtc = await _dbContext.Auth0AccountCleanups.AsNoTracking()
+            .Where(cleanup => cleanup.SubjectHash == subjectHash)
+            .MaxAsync(cleanup => cleanup.CompletedAtUtc, cancellationToken);
+        var cutoff = lastCompletedAtUtc is DateTime completedAt
+            ? new DateTimeOffset(completedAt).ToUnixTimeSeconds() + 1
+            : (long?)null;
+        if (enforceCallerToken && cutoff is long requiredCutoff &&
+            (!long.TryParse(issuedAtUnixSeconds, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var issuedAt) || issuedAt < requiredCutoff))
             throw new UnauthorizedAccessException("The authenticated account changed during this request.");
     }
 }

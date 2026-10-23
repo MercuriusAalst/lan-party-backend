@@ -98,14 +98,6 @@ internal sealed class Auth0AccountCleanupHandler : IModuleEventHandler<Auth0Acco
         job.CompletedAtUtc = completedAt;
         job.SanitizedOutcome = outcome;
         job.EncryptedSubject = string.Empty;
-        var fence = await _dbContext.Auth0SubjectFences.SingleAsync(candidate => candidate.SubjectHash == job.SubjectHash, cancellationToken);
-        if (fence.PendingCleanupJobId == job.Id)
-        {
-            fence.PendingCleanupJobId = null;
-            fence.RejectTokensBeforeUnixSeconds = Math.Max(
-                fence.RejectTokensBeforeUnixSeconds ?? 0,
-                new DateTimeOffset(completedAt).ToUnixTimeSeconds() + 1);
-        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

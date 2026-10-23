@@ -45,7 +45,6 @@ public static class IdentityModuleConfiguration
     {
         modelBuilder.ApplyConfiguration(new UserConfiguration());
         modelBuilder.ApplyConfiguration(new Auth0AccountCleanupConfiguration());
-        modelBuilder.ApplyConfiguration(new Auth0SubjectFenceConfiguration());
 
         return modelBuilder;
     }

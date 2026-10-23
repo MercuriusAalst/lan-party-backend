@@ -16,14 +16,14 @@ public sealed class Auth0AccountCleanupHandlerTests
     private const string EncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 
     [Fact]
-    public async Task HandleAsync_DeletesCapturedOldGenerationThenPurgesPayloadAndSetsFenceCutoff()
+    public async Task HandleAsync_DeletesCapturedOldGenerationThenPurgesPayloadAndRecordsCompletion()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
         await using var dbContext = CreateDbContext(database.ConnectionString);
         var subject = $"google-oauth2|cleanup-{Guid.NewGuid():N}";
         var requestedAt = DateTime.UtcNow.AddMinutes(-10);
         var providerCreatedAt = requestedAt.AddDays(-20);
-        var (job, fence, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
+        var (job, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
         var management = new RecordingManagementService(providerCreatedAt);
         var handler = new Auth0AccountCleanupHandler(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
@@ -37,17 +37,13 @@ public sealed class Auth0AccountCleanupHandlerTests
 
         dbContext.ChangeTracker.Clear();
         var completed = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
-        var persistedFence = await dbContext.Set<Auth0SubjectFence>().SingleAsync(candidate => candidate.SubjectHash == fence.SubjectHash);
         Assert.Equal(1, management.DeleteCalls);
         Assert.Equal(subject, management.LastDeletedSubject);
         Assert.Equal(TruncateToPostgresPrecision(providerCreatedAt), completed.ProviderCreatedAtUtc);
         Assert.NotNull(completed.CompletedAtUtc);
         Assert.Equal("deleted", completed.SanitizedOutcome);
         Assert.Equal(string.Empty, completed.EncryptedSubject);
-        Assert.Null(persistedFence.PendingCleanupJobId);
-        Assert.Equal(
-            new DateTimeOffset(completed.CompletedAtUtc!.Value).ToUnixTimeSeconds() + 1,
-            persistedFence.RejectTokensBeforeUnixSeconds);
+        Assert.Equal(job.SubjectHash, completed.SubjectHash);
 
         await handler.HandleAsync(
             new Auth0AccountCleanupRequestedIntegrationEvent(job.Id, job.UserId),
@@ -63,7 +59,7 @@ public sealed class Auth0AccountCleanupHandlerTests
         var subject = $"auth0|replacement-{Guid.NewGuid():N}";
         var requestedAt = DateTime.UtcNow.AddMinutes(-10);
         var providerCreatedAt = requestedAt.AddMinutes(1);
-        var (job, fence, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
+        var (job, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
         var management = new RecordingManagementService(providerCreatedAt);
         var handler = new Auth0AccountCleanupHandler(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
@@ -77,13 +73,11 @@ public sealed class Auth0AccountCleanupHandlerTests
 
         dbContext.ChangeTracker.Clear();
         var completed = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
-        var persistedFence = await dbContext.Set<Auth0SubjectFence>().SingleAsync(candidate => candidate.SubjectHash == fence.SubjectHash);
         Assert.Equal(0, management.DeleteCalls);
         Assert.Null(completed.ProviderCreatedAtUtc);
         Assert.Equal("replacement-preserved", completed.SanitizedOutcome);
         Assert.Empty(completed.EncryptedSubject);
-        Assert.Null(persistedFence.PendingCleanupJobId);
-        Assert.NotNull(persistedFence.RejectTokensBeforeUnixSeconds);
+        Assert.NotNull(completed.CompletedAtUtc);
     }
 
     [Fact]
@@ -94,7 +88,7 @@ public sealed class Auth0AccountCleanupHandlerTests
         var subject = $"auth0|replacement-retry-{Guid.NewGuid():N}";
         var requestedAt = DateTime.UtcNow.AddMinutes(-10);
         var replacementCreatedAt = requestedAt.AddMinutes(1);
-        var (job, _, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
+        var (job, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
         var management = new RecordingManagementService(replacementCreatedAt);
         var handler = new Auth0AccountCleanupHandler(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
@@ -154,7 +148,7 @@ public sealed class Auth0AccountCleanupHandlerTests
         await using var dbContext = CreateDbContext(database.ConnectionString);
         var subject = $"auth0|failure-{Guid.NewGuid():N}";
         var requestedAt = DateTime.UtcNow.AddMinutes(-10);
-        var (job, fence, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
+        var (job, crypto) = await SeedCleanupAsync(dbContext, subject, requestedAt);
         Exception failure = failureKind == "timeout"
             ? new TaskCanceledException($"request timeout for https://tenant.example/users/{subject}")
             : new Auth0ManagementRequestException($"Auth0 account lookup failed ({failureKind}).");
@@ -174,16 +168,14 @@ public sealed class Auth0AccountCleanupHandlerTests
 
         dbContext.ChangeTracker.Clear();
         var retryable = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(candidate => candidate.Id == job.Id);
-        var pendingFence = await dbContext.Set<Auth0SubjectFence>().SingleAsync(candidate => candidate.SubjectHash == fence.SubjectHash);
         Assert.NotNull(exception);
         Assert.Equal(failureKind == "timeout" ? "Auth0 account cleanup is temporarily unavailable." : $"Auth0 account lookup failed ({failureKind}).", exception!.Message);
         Assert.DoesNotContain(subject, exception.ToString(), StringComparison.Ordinal);
         Assert.Null(retryable.CompletedAtUtc);
         Assert.NotEmpty(retryable.EncryptedSubject);
-        Assert.Equal(job.Id, pendingFence.PendingCleanupJobId);
     }
 
-    private static async Task<(Auth0AccountCleanup Job, Auth0SubjectFence Fence, Auth0SubjectCryptography Crypto)> SeedCleanupAsync(
+    private static async Task<(Auth0AccountCleanup Job, Auth0SubjectCryptography Crypto)> SeedCleanupAsync(
         MercuriusDBContext dbContext,
         string subject,
         DateTime requestedAt)
@@ -201,10 +193,9 @@ public sealed class Auth0AccountCleanupHandlerTests
         };
         // Bind the ciphertext to the durable cleanup ID.
         job.EncryptedSubject = crypto.Encrypt(subject, job.Id);
-        var fence = new Auth0SubjectFence { SubjectHash = job.SubjectHash, PendingCleanupJobId = job.Id };
-        dbContext.AddRange(job, fence);
+        dbContext.Add(job);
         await dbContext.SaveChangesAsync();
-        return (job, fence, crypto);
+        return (job, crypto);
     }
 
     private static MercuriusDBContext CreateDbContext(string connectionString) =>

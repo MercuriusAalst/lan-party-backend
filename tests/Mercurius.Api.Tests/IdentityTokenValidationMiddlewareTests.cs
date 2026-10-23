@@ -5,7 +5,6 @@ using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Infrastructure;
-using Mercurius.Modules.Identity.Options;
 using Mercurius.TestInfrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -38,10 +37,15 @@ public sealed class IdentityTokenValidationMiddlewareTests
             var oldPersisted = await mutate.Users.SingleAsync(user => user.Id == oldUser.Id);
             oldPersisted.Anonymize(DateTime.UtcNow);
             mutate.Users.Add(replacement);
-            mutate.Set<Auth0SubjectFence>().Add(new Auth0SubjectFence
+            mutate.Set<Auth0AccountCleanup>().Add(new Auth0AccountCleanup
             {
+                Id = Guid.NewGuid(),
+                UserId = oldUser.Id,
                 SubjectHash = Auth0SubjectCryptography.Hash(subject),
-                RejectTokensBeforeUnixSeconds = 200
+                EncryptedSubject = string.Empty,
+                RequestedAtUtc = DateTime.UtcNow.AddMinutes(-1),
+                CompletedAtUtc = DateTimeOffset.FromUnixTimeSeconds(199).UtcDateTime,
+                OutboxMessageId = Guid.NewGuid()
             });
             await mutate.SaveChangesAsync();
         }
@@ -68,13 +72,8 @@ public sealed class IdentityTokenValidationMiddlewareTests
     {
         await using var dbContext = CreateDbContext(connectionString);
         var identityContext = new AuthenticatedIdentityContext();
-        var options = Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions
-        {
-            AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
-        });
         var validator = new IdentityTokenValidator(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
-            new Auth0SubjectCryptography(options),
             identityContext);
         var services = new ServiceCollection()
             .AddSingleton<Mercurius.Modules.Identity.Contracts.IIdentityTokenValidator>(validator)

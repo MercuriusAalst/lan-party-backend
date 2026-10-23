@@ -127,6 +127,82 @@ public sealed class AccountLifecycleHttpTests
     }
 
     [Fact]
+    public async Task HttpLifecycle_TwoDeletionCyclesPreserveReplayRejectionAndNondecreasingCutoff()
+    {
+        await using var database = PostgresTestDatabase.CreateMigrated();
+        var subject = $"auth0|two-cycles-{Guid.NewGuid():N}";
+        var firstUser = CreateUser(subject);
+        await using (var seed = CreateDbContext(database.ConnectionString))
+        {
+            seed.Users.Add(firstUser);
+            await seed.SaveChangesAsync();
+        }
+
+        await using var app = await CreateAppAsync(
+            database.ConnectionString,
+            new RecordingAuth0ManagementService(DateTime.UtcNow.AddDays(-10)));
+        using var client = CreateClient(app);
+
+        using (var firstDelete = await SendAsync(client, HttpMethod.Delete, "v1/lan/users/me", subject, "100"))
+            Assert.Equal(HttpStatusCode.Accepted, firstDelete.StatusCode);
+        await DispatchCleanupAsync(app);
+
+        long firstCutoff;
+        await using (var firstVerify = CreateDbContext(database.ConnectionString))
+        {
+            var cleanup = await firstVerify.Set<Auth0AccountCleanup>()
+                .SingleAsync(job => job.UserId == firstUser.Id);
+            firstCutoff = CutoffFor(cleanup);
+        }
+
+        var firstFreshIssuedAt = (DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 5)
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        using var firstCreate = await SendAsync(client, HttpMethod.Put, "v1/lan/users/me", subject, firstFreshIssuedAt, new
+        {
+            username = $"second{Guid.NewGuid():N}"[..15],
+            firstname = "Second",
+            lastname = "Account"
+        });
+        Assert.Equal(HttpStatusCode.OK, firstCreate.StatusCode);
+        Guid firstReplacementId;
+        using (var firstCreateJson = JsonDocument.Parse(await firstCreate.Content.ReadAsStringAsync()))
+            firstReplacementId = firstCreateJson.RootElement.GetProperty("id").GetGuid();
+
+        using (var oldReplay = await SendAsync(client, HttpMethod.Get, "v1/lan/users/admins", subject, "100"))
+            Assert.Equal(HttpStatusCode.Unauthorized, oldReplay.StatusCode);
+
+        using (var secondDelete = await SendAsync(client, HttpMethod.Delete, "v1/lan/users/me", subject, firstFreshIssuedAt))
+            Assert.Equal(HttpStatusCode.Accepted, secondDelete.StatusCode);
+        await DispatchCleanupAsync(app);
+
+        long secondCutoff;
+        await using (var secondVerify = CreateDbContext(database.ConnectionString))
+        {
+            var cleanup = await secondVerify.Set<Auth0AccountCleanup>()
+                .SingleAsync(job => job.UserId == firstReplacementId);
+            secondCutoff = CutoffFor(cleanup);
+        }
+        Assert.True(secondCutoff >= firstCutoff);
+
+        var secondFreshIssuedAt = (DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 10)
+            .ToString(System.Globalization.CultureInfo.InvariantCulture);
+        using var secondCreate = await SendAsync(client, HttpMethod.Put, "v1/lan/users/me", subject, secondFreshIssuedAt, new
+        {
+            username = $"third{Guid.NewGuid():N}"[..15],
+            firstname = "Third",
+            lastname = "Account"
+        });
+        Assert.Equal(HttpStatusCode.OK, secondCreate.StatusCode);
+
+        using (var replayAfterSecondCycle = await SendAsync(client, HttpMethod.Get, "v1/lan/users/admins", subject, "100"))
+            Assert.Equal(HttpStatusCode.Unauthorized, replayAfterSecondCycle.StatusCode);
+
+        await using var finalVerify = CreateDbContext(database.ConnectionString);
+        Assert.Equal(2, await finalVerify.Set<Auth0AccountCleanup>()
+            .CountAsync(job => job.SubjectHash == Auth0SubjectCryptography.Hash(subject)));
+    }
+
+    [Fact]
     public async Task AllAdminDeletionRoutes_ReturnAcceptedPendingContract()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
@@ -168,7 +244,7 @@ public sealed class AccountLifecycleHttpTests
     }
 
     [Fact]
-    public async Task ProviderFailure_LeavesEncryptedCleanupAndFencePendingWithSanitizedOutboxRetry()
+    public async Task ProviderFailure_LeavesEncryptedCleanupPendingWithSanitizedOutboxRetry()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
         var subject = $"auth0|retry-{Guid.NewGuid():N}";
@@ -192,12 +268,10 @@ public sealed class AccountLifecycleHttpTests
 
         await using var verify = CreateDbContext(database.ConnectionString);
         var cleanup = await verify.Set<Auth0AccountCleanup>().SingleAsync(job => job.UserId == user.Id);
-        var fence = await verify.Set<Auth0SubjectFence>().SingleAsync(candidate => candidate.SubjectHash == cleanup.SubjectHash);
         var outbox = await verify.OutboxMessages.AsNoTracking()
             .SingleAsync(message => message.EventType.Contains(nameof(Auth0AccountCleanupRequestedIntegrationEvent)));
         Assert.Null(cleanup.CompletedAtUtc);
         Assert.NotEmpty(cleanup.EncryptedSubject);
-        Assert.Equal(cleanup.Id, fence.PendingCleanupJobId);
         Assert.True(outbox.RetryCount > 0);
         Assert.Null(outbox.DeadLetteredAtUtc);
         Assert.Contains("Auth0 account lookup failed (429).", outbox.LastError, StringComparison.Ordinal);
@@ -271,6 +345,20 @@ public sealed class AccountLifecycleHttpTests
 
     private static MercuriusDBContext CreateDbContext(string connectionString) =>
         new(new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options);
+
+    private static async Task DispatchCleanupAsync(WebApplication app)
+    {
+        for (var pass = 0; pass < 5; pass++)
+        {
+            using var scope = app.Services.CreateScope();
+            if (await scope.ServiceProvider.GetRequiredService<IModuleEventDispatcher>().DispatchPendingAsync() == 0)
+                return;
+        }
+    }
+
+    private static long CutoffFor(Auth0AccountCleanup cleanup) =>
+        new DateTimeOffset(cleanup.CompletedAtUtc ?? throw new InvalidOperationException("Cleanup did not complete."))
+            .ToUnixTimeSeconds() + 1;
 
     private static User CreateUser(string subject)
     {

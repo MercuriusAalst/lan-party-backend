@@ -3,7 +3,6 @@ using Mercurius.Modules.Identity.Application.Services;
 using Mercurius.Modules.Identity.Application.Services.Auth0;
 using Mercurius.Modules.Identity.Domain;
 using Mercurius.Modules.Identity.Infrastructure;
-using Mercurius.Modules.Identity.Options;
 using Mercurius.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -13,16 +12,12 @@ namespace Mercurius.Modules.Identity.Tests;
 public sealed class IdentityTokenValidatorTests
 {
     [Fact]
-    public async Task ValidateAndPin_RejectsPendingFenceAndMalformedIssuedAt()
+    public async Task ValidateAndPin_RejectsPendingCleanupAndMalformedIssuedAt()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
         await using var dbContext = CreateDbContext(database.ConnectionString);
-        var subject = "auth0|pending-fence";
-        dbContext.Set<Auth0SubjectFence>().Add(new Auth0SubjectFence
-        {
-            SubjectHash = Auth0SubjectCryptography.Hash(subject),
-            PendingCleanupJobId = Guid.NewGuid()
-        });
+        var subject = "auth0|pending-cleanup";
+        dbContext.Set<Auth0AccountCleanup>().Add(CreateCleanup(subject));
         await dbContext.SaveChangesAsync();
         var context = new AuthenticatedIdentityContext();
         var validator = CreateValidator(dbContext, context);
@@ -39,11 +34,9 @@ public sealed class IdentityTokenValidatorTests
         var subject = "auth0|recreated";
         var newUser = CreateUser(subject);
         dbContext.Users.Add(newUser);
-        dbContext.Set<Auth0SubjectFence>().Add(new Auth0SubjectFence
-        {
-            SubjectHash = Auth0SubjectCryptography.Hash(subject),
-            RejectTokensBeforeUnixSeconds = 200
-        });
+        dbContext.Set<Auth0AccountCleanup>().Add(CreateCleanup(
+            subject,
+            DateTimeOffset.FromUnixTimeSeconds(199).UtcDateTime));
         await dbContext.SaveChangesAsync();
         var context = new AuthenticatedIdentityContext();
         var validator = CreateValidator(dbContext, context);
@@ -55,7 +48,7 @@ public sealed class IdentityTokenValidatorTests
     }
 
     [Fact]
-    public async Task ValidateAndPin_LocksFenceAndMappingAsOneIncarnationSnapshot()
+    public async Task ValidateAndPin_LocksCleanupAndMappingAsOneIncarnationSnapshot()
     {
         await using var database = PostgresTestDatabase.CreateMigrated();
         var subject = "auth0|incarnation-race";
@@ -76,11 +69,9 @@ public sealed class IdentityTokenValidatorTests
         original.Anonymize(DateTime.UtcNow);
         var replacement = CreateUser(subject);
         first.Users.Add(replacement);
-        first.Set<Auth0SubjectFence>().Add(new Auth0SubjectFence
-        {
-            SubjectHash = Auth0SubjectCryptography.Hash(subject),
-            RejectTokensBeforeUnixSeconds = 200
-        });
+        first.Set<Auth0AccountCleanup>().Add(CreateCleanup(
+            subject,
+            DateTimeOffset.FromUnixTimeSeconds(199).UtcDateTime));
         await first.SaveChangesAsync();
         await mutation.CommitAsync();
 
@@ -90,15 +81,22 @@ public sealed class IdentityTokenValidatorTests
 
     private static IdentityTokenValidator CreateValidator(MercuriusDBContext dbContext, AuthenticatedIdentityContext context)
     {
-        var options = Microsoft.Extensions.Options.Options.Create(new Auth0ManagementOptions
-        {
-            AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
-        });
         return new IdentityTokenValidator(
             new IdentityDbContextAdapter<MercuriusDBContext>(dbContext),
-            new Auth0SubjectCryptography(options),
             context);
     }
+
+    private static Auth0AccountCleanup CreateCleanup(string subject, DateTime? completedAtUtc = null) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            SubjectHash = Auth0SubjectCryptography.Hash(subject),
+            EncryptedSubject = "ciphertext",
+            RequestedAtUtc = DateTime.UtcNow.AddMinutes(-1),
+            CompletedAtUtc = completedAtUtc,
+            OutboxMessageId = Guid.NewGuid()
+        };
 
     private static MercuriusDBContext CreateDbContext(string connectionString) =>
         new(new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options);

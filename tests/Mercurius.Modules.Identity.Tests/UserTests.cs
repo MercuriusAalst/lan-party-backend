@@ -668,19 +668,18 @@ public class UserTests
         var deletedOriginal = await dbContext.Users.AsNoTracking().SingleAsync(user => user.Id == original.Id);
         var stillActiveLaterUser = await dbContext.Users.AsNoTracking().SingleAsync(user => user.Id == laterUser.Id);
         var cleanup = await dbContext.Set<Auth0AccountCleanup>().SingleAsync(job => job.UserId == original.Id);
-        var fence = await dbContext.Set<Auth0SubjectFence>().SingleAsync(candidate => candidate.SubjectHash == Auth0SubjectCryptography.Hash(original.Auth0UserId));
         Assert.True(deletedOriginal.IsDeleted);
         Assert.StartsWith("tombstone:", deletedOriginal.Auth0UserId, StringComparison.Ordinal);
         Assert.False(stillActiveLaterUser.IsDeleted);
         Assert.Equal("auth0|delete-later", stillActiveLaterUser.Auth0UserId);
-        Assert.Equal(cleanup.Id, fence.PendingCleanupJobId);
+        Assert.Null(cleanup.CompletedAtUtc);
 
         var cleanupEvent = Assert.Single(publisher.Events.OfType<Auth0AccountCleanupRequestedIntegrationEvent>());
         var deletionEvent = Assert.Single(publisher.Events.OfType<UserDeletedIntegrationEvent>());
         Assert.Equal(original.Id, cleanupEvent.UserId);
         Assert.Equal(new UserId(original.Id), deletionEvent.UserId);
-        Assert.Empty(await dbContext.Set<Auth0SubjectFence>().AsNoTracking()
-            .Where(candidate => candidate.SubjectHash == Auth0SubjectCryptography.Hash(stillActiveLaterUser.Auth0UserId))
+        Assert.Empty(await dbContext.Set<Auth0AccountCleanup>().AsNoTracking()
+            .Where(cleanupEntry => cleanupEntry.SubjectHash == Auth0SubjectCryptography.Hash(stillActiveLaterUser.Auth0UserId))
             .ToListAsync());
     }
 
@@ -1143,7 +1142,6 @@ public class UserTests
         Assert.Equal([pictureUrl], media.DeletedUrls);
         Assert.StartsWith("tombstone:", persisted.Auth0UserId, StringComparison.Ordinal);
         Assert.Single(await dbContext.Set<Auth0AccountCleanup>().AsNoTracking().Where(job => job.UserId == user.Id).ToListAsync());
-        Assert.Single(await dbContext.Set<Auth0SubjectFence>().AsNoTracking().ToListAsync());
     }
 
     [Fact]
@@ -1550,7 +1548,7 @@ public class UserTests
         {
             AccountCleanupEncryptionKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
         }));
-        return new Auth0AccountLifecycleService(dbContext, publisher, cryptography, TimeProvider.System);
+        return new Auth0AccountLifecycleService(dbContext, publisher, cryptography);
     }
 
     private static Microsoft.AspNetCore.Http.FormFile CreatePictureUpload() =>
