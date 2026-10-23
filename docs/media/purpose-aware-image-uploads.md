@@ -73,8 +73,14 @@ No existing assets are re-encoded by this change.
 
 ## Existing-asset follow-up
 
-Treat this as a separate, report-first maintenance operation. It is not part of an upload
-request and must not run automatically.
+This is a gated follow-up design, not an executable migration procedure. No migration or
+maintenance execution is included in this change.
+
+Do not implement this by calling the ordinary Tournament, Sponsor, Team or Identity
+replacement/upload services. Those services are correct for normal uploads, but Tournament and
+Sponsor retire the previous file immediately after their commit; Team also retires through its
+service guard. That timing can delete the old file before a maintenance rollback or a fresh
+all-reference check.
 
 1. Take a read-only inventory of local generated `images/<key>.webp` assets and every persisted
    reference. The source-of-truth references are
@@ -86,23 +92,27 @@ request and must not run automatically.
 2. Report each asset's dimensions, byte size, owning current entity, historical snapshot count,
    search-document count and candidate purpose. Do not mark unreferenced files for deletion until
    the report is reviewed.
-3. For each approved current entity, create a new asset through Media with the correct purpose.
-   Store its new generated URL and never overwrite the existing file under its old URL. The old
-   URL may be cached by clients for up to one year.
-4. Update one owning reference at a time through the established service and transaction paths so
-   authorization, concurrency and event behavior remain intact. Refresh affected discovery
-   documents after source updates. Do not rewrite a historical registration snapshot merely to
-   make cleanup easier.
-5. Verify HTTP serving, dimensions, byte size, visual quality and the new reference before
-   proceeding. On failure, restore the prior reference and record the new unreferenced asset for
-   later retirement.
-6. Retire an old file only after a fresh whole-database reference query finds no current,
-   historical or search-document reference. Use the existing Media deletion path. If that query
-   or deletion is uncertain, keep the file and record it for manual remediation.
+3. For each approved current entity, create a fresh asset with the correct Media purpose. Give it
+   a new generated URL and keep the old file byte-for-byte at its immutable URL. The old URL may
+   be cached by clients for up to one year, so it must never be overwritten.
+4. A dedicated maintenance path must replace one owning current reference with a conditional
+   old-URL/concurrency update inside the owning module's normal transaction and durable-event
+   boundary. It must enforce the same authorization and state rules and must not update historical
+   registration snapshots merely to simplify cleanup.
+5. Before commit, preserve enough state to identify the fresh asset and the exact old reference.
+   If the conditional update or transaction fails, compensate the fresh asset when it is not
+   referenced and leave the old reference and bytes untouched.
+6. After commit, refresh affected discovery projections and verify HTTP serving, dimensions, byte
+   size, visual quality and the new reference. If verification fails, roll back to the preserved
+   old URL and compensate the fresh asset when safe.
+7. Retire an old file only after a fresh whole-database query finds no current source reference,
+   historical registration snapshot, or discovery projection referencing it. Run that guard
+   immediately before deletion, never earlier. Use the existing Media deletion path. If the guard
+   or deletion is uncertain, keep the old file and record it for manual remediation.
 
 Because deletion cannot remove already cached responses, an old cached URL may remain available
-to clients. It is no longer referenced after the database update, so it does not break historical
-references.
+to clients. It must remain intact until the final reference guard permits retirement. The
+maintenance path needs separate implementation, review and tests before it can be executed.
 
 ## Frontend follow-up
 
