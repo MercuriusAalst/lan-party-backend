@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.8.2...backend-v0.9.0) (2026-10-24)
+
+
+### Features
+
+* Optimize Uploads With Purpose-Specific Image Policies ([#166](https://github.com/MercuriusAalst/lan-party-backend/issues/166)) ([3ffa468](https://github.com/MercuriusAalst/lan-party-backend/commit/3ffa468bb84601994250d081fcc4e4981ce78391))
+
 ## [0.8.2](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.8.1...backend-v0.8.2) (2026-10-23)
 
 
