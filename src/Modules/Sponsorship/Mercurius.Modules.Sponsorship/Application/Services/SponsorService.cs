@@ -79,7 +79,8 @@ internal sealed class SponsorService : ISponsorService
                 imageStream,
                 sponsorDTO.Logo.FileName,
                 sponsorDTO.Logo.ContentType,
-                sponsorDTO.Logo.Length),
+                sponsorDTO.Logo.Length,
+                MediaPurpose.SponsorLogo),
             cancellationToken);
         var committed = false;
         try
@@ -130,7 +131,8 @@ internal sealed class SponsorService : ISponsorService
                     imageStream,
                     sponsorDTO.Logo.FileName,
                     sponsorDTO.Logo.ContentType,
-                    sponsorDTO.Logo.Length),
+                    sponsorDTO.Logo.Length,
+                    MediaPurpose.SponsorLogo),
                 cancellationToken);
             newLogoUrl = logo.Url;
         }

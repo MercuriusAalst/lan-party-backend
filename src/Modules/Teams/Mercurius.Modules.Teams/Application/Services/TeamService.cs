@@ -578,7 +578,7 @@ internal sealed class TeamService : ITeamQueries, ITeamManagementCommands, ITeam
         var previousLogo = team.LogoUrl;
         await using var imageStream = logo.OpenReadStream();
         var asset = await _mediaModule.SaveImageAsync(
-            new MediaUpload(imageStream, logo.FileName, logo.ContentType, logo.Length),
+            new MediaUpload(imageStream, logo.FileName, logo.ContentType, logo.Length, MediaPurpose.TeamLogo),
             cancellationToken);
         var committed = false;
         try

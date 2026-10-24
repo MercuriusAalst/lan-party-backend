@@ -44,6 +44,7 @@ public class SponsorMediaLifecycleTests
             service.CreateSponsorAsync(CreateSponsorDto()));
 
         Assert.Same(failure, actual);
+        Assert.Equal(MediaPurpose.SponsorLogo, mediaModule.SavedPurpose);
         var deletedImage = Assert.Single(mediaModule.DeletedImages);
         Assert.Equal(NewLogoUrl, deletedImage.ImageUrl);
         Assert.Equal(CancellationToken.None, deletedImage.CancellationToken);
@@ -404,10 +405,13 @@ public class SponsorMediaLifecycleTests
 
         public List<(string? ImageUrl, CancellationToken CancellationToken)> DeletedImages { get; } = [];
 
+        public MediaPurpose? SavedPurpose { get; private set; }
+
         public Task<StoredMediaAsset> SaveImageAsync(
             MediaUpload upload,
             CancellationToken cancellationToken = default)
         {
+            SavedPurpose = upload.Purpose;
             operations.Add("media-save");
             return Task.FromResult(new StoredMediaAsset(savedImageUrl));
         }

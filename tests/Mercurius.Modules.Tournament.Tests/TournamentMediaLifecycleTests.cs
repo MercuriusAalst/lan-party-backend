@@ -34,6 +34,7 @@ public sealed class TournamentMediaLifecycleTests
             service.CreateTournamentAsync(CreateTournamentDto()));
 
         Assert.Same(persistenceFailure, exception);
+        Assert.Equal(MediaPurpose.TournamentBanner, mediaModule.SavedPurpose);
         var cleanup = Assert.Single(mediaModule.DeleteCalls);
         Assert.Equal(NewImageUrl, cleanup.ImageUrl);
         Assert.Equal(CancellationToken.None, cleanup.CancellationToken);
@@ -382,10 +383,13 @@ public sealed class TournamentMediaLifecycleTests
 
         public List<DeleteCall> DeleteCalls { get; } = [];
 
+        public MediaPurpose? SavedPurpose { get; private set; }
+
         public Task<StoredMediaAsset> SaveImageAsync(
             MediaUpload upload,
             CancellationToken cancellationToken = default)
         {
+            SavedPurpose = upload.Purpose;
             return Task.FromResult(new StoredMediaAsset(_savedUrl));
         }
 

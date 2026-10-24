@@ -88,7 +88,8 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
                 imageStream,
                 createTournamentDTO.Image.FileName,
                 createTournamentDTO.Image.ContentType,
-                createTournamentDTO.Image.Length),
+                createTournamentDTO.Image.Length,
+                MediaPurpose.TournamentBanner),
             cancellationToken);
         var committed = false;
         try
@@ -199,7 +200,8 @@ internal sealed class TournamentService : ITournamentQueries, ITournamentManagem
                     imageStream,
                     tournamentDTO.Image.FileName,
                     tournamentDTO.Image.ContentType,
-                    tournamentDTO.Image.Length),
+                    tournamentDTO.Image.Length,
+                    MediaPurpose.TournamentBanner),
                 cancellationToken);
             newImageUrl = asset.Url;
         }

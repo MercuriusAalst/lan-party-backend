@@ -331,7 +331,14 @@ internal class UserService : IUserService
         {
             await using var stream = picture.OpenReadStream();
             asset = await (_mediaModule ?? throw new InvalidOperationException("Media module is unavailable."))
-                .SaveImageAsync(new MediaUpload(stream, picture.FileName, picture.ContentType, picture.Length), cancellationToken);
+                .SaveImageAsync(
+                    new MediaUpload(
+                        stream,
+                        picture.FileName,
+                        picture.ContentType,
+                        picture.Length,
+                        MediaPurpose.ProfilePicture),
+                    cancellationToken);
             user.ProfilePictureUrl = asset.Url;
             user.UpdatedAtUtc = UtcNow();
             cancellationToken.ThrowIfCancellationRequested();

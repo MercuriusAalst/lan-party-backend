@@ -4,4 +4,5 @@ public sealed record MediaUpload(
     Stream Content,
     string FileName,
     string ContentType,
-    long Length);
+    long Length,
+    MediaPurpose Purpose);
