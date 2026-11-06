@@ -8,4 +8,5 @@ public sealed record SponsorUpdated(
     SponsorTier SponsorTier,
     string LogoUrl,
     string InfoUrl,
-    string? Description);
+    string? Description,
+    string? LightLogoUrl = null);

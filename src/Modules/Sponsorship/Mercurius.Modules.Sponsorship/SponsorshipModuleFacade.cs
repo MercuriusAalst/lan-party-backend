@@ -29,7 +29,8 @@ internal sealed class SponsorshipModuleFacade : ISponsorshipModule
                 sponsor.SponsorTier,
                 sponsor.LogoUrl,
                 sponsor.InfoUrl,
-                sponsor.Description))
+                sponsor.Description,
+                sponsor.LightLogoUrl))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -130,7 +131,8 @@ internal sealed class SponsorshipModuleFacade : ISponsorshipModule
                 placement.Sponsor.SponsorTier,
                 placement.Sponsor.LogoUrl,
                 placement.Sponsor.InfoUrl,
-                placement.Sponsor.Description),
+                placement.Sponsor.Description,
+                placement.Sponsor.LightLogoUrl),
             placement.Context,
             placement.Headline,
             placement.SupportLine,
