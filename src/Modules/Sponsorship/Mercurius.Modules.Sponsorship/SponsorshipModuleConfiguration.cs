@@ -34,9 +34,11 @@ public static class SponsorshipModuleConfiguration
         return modelBuilder;
     }
 
-    public static IEndpointRouteBuilder MapSponsorshipModule(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapSponsorshipModule(
+        this IEndpointRouteBuilder endpoints,
+        long? sponsorLogoRequestBodySize = null)
     {
-        endpoints.MapSponsorEndpoints();
+        endpoints.MapSponsorEndpoints(sponsorLogoRequestBodySize);
 
         return endpoints;
     }

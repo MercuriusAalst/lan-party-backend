@@ -43,7 +43,7 @@ public class Program
         builder.WebHost.ConfigureKestrel(options =>
             options.Limits.MaxRequestBodySize = mediaUploadRequestLimits.MaxRequestBodySize);
         builder.Services.Configure<FormOptions>(options =>
-            options.MultipartBodyLengthLimit = mediaUploadRequestLimits.MaxFileSizeInBytes);
+            options.MultipartBodyLengthLimit = mediaUploadRequestLimits.MaxSponsorLogoRequestBodySize);
 
         builder.Services.AddDbContext<MercuriusDBContext>(options =>
             options.UseNpgsql(builder.Configuration.GetConnectionString("MercuriusDB")));
@@ -90,6 +90,8 @@ public class Program
 
         var app = builder.Build();
         app.UseTransportSecurity(app.Environment);
+        app.UseRouting();
+        app.UseMiddleware<EndpointRequestSizeLimitMiddleware>();
         app.UseCors(CorsPolicyName);
         if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
             app.ApplyMigrations<MercuriusDBContext>();
@@ -114,7 +116,7 @@ public class Program
         app.MapTournamentModule();
         app.MapIdentityModule();
         app.MapTeamsModule();
-        app.MapSponsorshipModule();
+        app.MapSponsorshipModule(mediaUploadRequestLimits.MaxSponsorLogoRequestBodySize);
         app.MapDiscoveryModule();
         app.MapHub<TeamManagementHub>(
                 TeamManagementHub.Route,
