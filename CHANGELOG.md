@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.9.0...backend-v0.10.0) (2026-11-06)
+
+
+### Features
+
+* Support theme-aware sponsor logos ([#170](https://github.com/MercuriusAalst/lan-party-backend/issues/170)) ([49ec4e5](https://github.com/MercuriusAalst/lan-party-backend/commit/49ec4e5dac8a8757bb97303cf32897bed102d8d8))
+
 ## [0.9.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.8.2...backend-v0.9.0) (2026-10-24)
 
 
