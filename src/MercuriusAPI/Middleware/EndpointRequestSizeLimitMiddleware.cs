@@ -12,7 +12,7 @@ public sealed class EndpointRequestSizeLimitMiddleware(RequestDelegate next)
             .GetMetadata<IRequestSizeLimitMetadata>();
         if (requestSizeLimit?.MaxRequestBodySize is { } maxRequestBodySize &&
             context.Features.Get<IHttpMaxRequestBodySizeFeature>() is
-                { IsReadOnly: false } maxRequestBodySizeFeature)
+            { IsReadOnly: false } maxRequestBodySizeFeature)
         {
             maxRequestBodySizeFeature.MaxRequestBodySize = maxRequestBodySize;
         }
