@@ -9,6 +9,7 @@ internal class GetTournamentSponsorPlacementDTO
     public string SponsorName { get; set; } = null!;
     public SponsorTier SponsorTier { get; set; }
     public string SponsorLogoUrl { get; set; } = null!;
+    public string? SponsorLightLogoUrl { get; set; }
     public string SponsorInfoUrl { get; set; } = null!;
     public string? SponsorDescription { get; set; }
     public SponsorContext Context { get; set; }

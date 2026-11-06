@@ -8,6 +8,7 @@ using Mercurius.Modules.Sponsorship.Contracts;
 using Mercurius.Modules.Sponsorship.Contracts.V1;
 using Mercurius.Modules.Sponsorship.Domain;
 using Mercurius.Modules.Sponsorship.Infrastructure;
+using Mercurius.Modules.Shared.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -20,7 +21,9 @@ namespace Mercurius.Modules.Sponsorship.Tests;
 public class SponsorMediaLifecycleTests
 {
     private const string OriginalLogoUrl = "/images/original.webp";
+    private const string OriginalLightLogoUrl = "/images/original-light.webp";
     private const string NewLogoUrl = "/images/new.webp";
+    private const string NewLightLogoUrl = "/images/new-light.webp";
 
     [Theory]
     [InlineData(1)]
@@ -53,6 +56,67 @@ public class SponsorMediaLifecycleTests
         dbContext.ChangeTracker.Clear();
         Assert.False(await dbContext.Set<Sponsor>().AnyAsync());
         Assert.False(await dbContext.OutboxMessages.AnyAsync());
+    }
+
+    [Fact]
+    public async Task CreateSponsorAsync_WithBothLogosAndFailedCommit_CompensatesBothLogos()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var operations = new List<string>();
+        var failure = new InvalidOperationException("create persistence failed");
+        var mediaModule = new RecordingMediaModule(
+            NewLogoUrl,
+            operations,
+            [NewLogoUrl, NewLightLogoUrl]);
+        var service = CreateSponsorService(
+            dbContext,
+            mediaModule,
+            new RecordingLogger<SponsorService>(),
+            operations,
+            failingSaveCall: 1,
+            failure);
+
+        var actual = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CreateSponsorAsync(CreateSponsorDto(CreateFormFile())));
+
+        Assert.Same(failure, actual);
+        Assert.Equal(
+            [NewLogoUrl, NewLightLogoUrl],
+            mediaModule.DeletedImages.Select(deletion => deletion.ImageUrl));
+        Assert.All(
+            mediaModule.DeletedImages,
+            deletion => Assert.Equal(CancellationToken.None, deletion.CancellationToken));
+        dbContext.ChangeTracker.Clear();
+        Assert.False(await dbContext.Set<Sponsor>().AnyAsync());
+        Assert.False(await dbContext.OutboxMessages.AnyAsync());
+    }
+
+    [Fact]
+    public async Task CreateSponsorAsync_WhenLightLogoStorageFails_CompensatesDefaultLogo()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var operations = new List<string>();
+        var saveFailure = new IOException("light logo storage failed");
+        var mediaModule = new RecordingMediaModule(NewLogoUrl, operations)
+        {
+            FailingSaveCall = 2,
+            SaveException = saveFailure
+        };
+        var service = CreateSponsorService(
+            dbContext,
+            mediaModule,
+            new RecordingLogger<SponsorService>(),
+            operations);
+
+        var actual = await Assert.ThrowsAsync<IOException>(() =>
+            service.CreateSponsorAsync(CreateSponsorDto(CreateFormFile())));
+
+        Assert.Same(saveFailure, actual);
+        var deletion = Assert.Single(mediaModule.DeletedImages);
+        Assert.Equal(NewLogoUrl, deletion.ImageUrl);
+        Assert.Equal(CancellationToken.None, deletion.CancellationToken);
+        dbContext.ChangeTracker.Clear();
+        Assert.False(await dbContext.Set<Sponsor>().AnyAsync());
     }
 
     [Fact]
@@ -178,7 +242,7 @@ public class SponsorMediaLifecycleTests
     public async Task DeleteSponsorAsync_WhenDeletionCommits_RetiresCurrentLogoAfterOutboxPersistence()
     {
         await using var dbContext = PostgresTestDatabase.CreateDbContext();
-        var sponsor = await SeedSponsorAsync(dbContext);
+        var sponsor = await SeedSponsorAsync(dbContext, OriginalLightLogoUrl);
         var operations = new List<string>();
         var mediaModule = new RecordingMediaModule(NewLogoUrl, operations);
         var service = CreateSponsorService(
@@ -197,12 +261,16 @@ public class SponsorMediaLifecycleTests
                 "publish-completed",
                 "save-2-started",
                 "save-2-completed",
-                $"delete:{OriginalLogoUrl}"
+                $"delete:{OriginalLogoUrl}",
+                $"delete:{OriginalLightLogoUrl}"
             ],
             operations);
-        var deletedImage = Assert.Single(mediaModule.DeletedImages);
-        Assert.Equal(OriginalLogoUrl, deletedImage.ImageUrl);
-        Assert.Equal(CancellationToken.None, deletedImage.CancellationToken);
+        Assert.Equal(
+            [OriginalLogoUrl, OriginalLightLogoUrl],
+            mediaModule.DeletedImages.Select(deletion => deletion.ImageUrl));
+        Assert.All(
+            mediaModule.DeletedImages,
+            deletion => Assert.Equal(CancellationToken.None, deletion.CancellationToken));
         Assert.False(await dbContext.Set<Sponsor>().AnyAsync(candidate => candidate.Id == sponsor.Id));
         Assert.Contains(
             await dbContext.OutboxMessages.ToListAsync(),
@@ -258,13 +326,98 @@ public class SponsorMediaLifecycleTests
         Assert.DoesNotContain(operations, operation => operation.StartsWith("delete:", StringComparison.Ordinal));
     }
 
-    private static async Task<Sponsor> SeedSponsorAsync(MercuriusDBContext dbContext)
+    [Fact]
+    public async Task UpdateSponsorAsync_WhenLightLogoIsReplaced_RetainsDefaultAndDeletesPreviousLightLogo()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var sponsor = await SeedSponsorAsync(dbContext, OriginalLightLogoUrl);
+        var operations = new List<string>();
+        var mediaModule = new RecordingMediaModule(NewLightLogoUrl, operations);
+        var service = CreateSponsorService(
+            dbContext,
+            mediaModule,
+            new RecordingLogger<SponsorService>(),
+            operations);
+
+        var result = await service.UpdateSponsorAsync(
+            sponsor.Id,
+            CreateUpdateDto(null, CreateFormFile("light-logo.png")));
+
+        Assert.Equal(OriginalLogoUrl, result.LogoUrl);
+        Assert.Equal(NewLightLogoUrl, result.LightLogoUrl);
+        var deletion = Assert.Single(mediaModule.DeletedImages);
+        Assert.Equal(OriginalLightLogoUrl, deletion.ImageUrl);
+        dbContext.ChangeTracker.Clear();
+        var storedSponsor = await dbContext.Set<Sponsor>().SingleAsync();
+        Assert.Equal(OriginalLogoUrl, storedSponsor.LogoUrl);
+        Assert.Equal(NewLightLogoUrl, storedSponsor.LightLogoUrl);
+    }
+
+    [Fact]
+    public async Task UpdateSponsorAsync_WhenLightLogoIsRemoved_ClearsAndDeletesOnlyLightLogo()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var sponsor = await SeedSponsorAsync(dbContext, OriginalLightLogoUrl);
+        var operations = new List<string>();
+        var mediaModule = new RecordingMediaModule(NewLogoUrl, operations);
+        var service = CreateSponsorService(
+            dbContext,
+            mediaModule,
+            new RecordingLogger<SponsorService>(),
+            operations);
+
+        var result = await service.UpdateSponsorAsync(
+            sponsor.Id,
+            CreateUpdateDto(null, removeLightLogo: true));
+
+        Assert.Equal(OriginalLogoUrl, result.LogoUrl);
+        Assert.Null(result.LightLogoUrl);
+        Assert.Empty(mediaModule.SavedPurposes);
+        var deletion = Assert.Single(mediaModule.DeletedImages);
+        Assert.Equal(OriginalLightLogoUrl, deletion.ImageUrl);
+    }
+
+    [Fact]
+    public async Task UpdateSponsorAsync_WhenLightLogoIsReplacedAndRemoved_RejectsBeforeMediaOrMutation()
+    {
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        var sponsor = await SeedSponsorAsync(dbContext, OriginalLightLogoUrl);
+        var operations = new List<string>();
+        var mediaModule = new RecordingMediaModule(NewLightLogoUrl, operations);
+        var service = CreateSponsorService(
+            dbContext,
+            mediaModule,
+            new RecordingLogger<SponsorService>(),
+            operations);
+
+        var exception = await Assert.ThrowsAsync<ValidationException>(() =>
+            service.UpdateSponsorAsync(
+                sponsor.Id,
+                CreateUpdateDto(
+                    CreateFormFile(),
+                    CreateFormFile("light-logo.png"),
+                    removeLightLogo: true)));
+
+        Assert.Equal("The light logo cannot be replaced and removed in the same update.", exception.Message);
+        Assert.Empty(mediaModule.SavedPurposes);
+        Assert.Empty(mediaModule.DeletedImages);
+        dbContext.ChangeTracker.Clear();
+        var storedSponsor = await dbContext.Set<Sponsor>().SingleAsync();
+        Assert.Equal(OriginalLogoUrl, storedSponsor.LogoUrl);
+        Assert.Equal(OriginalLightLogoUrl, storedSponsor.LightLogoUrl);
+        Assert.Empty(await dbContext.OutboxMessages.ToListAsync());
+    }
+
+    private static async Task<Sponsor> SeedSponsorAsync(
+        MercuriusDBContext dbContext,
+        string? lightLogoUrl = null)
     {
         var sponsor = new Sponsor
         {
             Name = "Original sponsor",
             SponsorTier = SponsorTier.Silver,
             LogoUrl = OriginalLogoUrl,
+            LightLogoUrl = lightLogoUrl,
             InfoUrl = "https://example.test/original",
             Description = "Original description"
         };
@@ -290,34 +443,40 @@ public class SponsorMediaLifecycleTests
         Assert.Empty(await dbContext.OutboxMessages.AsNoTracking().ToListAsync());
     }
 
-    private static CreateSponsorDTO CreateSponsorDto()
+    private static CreateSponsorDTO CreateSponsorDto(IFormFile? lightLogo = null)
     {
         return new CreateSponsorDTO
         {
             Name = "New sponsor",
             SponsorTier = SponsorTier.Gold,
             Logo = CreateFormFile(),
+            LightLogo = lightLogo,
             InfoUrl = "https://example.test/new",
             Description = "New description"
         };
     }
 
-    private static UpdateSponsorDTO CreateUpdateDto(IFormFile? logo)
+    private static UpdateSponsorDTO CreateUpdateDto(
+        IFormFile? logo,
+        IFormFile? lightLogo = null,
+        bool removeLightLogo = false)
     {
         return new UpdateSponsorDTO
         {
             Name = "Updated sponsor",
             SponsorTier = SponsorTier.Gold,
             Logo = logo,
+            LightLogo = lightLogo,
+            RemoveLightLogo = removeLightLogo,
             InfoUrl = "https://example.test/updated",
             Description = "Updated description"
         };
     }
 
-    private static IFormFile CreateFormFile()
+    private static IFormFile CreateFormFile(string fileName = "logo.png")
     {
         var bytes = Encoding.UTF8.GetBytes("logo");
-        return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "logo", "logo.png")
+        return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "logo", fileName)
         {
             Headers = new HeaderDictionary(),
             ContentType = "image/png"
@@ -399,11 +558,21 @@ public class SponsorMediaLifecycleTests
 
     private sealed class RecordingMediaModule(
         string savedImageUrl,
-        List<string> operations) : IMediaModule
+        List<string> operations,
+        IReadOnlyList<string>? savedImageUrls = null) : IMediaModule
     {
+        private readonly string[] _savedImageUrls = savedImageUrls?.ToArray() ?? [savedImageUrl];
+        private int _saveCallCount;
+
         public Exception? DeleteException { get; init; }
 
+        public Exception? SaveException { get; init; }
+
+        public int? FailingSaveCall { get; init; }
+
         public List<(string? ImageUrl, CancellationToken CancellationToken)> DeletedImages { get; } = [];
+
+        public List<MediaPurpose> SavedPurposes { get; } = [];
 
         public MediaPurpose? SavedPurpose { get; private set; }
 
@@ -411,9 +580,18 @@ public class SponsorMediaLifecycleTests
             MediaUpload upload,
             CancellationToken cancellationToken = default)
         {
+            var saveCall = ++_saveCallCount;
             SavedPurpose = upload.Purpose;
+            SavedPurposes.Add(upload.Purpose);
             operations.Add("media-save");
-            return Task.FromResult(new StoredMediaAsset(savedImageUrl));
+            if (saveCall == FailingSaveCall)
+            {
+                return Task.FromException<StoredMediaAsset>(
+                    SaveException ?? new InvalidOperationException("Configured media save failure was missing."));
+            }
+
+            var imageIndex = Math.Min(saveCall - 1, _savedImageUrls.Length - 1);
+            return Task.FromResult(new StoredMediaAsset(_savedImageUrls[imageIndex]));
         }
 
         public Task DeleteImageAsync(

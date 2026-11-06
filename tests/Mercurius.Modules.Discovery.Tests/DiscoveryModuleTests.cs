@@ -16,7 +16,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mercurius.TestInfrastructure;
 using Platform.Eventing;
+using Platform.Eventing.Persistence;
 using Platform.Extensions;
+using System.Text.Json;
 
 namespace Mercurius.Modules.Discovery.Tests;
 
@@ -184,7 +186,8 @@ public class DiscoveryModuleTests
             SponsorTier.Gold,
             "/images/updated-sponsor.webp",
             "https://example.test/sponsor",
-            "Updated description"),
+            "Updated description",
+            "/images/updated-sponsor-light.webp"),
             currentTime);
         await dbContext.SaveChangesAsync();
         Assert.Equal(3, await dispatcher.DispatchPendingAsync());
@@ -219,6 +222,45 @@ public class DiscoveryModuleTests
                 Assert.Equal("Updated Tournament Name", tournament.Title);
                 Assert.Equal($"/tournaments/{tournamentId.Value}", tournament.Route);
             });
+    }
+
+    [Fact]
+    public async Task Dispatcher_ProjectsLegacySponsorEventWithoutLightLogo()
+    {
+        await using var provider = CreateProvider(new DiscoverySources());
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<MercuriusDBContext>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<IModuleEventDispatcher>();
+        var currentTime = DateTime.UtcNow;
+        var serializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        dbContext.OutboxMessages.Add(new OutboxMessage
+        {
+            Id = Guid.NewGuid(),
+            EventType = typeof(SponsorCreated).FullName!,
+            Payload = JsonSerializer.Serialize(new
+            {
+                sponsorId = new SponsorId(9),
+                name = "Legacy Sponsor",
+                sponsorTier = SponsorTier.Gold,
+                logoUrl = "/images/legacy-sponsor.webp",
+                infoUrl = "https://example.test/legacy-sponsor",
+                description = "Legacy payload"
+            }, serializerOptions),
+            OccurredAtUtc = currentTime,
+            NextAttemptAtUtc = currentTime
+        });
+        await dbContext.SaveChangesAsync();
+
+        var processed = await dispatcher.DispatchPendingAsync();
+        dbContext.ChangeTracker.Clear();
+        var outbox = await dbContext.OutboxMessages.AsNoTracking().SingleAsync();
+        Assert.True(
+            processed == 1,
+            $"Legacy sponsor event was not dispatched. Error: {outbox.LastError}");
+        var document = await dbContext.Set<SearchDocument>().SingleAsync();
+        Assert.Equal("Legacy Sponsor", document.Title);
+        Assert.Equal("/images/legacy-sponsor.webp", document.ImageUrl);
+        Assert.Equal("/sponsors/9", document.Route);
     }
 
     [Fact]

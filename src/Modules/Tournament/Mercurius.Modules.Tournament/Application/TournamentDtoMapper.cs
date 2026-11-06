@@ -435,6 +435,7 @@ internal sealed class TournamentDtoMapper
             SponsorName = placement.Sponsor.Name,
             SponsorTier = placement.Sponsor.SponsorTier,
             SponsorLogoUrl = placement.Sponsor.LogoUrl,
+            SponsorLightLogoUrl = placement.Sponsor.LightLogoUrl,
             SponsorInfoUrl = placement.Sponsor.InfoUrl,
             SponsorDescription = placement.Sponsor.Description,
             Context = placement.Context,

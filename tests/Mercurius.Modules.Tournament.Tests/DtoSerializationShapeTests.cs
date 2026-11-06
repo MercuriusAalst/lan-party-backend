@@ -142,6 +142,7 @@ public class DtoSerializationShapeTests
             Name = "Mercurius Tech",
             SponsorTier = SponsorTier.Gold,
             LogoUrl = "/images/mercurius-tech.png",
+            LightLogoUrl = "/images/mercurius-tech-light.png",
             InfoUrl = "https://example.test/mercurius-tech",
             Description = "Tournament partner"
         };
@@ -190,7 +191,7 @@ public class DtoSerializationShapeTests
             "forfeitedParticipantNumber",
             "resultKind",
             "resultVersion");
-        AssertJsonProperties(GetSponsorDTO.From(sponsor), "id", "name", "sponsorTier", "logoUrl", "infoUrl", "description");
+        AssertJsonProperties(GetSponsorDTO.From(sponsor), "id", "name", "sponsorTier", "logoUrl", "lightLogoUrl", "infoUrl", "description");
         AssertJsonProperties(searchResult, "type", "displayLabel", "supportingText", "username");
         AssertJsonProperties(new GetUserDTO(user), "id", "username", "firstname", "lastname", "email", "emailVerified", "discordId", "steamId", "riotId", "profilePictureUrl", "displayName", "isDeleted", "createdAtUtc", "updatedAtUtc");
         AssertJsonProperties(new PublicUserProfileDTO
@@ -200,6 +201,15 @@ public class DtoSerializationShapeTests
 
         var json = Serialize(GetSponsorDTO.From(sponsor));
         Assert.Contains("\"sponsorTier\":\"Gold\"", json, StringComparison.Ordinal);
+
+        using var placementJson = JsonDocument.Parse(Serialize(new GetTournamentSponsorPlacementDTO
+        {
+            SponsorLogoUrl = "/images/mercurius-tech.png",
+            SponsorLightLogoUrl = "/images/mercurius-tech-light.png"
+        }));
+        Assert.Equal(
+            "/images/mercurius-tech-light.png",
+            placementJson.RootElement.GetProperty("sponsorLightLogoUrl").GetString());
 
         match.Set(x => x.Participant1ReportedScore1, 2);
         match.Set(x => x.Participant1ReportedScore2, 1);

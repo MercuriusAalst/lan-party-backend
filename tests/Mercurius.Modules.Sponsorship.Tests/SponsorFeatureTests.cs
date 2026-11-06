@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Mercurius.LAN.API.Data;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Infrastructure;
@@ -59,7 +60,8 @@ public class SponsorFeatureTests
             Name = "Campus Fiber",
             SponsorTier = SponsorTier.Silver,
             InfoUrl = "https://example.test/campus-fiber",
-            LogoUrl = "/images/campus-fiber.png"
+            LogoUrl = "/images/campus-fiber.png",
+            LightLogoUrl = "/images/campus-fiber-light.png"
         };
         dbContext.Set<Sponsor>().Add(sponsor);
         await dbContext.SaveChangesAsync();
@@ -74,6 +76,7 @@ public class SponsorFeatureTests
 
         Assert.Equal(SponsorTier.Gold, updatedSponsor.SponsorTier);
         Assert.Equal("Network backbone partner.", updatedSponsor.Description);
+        Assert.Equal("/images/campus-fiber-light.png", updatedSponsor.LightLogoUrl);
     }
 
     [Fact]
@@ -88,7 +91,8 @@ public class SponsorFeatureTests
             SponsorTier = SponsorTier.Presenting,
             InfoUrl = "https://example.test/mercurius-tech",
             Description = "Primary event partner.",
-            Logo = CreateFormFile()
+            Logo = CreateFormFile(),
+            LightLogo = CreateFormFile("light-logo.png")
         });
         await sponsorService.UpdateSponsorAsync(created.Id, new UpdateSponsorDTO
         {
@@ -107,6 +111,31 @@ public class SponsorFeatureTests
         var createdPayload = outbox.Single(message => message.EventType == typeof(SponsorCreated).FullName).Payload;
         using var document = JsonDocument.Parse(createdPayload);
         Assert.Equal(created.Id, document.RootElement.GetProperty("sponsorId").GetProperty("value").GetInt32());
+        Assert.Equal(
+            created.LightLogoUrl,
+            document.RootElement.GetProperty("lightLogoUrl").GetString());
+    }
+
+    [Fact]
+    public void LegacySponsorEventPayload_DeserializesWithNullLightLogo()
+    {
+        var serializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        serializerOptions.Converters.Add(new JsonStringEnumConverter());
+        var legacyJson = JsonSerializer.Serialize(new
+        {
+            sponsorId = new SponsorId(7),
+            name = "Legacy sponsor",
+            sponsorTier = SponsorTier.Gold,
+            logoUrl = "/images/legacy.png",
+            infoUrl = "https://example.test/legacy",
+            description = "Legacy payload"
+        }, serializerOptions);
+
+        var payload = JsonSerializer.Deserialize<SponsorUpdated>(legacyJson, serializerOptions);
+
+        Assert.NotNull(payload);
+        Assert.Null(payload.LightLogoUrl);
+        Assert.Equal("/images/legacy.png", payload.LogoUrl);
     }
 
     [Fact]
@@ -115,6 +144,7 @@ public class SponsorFeatureTests
         await using var dbContext = PostgresTestDatabase.CreateDbContext();
         var tournament = CreateTournament();
         var sponsor = CreateSponsor(1, "Mercurius Tech", SponsorTier.Presenting);
+        sponsor.LightLogoUrl = "/images/mercurius-tech-light.png";
         dbContext.Set<TournamentAggregate>().Add(tournament);
         dbContext.Set<Sponsor>().Add(sponsor);
         await dbContext.SaveChangesAsync();
@@ -133,6 +163,7 @@ public class SponsorFeatureTests
         Assert.NotNull(placement);
         Assert.Equal(sponsor.Id, placement.Sponsor.Id.Value);
         Assert.Equal(SponsorContractContext.TournamentPartner, placement.Context);
+        Assert.Equal(sponsor.LightLogoUrl, placement.Sponsor.LightLogoUrl);
 
         await sponsorshipModule.ReplaceSponsorPlacementAsync(new TournamentId(tournament.Id), null);
 
@@ -197,6 +228,9 @@ public class SponsorFeatureTests
         Assert.NotNull(placementType);
         Assert.Equal("sponsorship", sponsorType.GetSchema());
         Assert.Equal("sponsors", sponsorType.GetTableName());
+        var lightLogo = sponsorType.FindProperty(nameof(Sponsor.LightLogoUrl));
+        Assert.NotNull(lightLogo);
+        Assert.True(lightLogo.IsNullable);
         Assert.Equal("sponsorship", placementType.GetSchema());
         Assert.Equal("tournament_sponsor_placements", placementType.GetTableName());
         Assert.Contains(
@@ -353,11 +387,11 @@ public class SponsorFeatureTests
         Assert.Equal("Sponsor with ID 404 not found", exception.Message);
     }
 
-    private static IFormFile CreateFormFile()
+    private static IFormFile CreateFormFile(string fileName = "logo.png")
     {
         var bytes = Encoding.UTF8.GetBytes("logo");
         var stream = new MemoryStream(bytes);
-        return new FormFile(stream, 0, bytes.Length, "logo", "logo.png")
+        return new FormFile(stream, 0, bytes.Length, "logo", fileName)
         {
             Headers = new HeaderDictionary(),
             ContentType = "image/png"

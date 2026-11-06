@@ -71,7 +71,8 @@ public sealed class FeaturedHomepageTournamentTests
                 SponsorTier.Presenting,
                 "logos/acme.png",
                 "https://acme.example",
-                "Acme powers the main stage"),
+                "Acme powers the main stage",
+                "logos/acme-light.png"),
             SponsorContext.TournamentPartner,
             "Headline",
             "Support line",
@@ -83,6 +84,7 @@ public sealed class FeaturedHomepageTournamentTests
         Assert.NotNull(sponsoredCard.SponsorPlacement);
         Assert.Equal("Acme Esports", sponsoredCard.SponsorPlacement!.SponsorName);
         Assert.Equal(SponsorTier.Presenting, sponsoredCard.SponsorPlacement.SponsorTier);
+        Assert.Equal("logos/acme-light.png", sponsoredCard.SponsorPlacement.SponsorLightLogoUrl);
         Assert.Equal(SponsorContext.TournamentPartner, sponsoredCard.SponsorPlacement.Context);
         Assert.All(
             response.Tournaments.Where(card => card.Id != sponsored.Id),
@@ -96,6 +98,7 @@ public sealed class FeaturedHomepageTournamentTests
         var sponsorJson = sponsoredJson.GetProperty("sponsorPlacement");
         Assert.Equal("Acme Esports", sponsorJson.GetProperty("sponsorName").GetString());
         Assert.Equal("Presenting", sponsorJson.GetProperty("sponsorTier").GetString());
+        Assert.Equal("logos/acme-light.png", sponsorJson.GetProperty("sponsorLightLogoUrl").GetString());
         Assert.Equal("TournamentPartner", sponsorJson.GetProperty("context").GetString());
         Assert.All(
             cards.Where(card => card.GetProperty("id").GetGuid() != sponsored.Id),

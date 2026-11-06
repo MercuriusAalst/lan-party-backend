@@ -51,6 +51,7 @@ public sealed class FeaturedHomepageTournamentEndpointTests
             var sponsorJson = card.GetProperty("sponsorPlacement");
             Assert.Equal("Acme Esports", sponsorJson.GetProperty("sponsorName").GetString());
             Assert.Equal("Presenting", sponsorJson.GetProperty("sponsorTier").GetString());
+            Assert.Equal("logos/acme-light.png", sponsorJson.GetProperty("sponsorLightLogoUrl").GetString());
             Assert.Equal("TournamentPartner", sponsorJson.GetProperty("context").GetString());
             Assert.Equal(JsonValueKind.Null, publicJson.RootElement.GetProperty("tournaments")[1]
                 .GetProperty("sponsorPlacement").ValueKind);
@@ -157,6 +158,7 @@ public sealed class FeaturedHomepageTournamentEndpointTests
                     SponsorName = "Acme Esports",
                     SponsorTier = SponsorTier.Presenting,
                     SponsorLogoUrl = "logos/acme.png",
+                    SponsorLightLogoUrl = "logos/acme-light.png",
                     SponsorInfoUrl = "https://acme.example",
                     SponsorDescription = "Acme powers the main stage",
                     Context = SponsorContext.TournamentPartner,

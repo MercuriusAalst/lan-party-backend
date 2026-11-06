@@ -16,6 +16,7 @@ internal sealed class SponsorConfiguration : IEntityTypeConfiguration<Sponsor>
         entity.HasKey(sponsor => sponsor.Id);
         entity.Property(sponsor => sponsor.Name).IsRequired();
         entity.Property(sponsor => sponsor.LogoUrl).IsRequired();
+        entity.Property(sponsor => sponsor.LightLogoUrl);
         entity.Property(sponsor => sponsor.InfoUrl).IsRequired();
         entity.Property(sponsor => sponsor.Description).HasMaxLength(1200);
         entity.Property(sponsor => sponsor.SponsorTier)

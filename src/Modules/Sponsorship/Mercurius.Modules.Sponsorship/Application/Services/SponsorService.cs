@@ -6,6 +6,7 @@ using Mercurius.Modules.Sponsorship.Contracts;
 using Mercurius.Modules.Sponsorship.Contracts.V1;
 using Mercurius.Modules.Sponsorship.Domain;
 using Mercurius.Modules.Sponsorship.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -40,6 +41,7 @@ internal sealed class SponsorService : ISponsorService
                 Name = sponsor.Name,
                 SponsorTier = sponsor.SponsorTier,
                 LogoUrl = sponsor.LogoUrl,
+                LightLogoUrl = sponsor.LightLogoUrl,
                 InfoUrl = sponsor.InfoUrl,
                 Description = sponsor.Description
             })
@@ -57,6 +59,7 @@ internal sealed class SponsorService : ISponsorService
                 Name = candidate.Name,
                 SponsorTier = candidate.SponsorTier,
                 LogoUrl = candidate.LogoUrl,
+                LightLogoUrl = candidate.LightLogoUrl,
                 InfoUrl = candidate.InfoUrl,
                 Description = candidate.Description
             })
@@ -73,23 +76,25 @@ internal sealed class SponsorService : ISponsorService
         if (sponsorDTO.Logo is null)
             throw new ValidationException("A sponsor logo is required.");
 
-        await using var imageStream = sponsorDTO.Logo.OpenReadStream();
-        var logo = await _mediaModule.SaveImageAsync(
-            new MediaUpload(
-                imageStream,
-                sponsorDTO.Logo.FileName,
-                sponsorDTO.Logo.ContentType,
-                sponsorDTO.Logo.Length,
-                MediaPurpose.SponsorLogo),
-            cancellationToken);
+        var storedLogoUrls = new List<string>(2);
         var committed = false;
         try
         {
+            var logoUrl = await StoreSponsorLogoAsync(sponsorDTO.Logo, cancellationToken);
+            storedLogoUrls.Add(logoUrl);
+            string? lightLogoUrl = null;
+            if (sponsorDTO.LightLogo is not null)
+            {
+                lightLogoUrl = await StoreSponsorLogoAsync(sponsorDTO.LightLogo, cancellationToken);
+                storedLogoUrls.Add(lightLogoUrl);
+            }
+
             var sponsor = new Sponsor
             {
                 Name = sponsorDTO.Name,
                 SponsorTier = sponsorDTO.SponsorTier,
-                LogoUrl = logo.Url,
+                LogoUrl = logoUrl,
+                LightLogoUrl = lightLogoUrl,
                 InfoUrl = sponsorDTO.InfoUrl,
                 Description = sponsorDTO.Description
             };
@@ -102,7 +107,8 @@ internal sealed class SponsorService : ISponsorService
                     sponsor.SponsorTier,
                     sponsor.LogoUrl,
                     sponsor.InfoUrl,
-                    sponsor.Description),
+                    sponsor.Description,
+                    sponsor.LightLogoUrl),
                 cancellationToken);
             committed = true;
             return GetSponsorDTO.From(sponsor);
@@ -110,7 +116,9 @@ internal sealed class SponsorService : ISponsorService
         catch
         {
             if (!committed)
-                await DeleteImageBestEffortAsync(logo.Url, "compensate an uncommitted Sponsor logo");
+                await DeleteImagesBestEffortAsync(
+                    storedLogoUrls,
+                    "compensate an uncommitted Sponsor logo");
             throw;
         }
     }
@@ -120,30 +128,41 @@ internal sealed class SponsorService : ISponsorService
         UpdateSponsorDTO sponsorDTO,
         CancellationToken cancellationToken = default)
     {
-        var sponsor = await GetSponsorForMutationAsync(id, cancellationToken);
-        var previousLogoUrl = sponsor.LogoUrl;
-        string? newLogoUrl = null;
-        if (sponsorDTO.Logo is not null)
+        if (sponsorDTO.LightLogo is not null && sponsorDTO.RemoveLightLogo)
         {
-            await using var imageStream = sponsorDTO.Logo.OpenReadStream();
-            var logo = await _mediaModule.SaveImageAsync(
-                new MediaUpload(
-                    imageStream,
-                    sponsorDTO.Logo.FileName,
-                    sponsorDTO.Logo.ContentType,
-                    sponsorDTO.Logo.Length,
-                    MediaPurpose.SponsorLogo),
-                cancellationToken);
-            newLogoUrl = logo.Url;
+            throw new ValidationException(
+                "The light logo cannot be replaced and removed in the same update.");
         }
 
+        var sponsor = await GetSponsorForMutationAsync(id, cancellationToken);
+        var previousLogoUrl = sponsor.LogoUrl;
+        var previousLightLogoUrl = sponsor.LightLogoUrl;
+        string? newLogoUrl = null;
+        string? newLightLogoUrl = null;
+        var storedLogoUrls = new List<string>(2);
         var committed = false;
         try
         {
+            if (sponsorDTO.Logo is not null)
+            {
+                newLogoUrl = await StoreSponsorLogoAsync(sponsorDTO.Logo, cancellationToken);
+                storedLogoUrls.Add(newLogoUrl);
+            }
+
+            if (sponsorDTO.LightLogo is not null)
+            {
+                newLightLogoUrl = await StoreSponsorLogoAsync(sponsorDTO.LightLogo, cancellationToken);
+                storedLogoUrls.Add(newLightLogoUrl);
+            }
+
             if (!string.IsNullOrWhiteSpace(sponsorDTO.Name))
                 sponsor.Name = sponsorDTO.Name;
             if (newLogoUrl is not null)
                 sponsor.LogoUrl = newLogoUrl;
+            if (newLightLogoUrl is not null)
+                sponsor.LightLogoUrl = newLightLogoUrl;
+            else if (sponsorDTO.RemoveLightLogo)
+                sponsor.LightLogoUrl = null;
 
             sponsor.InfoUrl = sponsorDTO.InfoUrl;
             sponsor.SponsorTier = sponsorDTO.SponsorTier;
@@ -155,19 +174,45 @@ internal sealed class SponsorService : ISponsorService
                     sponsor.SponsorTier,
                     sponsor.LogoUrl,
                     sponsor.InfoUrl,
-                    sponsor.Description),
+                    sponsor.Description,
+                    sponsor.LightLogoUrl),
                 cancellationToken);
             committed = true;
         }
         catch
         {
-            if (!committed && !string.Equals(newLogoUrl, previousLogoUrl, StringComparison.Ordinal))
-                await DeleteImageBestEffortAsync(newLogoUrl, "compensate an uncommitted Sponsor logo replacement");
+            if (!committed)
+                await DeleteImagesBestEffortAsync(
+                    storedLogoUrls.Where(imageUrl =>
+                        !string.Equals(imageUrl, previousLogoUrl, StringComparison.Ordinal) &&
+                        !string.Equals(imageUrl, previousLightLogoUrl, StringComparison.Ordinal)),
+                    "compensate an uncommitted Sponsor logo replacement");
             throw;
         }
 
-        if (newLogoUrl is not null && !string.Equals(previousLogoUrl, newLogoUrl, StringComparison.Ordinal))
-            await DeleteImageBestEffortAsync(previousLogoUrl, "retire a replaced Sponsor logo");
+        var currentLogoUrls = new HashSet<string>(StringComparer.Ordinal)
+        {
+            sponsor.LogoUrl
+        };
+        if (!string.IsNullOrWhiteSpace(sponsor.LightLogoUrl))
+            currentLogoUrls.Add(sponsor.LightLogoUrl);
+
+        var retiredLogoUrls = new List<string?>(2);
+        if (newLogoUrl is not null &&
+            !string.Equals(previousLogoUrl, newLogoUrl, StringComparison.Ordinal))
+        {
+            retiredLogoUrls.Add(previousLogoUrl);
+        }
+
+        if ((newLightLogoUrl is not null || sponsorDTO.RemoveLightLogo) &&
+            !string.Equals(previousLightLogoUrl, sponsor.LightLogoUrl, StringComparison.Ordinal))
+        {
+            retiredLogoUrls.Add(previousLightLogoUrl);
+        }
+
+        await DeleteImagesBestEffortAsync(
+            retiredLogoUrls.Where(imageUrl => imageUrl is null || !currentLogoUrls.Contains(imageUrl)),
+            "retire a replaced Sponsor logo");
 
         return GetSponsorDTO.From(sponsor);
     }
@@ -175,12 +220,12 @@ internal sealed class SponsorService : ISponsorService
     public async Task DeleteSponsorAsync(int id, CancellationToken cancellationToken = default)
     {
         var sponsor = await GetSponsorForMutationAsync(id, cancellationToken);
-        var logoUrl = sponsor.LogoUrl;
+        var logoUrls = new[] { sponsor.LogoUrl, sponsor.LightLogoUrl };
         _dbContext.Sponsors.Remove(sponsor);
         await _outboxWriter.SaveAndPublishAsync(
             () => new SponsorDeleted(new SponsorId(id)),
             cancellationToken);
-        await DeleteImageBestEffortAsync(logoUrl, "retire a deleted Sponsor logo");
+        await DeleteImagesBestEffortAsync(logoUrls, "retire a deleted Sponsor logo");
     }
 
     private async Task<Sponsor> GetSponsorForMutationAsync(int id, CancellationToken cancellationToken)
@@ -188,6 +233,34 @@ internal sealed class SponsorService : ISponsorService
         var sponsor = await _dbContext.Sponsors
             .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
         return sponsor ?? throw new NotFoundException($"Sponsor with ID {id} not found");
+    }
+
+    private async Task<string> StoreSponsorLogoAsync(
+        IFormFile logo,
+        CancellationToken cancellationToken)
+    {
+        await using var imageStream = logo.OpenReadStream();
+        var storedLogo = await _mediaModule.SaveImageAsync(
+            new MediaUpload(
+                imageStream,
+                logo.FileName,
+                logo.ContentType,
+                logo.Length,
+                MediaPurpose.SponsorLogo),
+            cancellationToken);
+        return storedLogo.Url;
+    }
+
+    private async Task DeleteImagesBestEffortAsync(
+        IEnumerable<string?> imageUrls,
+        string action)
+    {
+        foreach (var imageUrl in imageUrls
+                     .Where(imageUrl => !string.IsNullOrWhiteSpace(imageUrl))
+                     .Distinct(StringComparer.Ordinal))
+        {
+            await DeleteImageBestEffortAsync(imageUrl, action);
+        }
     }
 
     private async Task DeleteImageBestEffortAsync(string? imageUrl, string action)

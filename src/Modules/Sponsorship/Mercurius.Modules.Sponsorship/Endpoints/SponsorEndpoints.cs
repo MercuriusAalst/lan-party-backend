@@ -11,7 +11,9 @@ namespace Mercurius.Modules.Sponsorship.Endpoints;
 
 internal static class SponsorEndpoints
 {
-    internal static RouteGroupBuilder MapSponsorEndpoints(this IEndpointRouteBuilder endpoints)
+    internal static RouteGroupBuilder MapSponsorEndpoints(
+        this IEndpointRouteBuilder endpoints,
+        long? sponsorLogoRequestBodySize)
     {
         var apiVersionSet = endpoints.NewApiVersionSet()
             .HasApiVersion(new ApiVersion(1, 0))
@@ -36,7 +38,7 @@ internal static class SponsorEndpoints
         })
         .AllowAnonymous();
 
-        group.MapPost("/", async (
+        var createEndpoint = group.MapPost("/", async (
             [FromForm] CreateSponsorDTO sponsorDTO,
             ISponsorService sponsorService,
             CancellationToken cancellationToken) =>
@@ -44,7 +46,7 @@ internal static class SponsorEndpoints
             return await sponsorService.CreateSponsorAsync(sponsorDTO, cancellationToken);
         }).DisableAntiforgery();
 
-        group.MapPatch("/{id}", async (
+        var updateEndpoint = group.MapPatch("/{id}", async (
             int id,
             [FromForm] UpdateSponsorDTO value,
             ISponsorService sponsorService,
@@ -52,6 +54,13 @@ internal static class SponsorEndpoints
         {
             return await sponsorService.UpdateSponsorAsync(id, value, cancellationToken);
         }).DisableAntiforgery();
+
+        if (sponsorLogoRequestBodySize is { } maxRequestBodySize)
+        {
+            var requestSizeLimit = new RequestSizeLimitAttribute(maxRequestBodySize);
+            createEndpoint.WithMetadata(requestSizeLimit);
+            updateEndpoint.WithMetadata(requestSizeLimit);
+        }
 
         group.MapDelete("/{id}", async (int id, ISponsorService sponsorService, CancellationToken cancellationToken) =>
         {

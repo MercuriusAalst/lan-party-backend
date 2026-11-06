@@ -123,6 +123,7 @@ public class PublicCollectionPagingEndpointTests
         Assert.Equal(5L * 1024 * 1024, limits.MaxFileSizeInBytes);
         Assert.Equal(64L * 1024, MediaUploadRequestLimits.MultipartEnvelopeSizeInBytes);
         Assert.Equal(5_308_416L, limits.MaxRequestBodySize);
+        Assert.Equal(10_551_296L, limits.MaxSponsorLogoRequestBodySize);
     }
 
     [Theory]
@@ -143,6 +144,9 @@ public class PublicCollectionPagingEndpointTests
 
         Assert.Equal((long)int.MaxValue * 1024 * 1024, limits.MaxFileSizeInBytes);
         Assert.Equal(limits.MaxFileSizeInBytes + MediaUploadRequestLimits.MultipartEnvelopeSizeInBytes, limits.MaxRequestBodySize);
+        Assert.Equal(
+            checked((limits.MaxFileSizeInBytes * 2) + MediaUploadRequestLimits.MultipartEnvelopeSizeInBytes),
+            limits.MaxSponsorLogoRequestBodySize);
     }
 
     [Fact]
@@ -203,7 +207,8 @@ public class PublicCollectionPagingEndpointTests
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = limits.MaxRequestBodySize);
-        builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = limits.MaxFileSizeInBytes);
+        builder.Services.Configure<FormOptions>(options =>
+            options.MultipartBodyLengthLimit = limits.MaxSponsorLogoRequestBodySize);
         builder.Services.AddAuthentication("Test")
             .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>("Test", _ => { });
         builder.Services.AddAuthorization();
