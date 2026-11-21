@@ -5,8 +5,8 @@ Lower-bracket matches that automatically advance a lone participant currently do
 ## Scope
 
 - Automatically advancing a participant through a BYE MUST continue winner propagation through subsequent BYE matches.
-- An administrator MAY request recovery for one tournament. Recovery MUST be transactional and idempotent, only fill empty slots in unplayed matches, and fail without saving when any eligible downstream slot is occupied by a different participant or has a result.
-- Recovery MUST NOT regenerate the bracket or alter played matches or results. It MUST return a concise outcome that distinguishes completed recovery from no changes.
+- An administrator MAY request recovery with `POST /v1/lan/tournaments/{tournamentId}/matches/recover-bye-advancement`. Recovery MUST be transactional and idempotent, only fill empty slots in unplayed matches, and fail without saving when any eligible downstream slot is occupied by a different participant or has a result.
+- Recovery MUST NOT regenerate the bracket or alter played matches or results. It MUST return HTTP 200 with `{ "matchesUpdated": number }`, where zero means no changes were needed. A conflict MUST return HTTP 409 without saving any changes.
 
 ## Non-goals
 
