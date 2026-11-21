@@ -440,6 +440,88 @@ internal sealed class MatchService : IMatchService
         return TournamentDtoMapper.ToGetMatchDto(match);
     }
 
+    public async Task<RecoverByeAdvancementResultDTO> RecoverByeAdvancementAsync(
+        Guid tournamentId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await BeginTransactionAsync(cancellationToken);
+        var tournament = await _dbContext.Tournaments
+            .SingleOrDefaultAsync(candidate => candidate.Id == tournamentId, cancellationToken);
+        if (tournament is null)
+            throw new NotFoundException("Tournament not found.");
+        if (tournament.BracketType != BracketType.DoubleElimination)
+            throw new ValidationException("BYE advancement recovery is available only for double-elimination tournaments.");
+        if (tournament.Status != TournamentStatus.InProgress)
+            throw new ValidationException("BYE advancement recovery is available only while the tournament is in progress.");
+
+        var matches = await _dbContext.Matches
+            .Where(candidate => candidate.TournamentId == tournamentId)
+            .ToListAsync(cancellationToken);
+        var lowerByeMatches = matches
+            .Where(candidate =>
+                candidate.IsLowerBracketMatch &&
+                (candidate.Participant1IsBYE || candidate.Participant2IsBYE))
+            .ToList();
+
+        foreach (var match in lowerByeMatches)
+        {
+            if ((match.Participant1IsBYE && match.HasParticipant1()) ||
+                (match.Participant2IsBYE && match.HasParticipant2()))
+                throw new ConflictException("bye_recovery_conflict", "A lower-bracket participant occupies a slot marked BYE.");
+
+            var loneParticipant = match.Participant1IsBYE
+                ? match.GetParticipant2Id()
+                : match.GetParticipant1Id();
+            if ((match.GetWinnerId().HasValue && match.GetWinnerId() != loneParticipant) ||
+                match.GetLoserForMutation().HasValue || match.Participant1Score.HasValue || match.Participant2Score.HasValue ||
+                match.ForfeitedParticipantNumber.HasValue || match.Participant1ReportedScore1.HasValue ||
+                match.Participant1ReportedScore2.HasValue || match.Participant2ReportedScore1.HasValue ||
+                match.Participant2ReportedScore2.HasValue)
+                throw new ConflictException("bye_recovery_conflict", "The lower-bracket BYE match contains conflicting winner or result data.");
+            if (!loneParticipant.HasValue)
+            {
+                if (match.HasResult)
+                    throw new ConflictException("bye_recovery_conflict", "The completed lower-bracket BYE match has no participant to advance.");
+                continue;
+            }
+            if (match.HasResult && match.GetWinnerId() != loneParticipant)
+                throw new ConflictException("bye_recovery_conflict", "The completed lower-bracket BYE match has an ambiguous result.");
+        }
+
+        foreach (var match in lowerByeMatches)
+        {
+            var loneParticipant = match.Participant1IsBYE
+                ? match.GetParticipant2Id()
+                : match.GetParticipant1Id();
+            if (!loneParticipant.HasValue)
+                continue;
+            var resultVersion = match.ResultVersion;
+            var needsAdvancement = match.WinnerNextMatch is { } winnerNext &&
+                winnerNext.GetParticipant1Id() != match.GetWinnerId() &&
+                winnerNext.GetParticipant2Id() != match.GetWinnerId();
+            if (match.HasResult)
+                match.UpdateParticipantsNextMatch();
+            else
+                match.TryAssignByeWin();
+            if (needsAdvancement && match.ResultVersion == resultVersion)
+                match.RecordByeAdvancementRecovery();
+        }
+
+        var matchesUpdated = matches.Count(match => _dbContext.Matches.Entry(match).State == EntityState.Modified);
+        try
+        {
+            _dbContext.Tournaments.Entry(tournament).Property(candidate => candidate.Status).IsModified = true;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConflictException("bye_recovery_state_changed", "A match changed during BYE recovery. Refresh and try again.");
+        }
+
+        return new RecoverByeAdvancementResultDTO(matchesUpdated);
+    }
+
     private async Task<(TournamentAggregate Tournament, Match Match)> GetMatchReadAsync(
         Guid id,
         CancellationToken cancellationToken)
@@ -465,6 +547,15 @@ internal sealed class MatchService : IMatchService
             .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
         if (match is null)
             throw new NotFoundException("Match not found.");
+
+        // A BYE target can advance recursively, so load its tournament graph only when needed.
+        if ((match.WinnerNextMatch is { } winnerNext &&
+             (winnerNext.Participant1IsBYE || winnerNext.Participant2IsBYE)) ||
+            (match.LoserNextMatch is { } loserNext &&
+             (loserNext.Participant1IsBYE || loserNext.Participant2IsBYE)))
+            await _dbContext.Matches
+                .Where(candidate => candidate.TournamentId == match.TournamentId)
+                .LoadAsync(cancellationToken);
 
         return (match.Tournament, match);
     }

@@ -118,7 +118,7 @@ internal sealed class MatchDeadlineProcessor : BackgroundService
 
         if (!beforeResult && match.HasResult && match.GetWinnerId() is not null)
         {
-            await LoadDirectNextMatchesAsync(dbContext, match, cancellationToken);
+            await LoadTournamentMatchesAsync(dbContext, match, cancellationToken);
             match.UpdateParticipantsNextMatch();
         }
         else if (beforeState != MatchLifecycleState.AdminResolutionRequired &&
@@ -155,28 +155,14 @@ internal sealed class MatchDeadlineProcessor : BackgroundService
                  (match.LifecycleState == MatchLifecycleState.Disputed &&
                   match.CorrectionDeadlineUtc <= nowUtc)));
 
-    private static async Task LoadDirectNextMatchesAsync(
+    private static async Task LoadTournamentMatchesAsync(
         ITournamentDbContext dbContext,
         Match match,
         CancellationToken cancellationToken)
     {
-        var nextMatchIds = new[] { match.WinnerNextMatchId, match.LoserNextMatchId }
-            .Where(nextMatchId => nextMatchId.HasValue)
-            .Select(nextMatchId => nextMatchId!.Value)
-            .Distinct()
-            .ToArray();
-        if (nextMatchIds.Length == 0)
-            return;
-
-        var nextMatches = await dbContext.Matches
-            .Where(candidate =>
-                candidate.TournamentId == match.TournamentId &&
-                nextMatchIds.Contains(candidate.Id))
-            .ToListAsync(cancellationToken);
-        var nextMatchesById = nextMatches.ToDictionary(candidate => candidate.Id);
-        if (match.WinnerNextMatchId is { } winnerNextMatchId)
-            match.SetWinnerNextMatch(nextMatchesById.GetValueOrDefault(winnerNextMatchId));
-        if (match.LoserNextMatchId is { } loserNextMatchId)
-            match.SetLoserNextMatch(nextMatchesById.GetValueOrDefault(loserNextMatchId));
+        // Loading the tournament's tracked matches lets relationship fixup connect chained BYE winners.
+        await dbContext.Matches
+            .Where(candidate => candidate.TournamentId == match.TournamentId)
+            .LoadAsync(cancellationToken);
     }
 }

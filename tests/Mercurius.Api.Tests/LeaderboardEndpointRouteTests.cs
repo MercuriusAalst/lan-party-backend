@@ -51,6 +51,16 @@ public sealed class LeaderboardEndpointRouteTests
             .OfType<IHttpMethodMetadata>().Any(item => item.HttpMethods.Contains("GET")));
     }
 
+    [Fact]
+    public void ByeAdvancementRecovery_RequiresAdmin()
+    {
+        var endpoint = GetEndpoint(
+            "POST",
+            "v{version:apiVersion}/lan/tournaments/{tournamentId:guid}/matches/recover-bye-advancement");
+
+        Assert.Contains(endpoint.Metadata.OfType<AuthorizeAttribute>(), authorization => authorization.Roles == "admin");
+    }
+
     private static RouteEndpoint GetEndpoint(string method, string pattern)
     {
         return GetEndpoints().Single(endpoint => endpoint.RoutePattern.RawText == pattern && endpoint.Metadata
