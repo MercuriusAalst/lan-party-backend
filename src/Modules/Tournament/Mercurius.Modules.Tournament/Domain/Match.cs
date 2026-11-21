@@ -359,6 +359,8 @@ internal sealed class Match
 
     public void RecordResultBy(Guid userId) => ResultRecordedByUserId = userId;
 
+    public void RecordByeAdvancementRecovery() => ResultVersion++;
+
     // A lower bracket slot that no live feed can ever reach; unlike SetParticipantBYEs it applies in any round.
     public void MarkBothParticipantsAsBYE()
     {

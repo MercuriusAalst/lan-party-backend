@@ -6,6 +6,7 @@ using Mercurius.Modules.Tournament.Domain;
 using Mercurius.Modules.Tournament.Infrastructure;
 using Mercurius.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Mercurius.Modules.Tournament.Tests;
 
@@ -92,6 +93,149 @@ public sealed class MatchServiceByeRecoveryTests
         var savedTarget = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == target.Id);
         Assert.Null(savedFirst.UserWinnerId);
         Assert.Equal(conflictingParticipant, savedTarget.UserParticipant2Id);
+    }
+
+    [Fact]
+    public async Task RecoverByeAdvancementAsync_DoesNotClearConflictingWinnerOnUncompletedByeMatch()
+    {
+        var admin = CreateUser("bye-recovery-uncompleted-conflict-admin");
+        var tournament = CreateTournament(admin);
+        var participant = Guid.NewGuid();
+        var conflictingWinner = Guid.NewGuid();
+        var loser = Guid.NewGuid();
+        var first = CreateLowerByeMatch(tournament, 1, participant, participant2IsBye: true)
+            .Set(x => x.UserWinnerId, conflictingWinner)
+            .Set(x => x.UserLoserId, loser)
+            .Set(x => x.Participant1Score, 1)
+            .Set(x => x.Participant2Score, 0);
+        var target = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual);
+        first.SetWinnerNextMatch(target);
+        tournament.Matches.Add(first);
+        tournament.Matches.Add(target);
+
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        dbContext.AddReferencedParticipants(tournament);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var service = CreateService(dbContext, admin);
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.RecoverByeAdvancementAsync(tournament.Id));
+
+        Assert.Equal("bye_recovery_conflict", exception.Code);
+        dbContext.ChangeTracker.Clear();
+        var savedFirst = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == first.Id);
+        var savedTarget = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == target.Id);
+        Assert.Equal(conflictingWinner, savedFirst.UserWinnerId);
+        Assert.Equal(loser, savedFirst.UserLoserId);
+        Assert.Equal(1, savedFirst.Participant1Score);
+        Assert.Equal(0, savedFirst.Participant2Score);
+        Assert.Null(savedTarget.UserParticipant2Id);
+    }
+
+    [Fact]
+    public async Task RecoverByeAdvancementAsync_DetectsConcurrentReversalOfRecordedByeWinner()
+    {
+        var admin = CreateUser("bye-recovery-concurrency-admin");
+        var tournament = CreateTournament(admin);
+        var participant = Guid.NewGuid();
+        var recordedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var source = CreateLowerByeMatch(tournament, 1, participant, participant2IsBye: true)
+            .Set(x => x.UserWinnerId, participant)
+            .Set(x => x.LifecycleState, MatchLifecycleState.Completed)
+            .Set(x => x.ResultKind, MatchResultKind.Score)
+            .Set(x => x.ResultRecordedAtUtc, recordedAtUtc);
+        var target = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual);
+        source.SetWinnerNextMatch(target);
+        tournament.Matches.Add(source);
+        tournament.Matches.Add(target);
+
+        await using var databaseOwner = PostgresTestDatabase.CreateDbContext();
+        databaseOwner.AddReferencedParticipants(tournament);
+        databaseOwner.Set<TournamentAggregate>().Add(tournament);
+        await databaseOwner.SaveChangesAsync();
+        var connectionString = databaseOwner.Database.GetConnectionString()!;
+        var gate = new ReverseByeWinnerBeforeSave(connectionString, source.Id);
+        var serviceContext = new MercuriusDBContext(new DbContextOptionsBuilder<MercuriusDBContext>()
+            .UseNpgsql(connectionString)
+            .AddInterceptors(gate)
+            .Options);
+        await using (serviceContext)
+        {
+            var service = CreateService(serviceContext, admin);
+            var recovery = service.RecoverByeAdvancementAsync(tournament.Id);
+            await gate.SaveReached.WaitAsync(TimeSpan.FromSeconds(10));
+            gate.Resume();
+
+            var exception = await Assert.ThrowsAsync<ConflictException>(() => recovery);
+
+            Assert.Equal("bye_recovery_state_changed", exception.Code);
+        }
+
+        databaseOwner.ChangeTracker.Clear();
+        var savedSource = await databaseOwner.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == source.Id);
+        var savedTarget = await databaseOwner.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == target.Id);
+        Assert.Equal(MatchLifecycleState.Reversed, savedSource.LifecycleState);
+        Assert.Null(savedSource.UserWinnerId);
+        Assert.Null(savedTarget.UserParticipant2Id);
+    }
+
+    [Fact]
+    public async Task RecoverByeAdvancementAsync_RejectsReversalThatReadTheOldSourceVersion()
+    {
+        var admin = CreateUser("bye-recovery-stale-reversal-admin");
+        var tournament = CreateTournament(admin);
+        var participant = Guid.NewGuid();
+        var recordedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var source = CreateLowerByeMatch(tournament, 1, participant, participant2IsBye: true)
+            .Set(x => x.UserWinnerId, participant)
+            .Set(x => x.LifecycleState, MatchLifecycleState.Completed)
+            .Set(x => x.ResultKind, MatchResultKind.Score)
+            .Set(x => x.ResultRecordedAtUtc, recordedAtUtc);
+        var target = new Match()
+            .Set(x => x.Id, Guid.NewGuid())
+            .Set(x => x.TournamentId, tournament.Id)
+            .Set(x => x.Tournament, tournament)
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual);
+        source.SetWinnerNextMatch(target);
+        tournament.Matches.Add(source);
+        tournament.Matches.Add(target);
+
+        await using var recoveryContext = PostgresTestDatabase.CreateDbContext();
+        recoveryContext.AddReferencedParticipants(tournament);
+        recoveryContext.Set<TournamentAggregate>().Add(tournament);
+        await recoveryContext.SaveChangesAsync();
+        recoveryContext.ChangeTracker.Clear();
+        var connectionString = recoveryContext.Database.GetConnectionString()!;
+        await using var reversalContext = new MercuriusDBContext(new DbContextOptionsBuilder<MercuriusDBContext>()
+            .UseNpgsql(connectionString)
+            .Options);
+        var staleSource = await reversalContext.Set<Match>().SingleAsync(match => match.Id == source.Id);
+        var service = CreateService(recoveryContext, admin);
+
+        await service.RecoverByeAdvancementAsync(tournament.Id);
+
+        staleSource.Set(x => x.UserWinnerId, (Guid?)null)
+            .Set(x => x.LifecycleState, MatchLifecycleState.Reversed)
+            .Set(x => x.ResultKind, (MatchResultKind?)null)
+            .Set(x => x.ResultRecordedAtUtc, (DateTime?)null)
+            .Set(x => x.ResultVersion, staleSource.ResultVersion + 1);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => reversalContext.SaveChangesAsync());
+
+        recoveryContext.ChangeTracker.Clear();
+        var savedSource = await recoveryContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == source.Id);
+        var savedTarget = await recoveryContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == target.Id);
+        Assert.Equal(participant, savedSource.UserWinnerId);
+        Assert.Equal(MatchLifecycleState.Completed, savedSource.LifecycleState);
+        Assert.Equal(participant, savedTarget.UserParticipant2Id);
     }
 
     [Fact]
@@ -194,4 +338,37 @@ public sealed class MatchServiceByeRecoveryTests
         Auth0UserId = $"auth0|{name}",
         Username = name
     };
+
+    private sealed class ReverseByeWinnerBeforeSave(string connectionString, Guid sourceMatchId) : SaveChangesInterceptor
+    {
+        private readonly TaskCompletionSource _saveReached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _resume = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task SaveReached => _saveReached.Task;
+
+        public void Resume() => _resume.TrySetResult();
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (_saveReached.TrySetResult())
+            {
+                await using var reversingContext = new MercuriusDBContext(
+                    new DbContextOptionsBuilder<MercuriusDBContext>().UseNpgsql(connectionString).Options);
+                var source = await reversingContext.Set<Match>().SingleAsync(match => match.Id == sourceMatchId, cancellationToken);
+                source.Set(x => x.UserWinnerId, (Guid?)null)
+                    .Set(x => x.LifecycleState, MatchLifecycleState.Reversed)
+                    .Set(x => x.ResultKind, (MatchResultKind?)null)
+                    .Set(x => x.ResultRecordedAtUtc, (DateTime?)null)
+                    .Set(x => x.ResultVersion, source.ResultVersion + 1);
+                await reversingContext.SaveChangesAsync(cancellationToken);
+                _resume.TrySetResult();
+            }
+
+            await _resume.Task.WaitAsync(cancellationToken);
+            return result;
+        }
+    }
 }

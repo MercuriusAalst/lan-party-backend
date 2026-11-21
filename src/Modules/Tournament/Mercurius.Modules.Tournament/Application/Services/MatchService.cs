@@ -466,19 +466,34 @@ internal sealed class MatchService : IMatchService
                 (match.Participant2IsBYE && match.HasParticipant2()))
                 throw new ConflictException("bye_recovery_conflict", "A lower-bracket participant occupies a slot marked BYE.");
 
-            if (match.HasResult)
+            var loneParticipant = match.Participant1IsBYE
+                ? match.GetParticipant2Id()
+                : match.GetParticipant1Id();
+            if ((match.GetWinnerId().HasValue && match.GetWinnerId() != loneParticipant) ||
+                match.GetLoserForMutation().HasValue || match.Participant1Score.HasValue || match.Participant2Score.HasValue ||
+                match.ForfeitedParticipantNumber.HasValue || match.Participant1ReportedScore1.HasValue ||
+                match.Participant1ReportedScore2.HasValue || match.Participant2ReportedScore1.HasValue ||
+                match.Participant2ReportedScore2.HasValue)
+                throw new ConflictException("bye_recovery_conflict", "The lower-bracket BYE match contains conflicting winner or result data.");
+            if (!loneParticipant.HasValue)
             {
-                var loneParticipant = match.Participant1IsBYE ? match.GetParticipant2Id() : match.GetParticipant1Id();
-                if (!loneParticipant.HasValue || match.GetWinnerId() != loneParticipant ||
-                    match.GetLoserForMutation().HasValue || match.Participant1Score.HasValue || match.Participant2Score.HasValue)
-                    throw new ConflictException("bye_recovery_conflict", "The completed lower-bracket BYE match has an ambiguous result.");
+                if (match.HasResult)
+                    throw new ConflictException("bye_recovery_conflict", "The completed lower-bracket BYE match has no participant to advance.");
+                continue;
+            }
+            if (match.HasResult && match.GetWinnerId() != loneParticipant)
+                throw new ConflictException("bye_recovery_conflict", "The completed lower-bracket BYE match has an ambiguous result.");
 
+            var resultVersion = match.ResultVersion;
+            var needsAdvancement = match.WinnerNextMatch is { } winnerNext &&
+                winnerNext.GetParticipant1Id() != match.GetWinnerId() &&
+                winnerNext.GetParticipant2Id() != match.GetWinnerId();
+            if (match.HasResult)
                 match.UpdateParticipantsNextMatch();
-            }
             else
-            {
                 match.TryAssignByeWin();
-            }
+            if (needsAdvancement && match.ResultVersion == resultVersion)
+                match.RecordByeAdvancementRecovery();
         }
 
         var matchesUpdated = matches.Count(match => _dbContext.Matches.Entry(match).State == EntityState.Modified);
