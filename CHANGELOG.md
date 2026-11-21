@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.10.0...backend-v0.10.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* Propagate lower bracket BYEs ([#172](https://github.com/MercuriusAalst/lan-party-backend/issues/172)) ([2b190f7](https://github.com/MercuriusAalst/lan-party-backend/commit/2b190f70747ba9c1003417e8c524751abdd22a3d))
+
 ## [0.10.0](https://github.com/MercuriusAalst/lan-party-backend/compare/backend-v0.9.0...backend-v0.10.0) (2026-11-06)
 
 
