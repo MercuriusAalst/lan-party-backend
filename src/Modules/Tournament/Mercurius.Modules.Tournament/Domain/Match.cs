@@ -420,23 +420,34 @@ internal sealed class Match
 
         if (WinnerNextMatch is not null)
         {
-            if (WinnerNextMatch.IsLowerBracketMatch)
+            if (WinnerNextMatch.GetParticipant1Id() != GetWinnerId() &&
+                WinnerNextMatch.GetParticipant2Id() != GetWinnerId() &&
+                WinnerNextMatch.IsLowerBracketMatch)
             {
-                if (!WinnerNextMatch.HasParticipant2() || WinnerNextMatch.GetParticipant2Id() == GetWinnerId())
-                    AssignWinnerToParticipant2(WinnerNextMatch);
-                else
-                    AssignWinnerToParticipant1(WinnerNextMatch);
+                if (!WinnerNextMatch.Participant2IsBYE &&
+                    (!WinnerNextMatch.HasParticipant2() || WinnerNextMatch.GetParticipant2Id() == GetWinnerId()))
+                    AssignWinnerToSlot(WinnerNextMatch, 2);
+                else if (!WinnerNextMatch.Participant1IsBYE &&
+                    (!WinnerNextMatch.HasParticipant1() || WinnerNextMatch.GetParticipant1Id() == GetWinnerId()))
+                    AssignWinnerToSlot(WinnerNextMatch, 1);
+                else if (WinnerNextMatch.GetParticipant1Id() != GetWinnerId() &&
+                         WinnerNextMatch.GetParticipant2Id() != GetWinnerId())
+                    throw new ConflictException("bracket_advancement_conflict", "The linked lower-bracket match has no available slot for this winner.");
 
-                if (WinnerNextMatch.Participant1IsBYE || WinnerNextMatch.Participant2IsBYE)
+                if (!WinnerNextMatch.HasResult &&
+                    (WinnerNextMatch.Participant1IsBYE || WinnerNextMatch.Participant2IsBYE))
                     WinnerNextMatch.TryAssignByeWin();
             }
-            else if (MatchNumber % 2 != 0 && !IsLowerBracketMatch)
+            else if (WinnerNextMatch.GetParticipant1Id() != GetWinnerId() &&
+                     WinnerNextMatch.GetParticipant2Id() != GetWinnerId() &&
+                     MatchNumber % 2 != 0 && !IsLowerBracketMatch)
             {
-                AssignWinnerToParticipant1(WinnerNextMatch);
+                AssignWinnerToSlot(WinnerNextMatch, 1);
             }
-            else
+            else if (WinnerNextMatch.GetParticipant1Id() != GetWinnerId() &&
+                     WinnerNextMatch.GetParticipant2Id() != GetWinnerId())
             {
-                AssignWinnerToParticipant2(WinnerNextMatch);
+                AssignWinnerToSlot(WinnerNextMatch, 2);
             }
         }
 
@@ -448,7 +459,8 @@ internal sealed class Match
         else
             AssignLoserToParticipant1(LoserNextMatch);
 
-        if (LoserNextMatch.Participant1IsBYE || LoserNextMatch.Participant2IsBYE)
+        if (!LoserNextMatch.HasResult &&
+            (LoserNextMatch.Participant1IsBYE || LoserNextMatch.Participant2IsBYE))
             LoserNextMatch.TryAssignByeWin();
     }
 
@@ -505,6 +517,12 @@ internal sealed class Match
 
     private void AssignWinner(Guid? winnerId)
     {
+        if (GetWinnerId() == winnerId)
+        {
+            UpdateParticipantsNextMatch();
+            return;
+        }
+
         if (ParticipationMode == ParticipationMode.Individual)
         {
             ClearTeamAssignments();
@@ -518,6 +536,7 @@ internal sealed class Match
             TeamLoserId = null;
         }
 
+        ResultVersion++;
         UpdateParticipantsNextMatch();
     }
 
@@ -670,6 +689,23 @@ internal sealed class Match
 
     private void AssignWinnerToParticipant2(Match targetMatch) =>
         targetMatch.SetParticipant2(GetWinnerId(), SourceMatchId);
+
+    private void AssignWinnerToSlot(Match targetMatch, int participantNumber)
+    {
+        var existingParticipantId = participantNumber == 1
+            ? targetMatch.GetParticipant1Id()
+            : targetMatch.GetParticipant2Id();
+        if (existingParticipantId == GetWinnerId())
+            return;
+        if (targetMatch.HasResult || existingParticipantId.HasValue ||
+            (participantNumber == 1 ? targetMatch.Participant1IsBYE : targetMatch.Participant2IsBYE))
+            throw new ConflictException("bracket_advancement_conflict", "The linked match cannot accept this participant without replacing existing state.");
+
+        if (participantNumber == 1)
+            AssignWinnerToParticipant1(targetMatch);
+        else
+            AssignWinnerToParticipant2(targetMatch);
+    }
 
     private void AssignLoserToParticipant1(Match targetMatch) =>
         targetMatch.SetParticipant1(GetLoserId(), SourceMatchId);

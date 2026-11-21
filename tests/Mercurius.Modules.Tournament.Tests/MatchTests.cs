@@ -36,6 +36,58 @@ public class MatchTests
     }
 
     [Fact]
+    public void TryAssignByeWin_PropagatesThroughChainedLowerBracketByes()
+    {
+        var participant = CreateUser(2);
+        var finalOpponent = CreateUser(3);
+        var final = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.UserParticipant1Id, finalOpponent.Id);
+        var second = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.IsLowerBracketMatch, true)
+            .Set(x => x.Participant1IsBYE, true)
+            .Set(x => x.WinnerNextMatch, final);
+        var first = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.IsLowerBracketMatch, true)
+            .Set(x => x.UserParticipant1Id, participant.Id)
+            .Set(x => x.Participant2IsBYE, true)
+            .Set(x => x.WinnerNextMatch, second);
+
+        first.TryAssignByeWin();
+
+        Assert.Equal(participant.Id, first.UserWinnerId);
+        Assert.Equal(participant.Id, second.UserParticipant2Id);
+        Assert.Equal(participant.Id, second.UserWinnerId);
+        Assert.Equal(participant.Id, final.UserParticipant2Id);
+    }
+
+    [Fact]
+    public void TryAssignByeWin_DoesNotOverwriteAConflictingLowerBracketSlot()
+    {
+        var winner = CreateUser(2);
+        var existingParticipant = CreateUser(3);
+        var target = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.IsLowerBracketMatch, true)
+            .Set(x => x.UserParticipant1Id, existingParticipant.Id)
+            .Set(x => x.Participant2IsBYE, true);
+        var source = new Match()
+            .Set(x => x.ParticipationMode, ParticipationMode.Individual)
+            .Set(x => x.IsLowerBracketMatch, true)
+            .Set(x => x.UserParticipant1Id, winner.Id)
+            .Set(x => x.Participant2IsBYE, true)
+            .Set(x => x.WinnerNextMatch, target);
+
+        var exception = Assert.Throws<ConflictException>(source.TryAssignByeWin);
+
+        Assert.Equal("bracket_advancement_conflict", exception.Code);
+        Assert.Equal(existingParticipant.Id, target.UserParticipant1Id);
+        Assert.Null(target.UserParticipant2Id);
+    }
+
+    [Fact]
     public void UpdateParticipantsNextMatch_PropagatesUserWinnerToUpperBracketSlot1_WhenMatchNumberIsOdd()
     {
         var winner = CreateUser(10);

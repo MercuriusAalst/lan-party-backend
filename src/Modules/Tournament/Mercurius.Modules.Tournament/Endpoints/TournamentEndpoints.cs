@@ -1,4 +1,5 @@
 using Asp.Versioning;
+using Mercurius.Modules.Tournament.Application.DTOs.Matches;
 using Mercurius.Modules.Tournament.Application.DTOs.Tournaments;
 using Mercurius.Modules.Tournament.Application.Services;
 using Mercurius.Modules.Tournament.Contracts;
@@ -90,6 +91,16 @@ internal static class TournamentEndpoints
                     return Results.ValidationProblem(new Dictionary<string, string[]> { ["state"] = ["A supported tournament lifecycle state is required."] });
             }
         });
+
+        group.MapPost("/{tournamentId:guid}/matches/recover-bye-advancement", async (
+            Guid tournamentId,
+            IMatchService matchService,
+            CancellationToken cancellationToken) =>
+        {
+            return Results.Ok(await matchService.RecoverByeAdvancementAsync(tournamentId, cancellationToken));
+        })
+        .Produces<RecoverByeAdvancementResultDTO>()
+        .ProducesProblem(StatusCodes.Status409Conflict);
 
         return group;
     }

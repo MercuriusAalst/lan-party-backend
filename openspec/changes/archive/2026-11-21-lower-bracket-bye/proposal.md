@@ -1,6 +1,10 @@
-# Propagate and recover lower bracket byes
+## Why
 
-Lower-bracket matches that automatically advance a lone participant currently do not propagate that winner to the next match. Add propagation for generated brackets and an administrator-only, guarded operation to recover affected tournaments that already exist.
+Lower-bracket matches that automatically advance a lone participant can fail to propagate that winner to the next match after persistence. Existing in-progress tournaments can therefore retain a BYE winner without its downstream assignment.
+
+## What Changes
+
+Propagate automatic BYE winners through linked matches and add a guarded administrator operation to recover affected tournaments that already exist.
 
 ## Scope
 
