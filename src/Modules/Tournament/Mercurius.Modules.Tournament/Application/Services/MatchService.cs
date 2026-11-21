@@ -457,10 +457,13 @@ internal sealed class MatchService : IMatchService
         var matches = await _dbContext.Matches
             .Where(candidate => candidate.TournamentId == tournamentId)
             .ToListAsync(cancellationToken);
+        var lowerByeMatches = matches
+            .Where(candidate =>
+                candidate.IsLowerBracketMatch &&
+                (candidate.Participant1IsBYE || candidate.Participant2IsBYE))
+            .ToList();
 
-        foreach (var match in matches.Where(candidate =>
-                     candidate.IsLowerBracketMatch &&
-                     (candidate.Participant1IsBYE || candidate.Participant2IsBYE)))
+        foreach (var match in lowerByeMatches)
         {
             if ((match.Participant1IsBYE && match.HasParticipant1()) ||
                 (match.Participant2IsBYE && match.HasParticipant2()))
@@ -483,7 +486,15 @@ internal sealed class MatchService : IMatchService
             }
             if (match.HasResult && match.GetWinnerId() != loneParticipant)
                 throw new ConflictException("bye_recovery_conflict", "The completed lower-bracket BYE match has an ambiguous result.");
+        }
 
+        foreach (var match in lowerByeMatches)
+        {
+            var loneParticipant = match.Participant1IsBYE
+                ? match.GetParticipant2Id()
+                : match.GetParticipant1Id();
+            if (!loneParticipant.HasValue)
+                continue;
             var resultVersion = match.ResultVersion;
             var needsAdvancement = match.WinnerNextMatch is { } winnerNext &&
                 winnerNext.GetParticipant1Id() != match.GetWinnerId() &&

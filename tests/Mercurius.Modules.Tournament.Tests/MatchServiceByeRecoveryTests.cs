@@ -138,6 +138,39 @@ public sealed class MatchServiceByeRecoveryTests
     }
 
     [Fact]
+    public async Task RecoverByeAdvancementAsync_PrevalidatesDownstreamByeBeforePropagatingUpstreamWinner()
+    {
+        var admin = CreateUser("bye-recovery-chain-conflict-admin");
+        var tournament = CreateTournament(admin);
+        var participant = Guid.NewGuid();
+        var staleWinner = Guid.NewGuid();
+        var first = CreateLowerByeMatch(tournament, 1, participant, participant2IsBye: true)
+            .Set(x => x.UserWinnerId, participant);
+        var downstream = CreateLowerByeMatch(tournament, 2, null, participant1IsBye: true)
+            .Set(x => x.UserWinnerId, staleWinner);
+        first.SetWinnerNextMatch(downstream);
+        tournament.Matches.Add(first);
+        tournament.Matches.Add(downstream);
+
+        await using var dbContext = PostgresTestDatabase.CreateDbContext();
+        dbContext.AddReferencedParticipants(tournament);
+        dbContext.Set<TournamentAggregate>().Add(tournament);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        var service = CreateService(dbContext, admin);
+
+        var exception = await Assert.ThrowsAsync<ConflictException>(() => service.RecoverByeAdvancementAsync(tournament.Id));
+
+        Assert.Equal("bye_recovery_conflict", exception.Code);
+        dbContext.ChangeTracker.Clear();
+        var savedFirst = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == first.Id);
+        var savedDownstream = await dbContext.Set<Match>().AsNoTracking().SingleAsync(match => match.Id == downstream.Id);
+        Assert.Equal(participant, savedFirst.UserWinnerId);
+        Assert.Equal(staleWinner, savedDownstream.UserWinnerId);
+        Assert.Null(savedDownstream.UserParticipant2Id);
+    }
+
+    [Fact]
     public async Task RecoverByeAdvancementAsync_DetectsConcurrentReversalOfRecordedByeWinner()
     {
         var admin = CreateUser("bye-recovery-concurrency-admin");
